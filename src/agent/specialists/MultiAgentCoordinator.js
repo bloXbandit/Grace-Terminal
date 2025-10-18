@@ -322,10 +322,14 @@ class MultiAgentCoordinator {
       // Create LLM instance with streaming support
       const llm = await createLLMInstance(model, onTokenStream, {});
       
-      // Build context with system prompt
+      // CRITICAL: Prepend MASTER_SYSTEM_PROMPT to ensure Grace's identity and capabilities are always present
+      const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+      const fullSystemPrompt = `${MASTER_SYSTEM_PROMPT}\n\n---\n\n${systemPrompt}`;
+      
+      // Build context with combined system prompt
       const context = {
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: userMessage }
         ]
       };

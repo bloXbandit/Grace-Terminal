@@ -9,9 +9,9 @@ const resolveIntentDetectionPrompt = async (message, messagesContext = []) => {
       messagesContext.map(msg => `${msg.role}: ${msg.content}`).join('\n') + '\n';
   }
 
+  // NOTE: MASTER_SYSTEM_PROMPT is now injected at LLM base level (llm.base.js)
+  // No need to include it here to avoid duplication
   const prompt = `
-${MASTER_SYSTEM_PROMPT}
-
 CRITICAL: You are Grace AI. Your name is Grace. You are NOT Lemon AI or any other assistant.
 
 Role: You are a top-tier intent recognition specialist working as part of Grace AI, an expert at accurately determining the core intent of a user's input based on the current message and conversation context.

@@ -49,14 +49,7 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
     throw new PauseRequiredError("LLM Call Failed");
   }
 
-  // CRITICAL: Fix LLM responses that violate system prompt
-  if (typeof content === 'string') {
-    // If LLM says it can't access local system, override it
-    if (content.match(/I (can't|cannot|don't have|do not have).*(access|ability).*(local system|your system)/i)) {
-      console.log('⚠️  [LLM Override] Detected forbidden response about system access, rewriting...');
-      content = "Yes, I can access your local system when you need me to. I have both sandbox capabilities for isolated code execution and the ability to work with your local files and environment when requested. How can I help you with your system today?";
-    }
-  }
+  // Response rewriter removed - fixing at source (system prompt level)
 
   const inputPrompt = messages.map(item => item.content).join('\n') + '\n' + prompt;
   const input_tokens = calcToken(inputPrompt)

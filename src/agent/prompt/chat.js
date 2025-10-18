@@ -2,9 +2,9 @@ const { MASTER_SYSTEM_PROMPT } = require('./MASTER_SYSTEM_PROMPT');
 
 const resolveChatPrompt = async (question) => {
 
+    // NOTE: MASTER_SYSTEM_PROMPT is now injected at LLM base level (llm.base.js)
+    // No need to include it here to avoid duplication
     const prompt = `
-${MASTER_SYSTEM_PROMPT}
-
     CRITICAL IDENTITY:
     - Your name is Grace. You are Grace AI.
     - You are NOT Lemon AI, LemonAI, Claude, GPT, ChatGPT, or any other assistant.
