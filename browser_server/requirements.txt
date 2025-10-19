@@ -3,3 +3,20 @@ fastapi>=0.115.12
 pyobjtojson>=0.3
 uvicorn>=0.34.3
 patchright>=1.52.0
+
+# File Generation Libraries
+python-docx>=1.1.0          # Word documents (.docx)
+openpyxl>=3.1.2             # Excel spreadsheets (.xlsx)
+pandas>=2.2.0               # CSV and data manipulation
+reportlab>=4.0.0            # Advanced PDF generation
+fpdf2>=2.7.0                # Simple PDF generation
+Pillow>=10.2.0              # Image handling
+python-pptx>=0.6.23         # PowerPoint presentations (.pptx)
+PyYAML>=6.0.1               # YAML files
+toml>=0.10.2                # TOML files
+lxml>=5.1.0                 # XML processing
+odfpy>=1.4.1                # OpenDocument formats (.odt, .odp)
+markdown>=3.5.2             # Markdown processing
+qrcode>=7.4.2               # QR code generation
+barcode>=1.0.0              # Barcode generation
+python-barcode>=0.15.1      # Additional barcode support
