@@ -37,7 +37,11 @@ const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], 
   const prompt = await resolveResultPrompt(goal, tasks, generatedFiles, staticUrl);
   const result = await call(prompt, conversation_id);
 
-  return result
+  // STRATEGIC: Validate file delivery claims in task summaries
+  const ResponseValidator = require('@src/utils/responseValidator');
+  const validatedResult = ResponseValidator.validateFileDeliveryClaims(result, conversation_id);
+
+  return validatedResult;
 }
 
 module.exports = exports = summary;

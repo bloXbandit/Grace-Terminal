@@ -185,12 +185,17 @@ ${profileContext}
   }
 
   responsePromise.then(async (content) => {
+    // STRATEGIC: Validate file delivery claims before sending response
+    const ResponseValidator = require('@src/utils/responseValidator');
+    const validatedContent = ResponseValidator.validateFileDeliveryClaims(content, conversation_id);
+    
     // Check if we should ask a profile question (natural inquiry)
+    let finalContent = validatedContent;
     try {
       const inquiry = await getProfileInquiry(user_id, conversation_id);
       if (inquiry) {
         // Append natural question to response
-        content += `\n\n${inquiry.question}`;
+        finalContent += `\n\n${inquiry.question}`;
         onTokenStream(`\n\n${inquiry.question}`);
       }
     } catch (err) {
@@ -200,7 +205,7 @@ ${profileContext}
     const assistant_msg = Message.format({
       role: 'assistant',
       status: 'success',
-      content: content,
+      content: finalContent,
       action_type: 'chat',
       task_id: conversation_id,
       type: 'chat',
