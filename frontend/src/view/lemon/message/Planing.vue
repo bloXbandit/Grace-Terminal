@@ -11,7 +11,7 @@
                     <Failure v-if="item.status == 'failure'" />
 
                 </div>
-                <span class="planing-item-content-description">{{ item.description }}</span>
+                <span class="planing-item-content-description">{{ getCleanDescription(item.description) }}</span>
                 <div class="planing-item-content-collapse" :class="{ 'rotate-180': item.is_collapse }"
                     @click="toggleCollapse(item)">
                     <Collapse />
@@ -93,6 +93,54 @@ onMounted(() => {
 const toggleCollapse = (item) => {
     console.log(item)
     item.is_collapse = !item.is_collapse
+}
+
+// Clean up phase descriptions and make them more personality-driven
+const getCleanDescription = (description) => {
+    if (!description) return '';
+    
+    // Remove "Phase X:" prefixes and make descriptions more friendly
+    let cleaned = description.replace(/^Phase\s+\d+:\s*/i, '');
+    
+    // Map common planning terms to more personality-driven alternatives
+    const friendlyMappings = {
+        'Planning': '🧠 Thinking',
+        'Analysis': '🔍 Analyzing', 
+        'Research': '🔎 Researching',
+        'Implementation': '⚡ Building',
+        'Execution': '🚀 Executing',
+        'Generation': '✨ Creating',
+        'Processing': '⚙️ Processing',
+        'Validation': '✅ Validating',
+        'Completion': '🎯 Finishing',
+        'Review': '👀 Reviewing',
+        'Testing': '🧪 Testing',
+        'Optimization': '⚡ Optimizing'
+    };
+    
+    // Apply friendly mappings
+    for (const [formal, friendly] of Object.entries(friendlyMappings)) {
+        if (cleaned.toLowerCase().includes(formal.toLowerCase())) {
+            cleaned = cleaned.replace(new RegExp(formal, 'gi'), friendly);
+            break; // Only replace the first match to avoid over-processing
+        }
+    }
+    
+    // If no specific mapping found, add a thinking emoji for generic descriptions
+    if (!cleaned.match(/^[🧠🔍🔎⚡✨⚙️✅🎯👀🧪]/)) {
+        // Check if it's a thinking/planning type activity
+        if (cleaned.toLowerCase().match(/think|plan|consider|analyze|process/)) {
+            cleaned = '🧠 ' + cleaned;
+        } else if (cleaned.toLowerCase().match(/creat|generat|build|make/)) {
+            cleaned = '✨ ' + cleaned;
+        } else if (cleaned.toLowerCase().match(/execut|run|perform/)) {
+            cleaned = '⚡ ' + cleaned;
+        } else {
+            cleaned = '💭 ' + cleaned;
+        }
+    }
+    
+    return cleaned;
 }
 
 const isLastPending = (item, index) => {
