@@ -68,63 +68,110 @@ const file_generator = {
         return { success: false, error: "Runtime not available" };
       }
 
-      const scriptPath = `/tmp/gen_${Date.now()}.py`;
-      await runtime.writeFile(scriptPath, pythonScript);
-      const result = await runtime.executeCommand(`python3 ${scriptPath}`);
-      await runtime.executeCommand(`rm ${scriptPath}`);
-
-      if (result.exit_code !== 0) {
-        return {
-          success: false,
-          error: `Generation failed: ${result.stderr}`,
-          details: result
-        };
-      }
-
-      const verifyResult = await runtime.executeCommand(`ls -lh ${fullFilename}`);
-      if (verifyResult.exit_code !== 0) {
-        return {
-          success: false,
-          error: `File not created: ${fullFilename}`
-        };
-      }
-
-      const workspacePath = conversation_id 
-        ? `./workspace/Conversation_${conversation_id}/${fullFilename}`
-        : `./workspace/${fullFilename}`;
-
-      // CRITICAL FIX: Verify file actually exists at the claimed path
-      const fs = require('fs');
-      const path = require('path');
+      // RELIABILITY FIX: Retry mechanism with exponential backoff
+      const maxRetries = 3;
+      let lastError = null;
       
-      // Check if file exists in the expected location
-      const absolutePath = path.resolve(workspacePath);
-      let fileExists = false;
-      let actualSize = 0;
-      
-      try {
-        const stats = fs.statSync(absolutePath);
-        fileExists = stats.isFile();
-        actualSize = stats.size;
-        console.log(`[FileGenerator] ✅ Verified file exists: ${absolutePath} (${actualSize} bytes)`);
-      } catch (err) {
-        console.error(`[FileGenerator] ❌ File verification failed: ${absolutePath}`, err.message);
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[FileGenerator] Attempt ${attempt}/${maxRetries} for ${fullFilename}`);
+          
+          // Check runtime health before proceeding
+          const healthCheck = await runtime.executeCommand('echo "runtime_health_check"');
+          if (healthCheck.exit_code !== 0) {
+            throw new Error(`Runtime health check failed: ${healthCheck.stderr}`);
+          }
+          
+          // Proceed with file generation
+          return await this.executeFileGeneration(runtime, pythonScript, fullFilename, conversation_id);
+          
+        } catch (error) {
+          lastError = error;
+          console.warn(`[FileGenerator] Attempt ${attempt} failed:`, error.message);
+          
+          if (attempt < maxRetries) {
+            // Exponential backoff: 1s, 2s, 4s
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            console.log(`[FileGenerator] Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
       }
-
+      
+      // All retries failed
       return {
-        success: true,
-        message: `✅ Created ${format.toUpperCase()} file${fileExists ? ` (${actualSize} bytes)` : ' (verification pending)'}`,
-        filename: fullFilename,
-        path: workspacePath,
-        format: format,
-        verified: fileExists,
-        size: actualSize,
-        absolutePath: absolutePath
+        success: false,
+        error: `File generation failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`,
+        retries: maxRetries
       };
-
     } catch (error) {
       return { success: false, error: error.message };
     }
+  },
+
+  /**
+   * Execute file generation with proper error handling
+   */
+  async executeFileGeneration(runtime, pythonScript, fullFilename, conversation_id) {
+    const scriptPath = `/tmp/gen_${Date.now()}.py`;
+    await runtime.writeFile(scriptPath, pythonScript);
+    const result = await runtime.executeCommand(`python3 ${scriptPath}`);
+    await runtime.executeCommand(`rm ${scriptPath}`);
+
+    if (result.exit_code !== 0) {
+      return {
+        success: false,
+        error: `Generation failed: ${result.stderr}`,
+        details: result
+      };
+    }
+
+    // CRITICAL SECURITY FIX: Prevent command injection with proper escaping
+    // Sanitize filename - only allow alphanumeric, dots, hyphens, underscores
+    const sanitizedFilename = fullFilename.replace(/[^a-zA-Z0-9._-]/g, '');
+    if (sanitizedFilename !== fullFilename) {
+      console.warn(`[FileGenerator] Filename sanitized: ${fullFilename} → ${sanitizedFilename}`);
+    }
+    
+    const verifyResult = await runtime.executeCommand(`ls -lh "${sanitizedFilename}"`);
+    if (verifyResult.exit_code !== 0) {
+      return {
+        success: false,
+        error: `File not created: ${fullFilename}`
+      };
+    }
+
+    const workspacePath = conversation_id 
+      ? `./workspace/Conversation_${conversation_id}/${fullFilename}`
+      : `./workspace/${fullFilename}`;
+
+    // CRITICAL FIX: Verify file actually exists at the claimed path
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Check if file exists in the expected location
+    const absolutePath = path.resolve(workspacePath);
+    let fileExists = false;
+    let actualSize = 0;
+    
+    try {
+      const stats = fs.statSync(absolutePath);
+      fileExists = stats.isFile();
+      actualSize = stats.size;
+      console.log(`[FileGenerator] ✅ Verified file exists: ${absolutePath} (${actualSize} bytes)`);
+    } catch (err) {
+      console.error(`[FileGenerator] ❌ File verification failed: ${absolutePath}`, err.message);
+    }
+
+    return {
+      success: true,
+      message: `✅ Created file${fileExists ? ` (${actualSize} bytes)` : ' (verification pending)'}`,
+      filename: fullFilename,
+      path: workspacePath,
+      verified: fileExists,
+      size: actualSize,
+      absolutePath: absolutePath
+    };
   },
 
   generateScript(format, filename, content) {
@@ -162,7 +209,30 @@ const file_generator = {
   },
 
   esc(str) {
-    return (str || '').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    // CRITICAL SECURITY FIX: Robust escaping for Python string literals
+    if (!str) return '';
+    
+    return str
+      .replace(/\\/g, '\\\\')    // Escape backslashes first
+      .replace(/'/g, "\\'")      // Escape single quotes
+      .replace(/"/g, '\\"')      // Escape double quotes
+      .replace(/\n/g, '\\n')     // Escape newlines
+      .replace(/\r/g, '\\r')     // Escape carriage returns
+      .replace(/\t/g, '\\t')     // Escape tabs
+      .replace(/\0/g, '\\0');    // Escape null bytes
+  },
+
+  /**
+   * Safe escaping for triple-quoted strings in Python
+   */
+  escTriple(str) {
+    if (!str) return '';
+    
+    // For triple-quoted strings, we need to escape triple quotes specifically
+    return str
+      .replace(/\\/g, '\\\\')           // Escape backslashes
+      .replace(/'''/g, "\\'\\'\\'")     // Escape triple single quotes
+      .replace(/"""/g, '\\"\\"\\"');    // Escape triple double quotes
   },
 
   genDocx(fn, c) {
@@ -174,7 +244,7 @@ if '${this.esc(c.title)}':
     t = doc.add_heading('${this.esc(c.title)}', 0)
     t.alignment = WD_ALIGN_PARAGRAPH.CENTER
 if '${this.esc(c.body)}':
-    doc.add_paragraph('''${this.esc(c.body)}''')
+    doc.add_paragraph('''${this.escTriple(c.body)}''')
 doc.save('${fn}')
 print('✅ Created: ${fn}')`;
   },

@@ -32,5 +32,5 @@ python-mpxj>=0.1.0          # Microsoft Project (.mpp) and Primavera P6 (.xer) f
 
 
 # Primavera P6 XER file parsing and analysis
-PyP6XER>=1.0.0              # Complete P6 XER parser with DCMA 14-point analysis
+PyP6Xer>=1.0.0              # Complete P6 XER parser with DCMA 14-point analysis
 
