@@ -27,6 +27,14 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   const MAX_RETRIES = 3;
   const RETRY_DELAYS = [2000, 5000, 10000]; // Exponential backoff: 2s, 5s, 10s
   
+  // SECURITY: Detect P6/XER requests in direct LLM calls
+  if (typeof prompt === 'string' && /\b(xer|primavera|p6|dcma)\b/i.test(prompt)) {
+    console.warn('[LLM Security] P6/XER request detected in direct LLM call');
+    console.warn('[LLM Security] This should use p6xer_tool via specialist routing');
+    console.warn('[LLM Security] Prompt preview:', prompt.substring(0, 100));
+    // Log for audit but don't block (MASTER_SYSTEM_PROMPT will still enforce)
+  }
+  
   const model_info = await getDefaultModel(conversation_id)
   const model = `provider#${model_info.platform_name}#${model_info.model_name}`;
   const llm = await createLLMInstance(model, onTokenStream, { model_info });

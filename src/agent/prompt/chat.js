@@ -1,6 +1,9 @@
 const { MASTER_SYSTEM_PROMPT } = require('./MASTER_SYSTEM_PROMPT');
+const { getProfileContext } = require('@src/services/userProfile');
 
-const resolveChatPrompt = async (question) => {
+const resolveChatPrompt = async (question, user_id = 1) => {
+  // Get user profile for personalization across all modes
+  const profileContext = await getProfileContext(user_id);
 
     // NOTE: MASTER_SYSTEM_PROMPT is now injected at LLM base level (llm.base.js)
     // No need to include it here to avoid duplication
@@ -33,6 +36,9 @@ const resolveChatPrompt = async (question) => {
     Your role is to assist users by providing concise and accurate responses to their questions or messages. 
     When users ask you to create or do something, be proactive and use your sandbox to actually do it.
     Ask clarifying questions when needed to ensure you build exactly what they want.
+    
+    ${profileContext}
+    
     ${question}
     `;
 

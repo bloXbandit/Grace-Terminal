@@ -13,6 +13,9 @@
  * Based on: https://github.com/HassanEmam/PyP6Xer
  */
 
+// Exact fallback message as defined in MASTER_SYSTEM_PROMPT
+const UNAVAILABLE_MESSAGE = "XER analysis/execution is unavailable at this time.";
+
 const p6xer_tool = {
   name: "p6xer_tool",
   description: `Complete Primavera P6 XER file parser and analyzer using PyP6Xer library. 
@@ -92,7 +95,13 @@ const p6xer_tool = {
     const { runtime } = context;
 
     if (!runtime) {
-      return { success: false, error: "Runtime not available" };
+      console.error('[P6XerTool] Runtime not available - PyP6XER cannot execute');
+      return { 
+        success: false, 
+        error: UNAVAILABLE_MESSAGE,
+        userMessage: UNAVAILABLE_MESSAGE,
+        enforced: true  // Flag to prevent LLM from rephrasing
+      };
     }
 
     try {
@@ -116,10 +125,14 @@ const p6xer_tool = {
       await runtime.executeCommand(`rm ${scriptPath}`);
 
       if (result.exit_code !== 0) {
+        console.error('[P6XerTool] PyP6XER execution failed:', result.stderr);
         return {
           success: false,
-          error: `P6Xer operation failed: ${result.stderr}`,
-          details: result
+          error: UNAVAILABLE_MESSAGE,
+          userMessage: UNAVAILABLE_MESSAGE,
+          details: result.stderr,
+          exit_code: result.exit_code,
+          enforced: true  // Flag to prevent LLM from rephrasing
         };
       }
 
