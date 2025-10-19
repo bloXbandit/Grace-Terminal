@@ -138,6 +138,21 @@ const profile = ref({
 
 const learnedProfile = ref([]);
 
+// Listen for real-time profile updates from chat extraction
+const setupProfileListener = () => {
+  window.addEventListener('profile-learned', (event) => {
+    const { key, value } = event.detail;
+    
+    // Update form field if it exists
+    if (profile.value.hasOwnProperty(key)) {
+      profile.value[key] = value;
+    }
+    
+    // Refresh learned profile display
+    loadProfile();
+  });
+};
+
 // Load profile from backend
 const loadProfile = async () => {
   try {
@@ -217,6 +232,7 @@ const formatSource = (source) => {
 
 onMounted(() => {
   loadProfile();
+  setupProfileListener();
 });
 </script>
 

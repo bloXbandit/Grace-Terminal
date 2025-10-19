@@ -77,8 +77,18 @@ const getProfileContext = async (user_id) => {
       return '';
     }
 
-    const profileLines = profiles
-      .filter(p => p.confidence >= 0.5) // Only include confident entries
+    // Group by key and prioritize: settings > conversation > other sources
+    const profileMap = new Map();
+    profiles.filter(p => p.confidence >= 0.5).forEach(p => {
+      const existing = profileMap.get(p.key);
+      if (!existing || 
+          (p.source === 'settings' && existing.source !== 'settings') ||
+          (p.source === 'conversation' && existing.source !== 'settings' && existing.source !== 'conversation')) {
+        profileMap.set(p.key, p);
+      }
+    });
+    
+    const profileLines = Array.from(profileMap.values())
       .map(p => `- ${p.key}: ${p.value}`)
       .join('\n');
 
