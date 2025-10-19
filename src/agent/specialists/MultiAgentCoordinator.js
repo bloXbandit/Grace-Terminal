@@ -348,8 +348,21 @@ class MultiAgentCoordinator {
       return result;
       
     } catch (error) {
-      console.error(`[Specialist] Error calling ${modelPath}:`, error.message);
-      throw error;
+      console.error(`[Specialist] Error calling ${modelPath}:`, {
+        message: error.message,
+        stack: error.stack,
+        modelPath,
+        provider: parts[0],
+        modelName: parts.slice(1).join('/')
+      });
+      
+      // Return a graceful error response instead of throwing
+      // This prevents the entire task from failing
+      return {
+        error: true,
+        message: `Specialist call failed: ${error.message}`,
+        fallback_needed: true
+      };
     }
   }
 
@@ -373,6 +386,12 @@ class MultiAgentCoordinator {
         userMessage,
         options
       );
+      
+      // Check if specialist returned an error (graceful failure)
+      if (result.error && result.fallback_needed) {
+        console.log(`[Coordinator] Primary specialist failed gracefully, trying fallback: ${routing.fallback}`);
+        throw new Error(result.message); // Trigger fallback
+      }
       
       const executionReport = this.generateExecutionReport({
         taskType,

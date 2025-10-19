@@ -188,6 +188,19 @@ class AgenticAgent {
     this.setGoal(goal);
 
     try {
+      // Check for /dev mode commands in task mode
+      const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
+      const modeCommandResult = await modeCommandHandler.handleCommand(goal, this.context.conversation_id);
+      if (modeCommandResult) {
+        // This was a mode command, publish and return
+        await this._publishMessage({ 
+          action_type: 'finish', 
+          status: 'success', 
+          content: modeCommandResult.message 
+        });
+        return modeCommandResult.message;
+      }
+      
       const autoReplyResult = await this._initialSetupAndAutoReply();
       
       // If specialist handled it completely, stop here

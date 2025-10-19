@@ -26,7 +26,7 @@ const resolveThinkingPrompt = async (requirement = '', context = {}) => {
   const uploadFileDescription = describeUploadFiles(context.files || []);
   const previousResult = await loadConversationMemory(context.conversation_id);
   const app_ports = JSON.stringify([context.runtime.app_port_1, context.runtime.app_port_2])
-  const system = describeSystem();
+  const system = await describeSystem(context);
   const knowledge = await resolveThinkingKnowledge(context);
 
   // Check if specialist routing is enabled (Task/Auto modes only)

@@ -10,12 +10,7 @@ LEMON_AI_PATH undefined
   <-- GET /
 Request URL: /
 GET / - 4ms
-  --> GET / 200 9ms 14b
-🚀 [SEAL] Starting continuous improvement loop
-📅 [SEAL] Improvement cycle: every 24 hours
-
-🔄 [SEAL] === Starting Improvement Cycle ===
-✅ [SEAL] No improvement areas identified. System performing well!
+  --> GET / 200 10ms 14b
   <-- POST /api/agent/run
 Request URL: /api/agent/run
 当前运行任务：
@@ -106,9 +101,9 @@ Agent模式反馈处理失败: Error: WHERE parameter "agent_id" has invalid "un
     at knowledge.aggregate (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1277:45)
     at knowledge.count (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1306:31)
     at async /home/ubuntu/Grace-Terminal/src/routers/agent/run.js:298:33
-Conversation not found: 7985771e-2bb0-409b-9811-8166be728ebd
+Conversation not found: 6a4b53a1-3e3e-482d-834d-600d5fdd40e5
 [MockDockerRuntime] Initialized (Docker operations mocked)
-POST /api/agent/run - 26ms
+POST /api/agent/run - 34ms
 Skipping nginx setup for RUNTIME_TYPE: mock
 [AutoReply] Initializing coordinator for goal: can you access my local system?
 [AutoReply] Detected task type: general_chat
@@ -138,13 +133,43 @@ Error in _fetchDefaultModel: Error
   sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;',
   parameters: {}
 }
-Auto reply failed: TypeError: Cannot read properties of null (reading 'is_subscribe')
-    at auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:55:18)
+[AutoReply] No model found for conversation, using local fallback
+Error in _fetchDefaultModel: Error
+    at Database.<anonymous> (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:185:27)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:50
+    at new Promise (<anonymous>)
+    at Query.run (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:12)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/sequelize.js:315:28
+    at async SQLiteQueryInterface.select (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:407:12)
+    at async model.findAll (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1140:21)
+    at async model.findOne (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1240:12)
+    at async _fetchDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:15:26)
+    at async getDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:57:14) {
+  name: 'SequelizeDatabaseError',
+  parent: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  original: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;',
+  parameters: {}
+}
+Auto reply failed: TypeError: Cannot read properties of null (reading 'platform_name')
+    at call (/home/ubuntu/Grace-Terminal/src/utils/llm.js:31:40)
+    at async auto_reply_local (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:85:22)
+    at async auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:66:16)
     at async AgenticAgent._initialSetupAndAutoReply (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:104:19)
     at async AgenticAgent.run (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:191:31)
-{"role":"assistant","uuid":"","status":"success","content":"Cannot read properties of null (reading 'is_subscribe')","comments":"","memorized":"","timestamp":1760841036954,"type":"","meta":{"pid":"","task_id":"","action_type":"error","filepath":"","url":"","json":[],"content":"","is_active":true}}Conversation not found: 7985771e-2bb0-409b-9811-8166be728ebd
-Agent run error: TypeError: Cannot read properties of null (reading 'is_subscribe')
-    at auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:55:18)
+{"role":"assistant","uuid":"","status":"success","content":"Cannot read properties of null (reading 'platform_name')","comments":"","memorized":"","timestamp":1760841448181,"type":"","meta":{"pid":"","task_id":"","action_type":"error","filepath":"","url":"","json":[],"content":"","is_active":true}}Conversation not found: 6a4b53a1-3e3e-482d-834d-600d5fdd40e5
+Agent run error: TypeError: Cannot read properties of null (reading 'platform_name')
+    at call (/home/ubuntu/Grace-Terminal/src/utils/llm.js:31:40)
+    at async auto_reply_local (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:85:22)
+    at async auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:66:16)
     at async AgenticAgent._initialSetupAndAutoReply (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:104:19)
     at async AgenticAgent.run (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:191:31)
 ❌ [SEAL] Error logging task: ValidationError [SequelizeValidationError]: notNull Violation: TaskExecution.start_time cannot be null
@@ -170,7 +195,7 @@ Agent run error: TypeError: Cannot read properties of null (reading 'is_subscrib
   ]
 }
 Agent stream closed
-  --> POST /api/agent/run 200 41ms 490b
+  --> POST /api/agent/run 200 54ms 490b
 /home/ubuntu/Grace-Terminal/src/routers/agent/run.js:309
       await closeContainer(ctx.state.user.id)
             ^

@@ -39,9 +39,40 @@ const describeUploadFiles = files => {
   return content;
 }
 
-const describeSystem = () => {
+const describeSystem = async (context = {}) => {
+  const devMode = require('@src/agent/modes/DevMode');
+  const { conversation_id } = context;
+  
+  let devModeInfo = '';
+  if (conversation_id) {
+    const isDevMode = await devMode.isDevMode(conversation_id);
+    if (isDevMode) {
+      devModeInfo = `
+
+🔧 **DEVELOPER MODE ACTIVE**
+- You are currently in Developer Mode
+- You CAN modify your own code using the self_modify tool
+- You CAN add new capabilities and tools
+- You CAN fix bugs in your own code
+- You CAN update prompts and configurations
+- When user asks "can you self modify?" → Answer: "Yes! I'm in Developer Mode, so I can modify my own code, add new capabilities, and improve myself based on your requests."
+- All modifications are automatically backed up for safety
+- Use the self_modify tool to make changes to files in /app/src/
+`;
+    } else {
+      devModeInfo = `
+
+🔒 **NORMAL MODE**
+- You are in Normal Mode (self-modification disabled for safety)
+- When user asks "can you self modify?" → Answer: "I have self-modification capabilities, but they require Developer Mode for safety. Type /dev to enable it, then I can modify my own code."
+- To enable self-modification, user needs to type: /dev
+`;
+    }
+  }
+  
   return `
 ${MASTER_SYSTEM_PROMPT}
+${devModeInfo}
 
 **CRITICAL IDENTITY:**
 - Your name is Grace. You are Grace AI.
