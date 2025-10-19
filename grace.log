@@ -1,0 +1,184 @@
+🔥 [STARTUP] Clearing Node.js module cache...
+✅ [STARTUP] Module cache cleared - loading fresh code
+LEMON_AI_PATH undefined
+filepath /home/ubuntu/Grace-Terminal/data/database.sqlite
+[Axios Init] ENV: Docker. 代理主机: host.docker.internal:7890
+LEMON_AI_PATH undefined
+🧠 [SEAL] Self-Evolving Agentic LLM Framework initialized
+📚 [SEAL] Based on MIT CSAIL research: https://github.com/Continual-Intelligence/SEAL
+[Axios 初始化] 代理 host.docker.internal:7890 不可连接。创建不带代理的 Axios 实例。
+  <-- GET /
+Request URL: /
+GET / - 4ms
+  --> GET / 200 9ms 14b
+🚀 [SEAL] Starting continuous improvement loop
+📅 [SEAL] Improvement cycle: every 24 hours
+
+🔄 [SEAL] === Starting Improvement Cycle ===
+✅ [SEAL] No improvement areas identified. System performing well!
+  <-- POST /api/agent/run
+Request URL: /api/agent/run
+当前运行任务：
+自动模式：开始意图识别...
+Error in _fetchDefaultModel: Error
+    at Database.<anonymous> (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:185:27)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:50
+    at new Promise (<anonymous>)
+    at Query.run (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:12)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/sequelize.js:315:28
+    at async SQLiteQueryInterface.select (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:407:12)
+    at async model.findAll (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1140:21)
+    at async model.findOne (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1240:12)
+    at async _fetchDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:15:26)
+    at async getDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:57:14) {
+  name: 'SequelizeDatabaseError',
+  parent: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  original: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;',
+  parameters: {}
+}
+Error extracting profile: TypeError: Cannot read properties of null (reading 'platform_name')
+    at call (/home/ubuntu/Grace-Terminal/src/utils/llm.js:31:40)
+    at async extractProfileFromMessage (/home/ubuntu/Grace-Terminal/src/agent/profile/extract.js:36:22)
+Error in _fetchDefaultModel: Error
+    at Database.<anonymous> (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:185:27)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:50
+    at new Promise (<anonymous>)
+    at Query.run (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:12)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/sequelize.js:315:28
+    at async SQLiteQueryInterface.select (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:407:12)
+    at async model.findAll (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1140:21)
+    at async model.findOne (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1240:12)
+    at async _fetchDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:15:26)
+    at async getDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:57:14) {
+  name: 'SequelizeDatabaseError',
+  parent: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  original: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;',
+  parameters: {}
+}
+意图识别失败，默认使用agent模式: TypeError: Cannot read properties of null (reading 'is_subscribe')
+    at detect_intent (/home/ubuntu/Grace-Terminal/src/agent/intent-detection/index.js:14:20)
+    at async /home/ubuntu/Grace-Terminal/src/routers/agent/run.js:250:16
+    at async /home/ubuntu/Grace-Terminal/src/middlewares/auth.js:17:5
+    at async module.exports (/home/ubuntu/Grace-Terminal/src/middlewares/setGlobalToken.js:15:3)
+    at async /home/ubuntu/Grace-Terminal/src/app.js:47:3
+    at async serve (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/koa-static@5.0.0/node_modules/koa-static/index.js:53:9)
+    at async /home/ubuntu/Grace-Terminal/src/app.js:37:3
+    at async logger (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/koa-logger@3.2.1/node_modules/koa-logger/index.js:67:7)
+    at async exports (/home/ubuntu/Grace-Terminal/src/middlewares/wrap.context.js:38:5)
+使用智能体模式
+Error: WHERE parameter "agent_id" has invalid "undefined" value
+    at SQLiteQueryGenerator.whereItemQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1746:13)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1737:25
+    at Array.forEach (<anonymous>)
+    at SQLiteQueryGenerator.whereItemsQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1735:35)
+    at SQLiteQueryGenerator.getWhereConditions (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:2078:19)
+    at SQLiteQueryGenerator.selectQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:991:28)
+    at SQLiteQueryInterface.select (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:407:59)
+    at knowledge.findAll (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1140:47)
+    at async resolveUsedKnowledge (/home/ubuntu/Grace-Terminal/src/knowledge/knowledge.util.js:29:19)
+    at async handle_feedback (/home/ubuntu/Grace-Terminal/src/knowledge/feedback.js:30:23)
+Agent模式反馈处理失败: Error: WHERE parameter "agent_id" has invalid "undefined" value
+    at SQLiteQueryGenerator.whereItemQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1746:13)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1737:25
+    at Array.forEach (<anonymous>)
+    at SQLiteQueryGenerator.whereItemsQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:1735:35)
+    at SQLiteQueryGenerator.getWhereConditions (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:2078:19)
+    at SQLiteQueryGenerator.selectQuery (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-generator.js:991:28)
+    at SQLiteQueryInterface.rawSelect (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:430:37)
+    at knowledge.aggregate (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1277:45)
+    at knowledge.count (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1306:31)
+    at async /home/ubuntu/Grace-Terminal/src/routers/agent/run.js:298:33
+Conversation not found: 7985771e-2bb0-409b-9811-8166be728ebd
+[MockDockerRuntime] Initialized (Docker operations mocked)
+POST /api/agent/run - 26ms
+Skipping nginx setup for RUNTIME_TYPE: mock
+[AutoReply] Initializing coordinator for goal: can you access my local system?
+[AutoReply] Detected task type: general_chat
+[AutoReply] Task type is general_chat, using default model
+Error in _fetchDefaultModel: Error
+    at Database.<anonymous> (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:185:27)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:50
+    at new Promise (<anonymous>)
+    at Query.run (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/sqlite/query.js:183:12)
+    at /home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/sequelize.js:315:28
+    at async SQLiteQueryInterface.select (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/dialects/abstract/query-interface.js:407:12)
+    at async model.findAll (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1140:21)
+    at async model.findOne (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1240:12)
+    at async _fetchDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:15:26)
+    at async getDefaultModel (/home/ubuntu/Grace-Terminal/src/utils/default_model.js:57:14) {
+  name: 'SequelizeDatabaseError',
+  parent: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  original: [Error: SQLITE_ERROR: no such column: model.enabled] {
+    errno: 1,
+    code: 'SQLITE_ERROR',
+    sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;'
+  },
+  sql: 'SELECT `id`, `logo_url`, `platform_id`, `model_id`, `model_name`, `group_name`, `model_types`, `create_at`, `update_at` FROM `model` AS `model` WHERE `model`.`enabled` = 1 LIMIT 1;',
+  parameters: {}
+}
+Auto reply failed: TypeError: Cannot read properties of null (reading 'is_subscribe')
+    at auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:55:18)
+    at async AgenticAgent._initialSetupAndAutoReply (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:104:19)
+    at async AgenticAgent.run (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:191:31)
+{"role":"assistant","uuid":"","status":"success","content":"Cannot read properties of null (reading 'is_subscribe')","comments":"","memorized":"","timestamp":1760841036954,"type":"","meta":{"pid":"","task_id":"","action_type":"error","filepath":"","url":"","json":[],"content":"","is_active":true}}Conversation not found: 7985771e-2bb0-409b-9811-8166be728ebd
+Agent run error: TypeError: Cannot read properties of null (reading 'is_subscribe')
+    at auto_reply (/home/ubuntu/Grace-Terminal/src/agent/auto-reply/index.js:55:18)
+    at async AgenticAgent._initialSetupAndAutoReply (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:104:19)
+    at async AgenticAgent.run (/home/ubuntu/Grace-Terminal/src/agent/AgenticAgent.js:191:31)
+❌ [SEAL] Error logging task: ValidationError [SequelizeValidationError]: notNull Violation: TaskExecution.start_time cannot be null
+    at InstanceValidator._validate (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/instance-validator.js:50:13)
+    at async InstanceValidator._validateAndRunHooks (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/instance-validator.js:60:7)
+    at async InstanceValidator.validate (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/instance-validator.js:54:12)
+    at async TaskExecution.save (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:2426:7)
+    at async TaskExecution.create (/home/ubuntu/Grace-Terminal/node_modules/.pnpm/sequelize@6.37.7_mysql2@3.14.0_sqlite3@5.1.7/node_modules/sequelize/lib/model.js:1362:12)
+    at async TaskLogger.logTask (/home/ubuntu/Grace-Terminal/src/agent/seal/TaskLogger.js:33:29)
+    at async /home/ubuntu/Grace-Terminal/src/routers/agent/run.js:373:9 {
+  errors: [
+    ValidationErrorItem {
+      message: 'TaskExecution.start_time cannot be null',
+      type: 'notNull Violation',
+      path: 'start_time',
+      value: null,
+      origin: 'CORE',
+      instance: [TaskExecution],
+      validatorKey: 'is_null',
+      validatorName: null,
+      validatorArgs: []
+    }
+  ]
+}
+Agent stream closed
+  --> POST /api/agent/run 200 41ms 490b
+/home/ubuntu/Grace-Terminal/src/routers/agent/run.js:309
+      await closeContainer(ctx.state.user.id)
+            ^
+
+TypeError: closeContainer is not a function
+    at PassThrough.<anonymous> (/home/ubuntu/Grace-Terminal/src/routers/agent/run.js:309:13)
+    at PassThrough.emit (node:events:524:28)
+    at emitCloseNT (node:internal/streams/destroy:148:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+
+Node.js v22.13.0

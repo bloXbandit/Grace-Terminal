@@ -43,3 +43,8 @@ __pycache__
 
 # browser bin
 resources/browser/chromium
+
+# local development (sandbox testing only)
+run-local.sh
+src/runtime/MockDockerRuntime.js
+test-local.js

@@ -52,6 +52,13 @@ const auto_reply = async (goal, conversation_id, user_id = 1) => {
   }
   
   let model_info = await getDefaultModel(conversation_id)
+  
+  // Null check to prevent crashes
+  if (!model_info) {
+    console.warn('[AutoReply] No model found for conversation, using local fallback');
+    model_info = { is_subscribe: false };  // Use local model as fallback
+  }
+  
   if (model_info.is_subscribe) {
     let replay = await auto_reply_server(goal, conversation_id)
     return replay

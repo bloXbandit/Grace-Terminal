@@ -139,11 +139,33 @@ class LLM {
     // console.log('config', config);
     this.resolveConfigHeaders(config);
     // console.log('config', JSON.stringify(config, null, 2));
-    const response = await axios.request(config).catch(err => {
-      return err;
-    });
-    // console.log('response', response);
-    return response;
+    
+    try {
+      const response = await axios.request(config);
+      // console.log('response', response);
+      return response;
+    } catch (err) {
+      // Log detailed error for debugging
+      console.error('[LLM Request Failed]', {
+        model: this.model,
+        url: config.url,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        errorCode: err.code,
+        errorMessage: err.message,
+        responseData: err.response?.data ? JSON.stringify(err.response.data).substring(0, 500) : 'N/A'
+      });
+      
+      // Return structured error object for retry logic
+      return {
+        isError: true,
+        isRetryable: err.response?.status === 429 || err.response?.status >= 500,
+        code: err.code || `ERR_${err.response?.status || 'UNKNOWN'}`,
+        status: err.response?.status || 'unknown',
+        message: err.message,
+        data: err.response?.data
+      };
+    }
   }
 
   // 发起 HTTP 请求
@@ -173,10 +195,30 @@ class LLM {
 
   // 处理流式请求
   async handleSSE(response) {
-    if (response.code) {
-      const content = response.code;
-      this.onTokenStream(`${response.code}:${response.status}`);
-      return content;
+    // Check for structured error object from request()
+    if (response.isError) {
+      console.error('[LLM handleSSE] Processing error response:', {
+        code: response.code,
+        status: response.status,
+        message: response.message,
+        isRetryable: response.isRetryable
+      });
+      
+      // Throw error with details for upstream retry logic
+      const error = new Error(`LLM API Error: ${response.message}`);
+      error.code = response.code;
+      error.status = response.status;
+      error.isRetryable = response.isRetryable;
+      error.data = response.data;
+      throw error;
+    }
+    
+    // Legacy: Check for old-style error object (should not happen with new code)
+    if (response.code && !response.data) {
+      console.error('[LLM handleSSE] Legacy error object detected:', response.code);
+      const error = new Error(`LLM API Error: ${response.code}`);
+      error.code = response.code;
+      throw error;
     }
 
     // 处理流式返回

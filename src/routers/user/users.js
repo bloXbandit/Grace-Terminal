@@ -96,4 +96,4 @@ router.get('/auth/google', async (ctx) => {
 });
 
 
-module.exports = router.routes();
+module.exports = router;

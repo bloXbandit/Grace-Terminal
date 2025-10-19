@@ -17,13 +17,15 @@ const { getDirpath } = require('@src/utils/electron');
 const LocalRuntime = require("@src/runtime/LocalRuntime")
 const DockerRuntime = require("@src/runtime/DockerRuntime");
 const LocalDockerRuntime = require("@src/runtime/DockerRuntime.local");
+const MockDockerRuntime = require("@src/runtime/MockDockerRuntime");
 
 
 const RUNTIME_TYPE = process.env.RUNTIME_TYPE || 'local-docker';
 const runtimeMap = {
   'local': LocalRuntime,
   'docker': DockerRuntime,
-  'local-docker': LocalDockerRuntime
+  'local-docker': LocalDockerRuntime,
+  'mock': MockDockerRuntime  // For local testing without Docker
 }
 
 const { retrieveAndFormatPreviousSummary } = require('./conversationHistoryUtils');
