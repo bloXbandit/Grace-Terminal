@@ -312,8 +312,85 @@ class MultiAgentCoordinator {
       return 'roleplay';
     }
     
-    // Default to general chat
-    return 'general_chat';
+    // Intelligent fallback routing - Grace makes smart decisions when uncertain
+    return this.intelligentFallbackRouting(userMessage);
+  }
+
+  /**
+   * Intelligent fallback routing when Grace can't confidently categorize the request
+   * Analyzes request characteristics and routes to the most capable specialist
+   * Ensures 90%+ chance of routing to a specialist rather than general chat
+   */
+  intelligentFallbackRouting(userMessage) {
+    const message = userMessage.toLowerCase();
+    
+    console.log('[Coordinator] Using intelligent fallback routing for ambiguous request...');
+    
+    // Analyze request complexity and characteristics
+    const complexity = this.analyzeComplexity(message);
+    const hasCodeKeywords = /\b(code|function|class|variable|syntax|programming|development|script|algorithm)\b/i.test(message);
+    const hasCreativeKeywords = /\b(write|create|make|generate|design|build|craft)\b/i.test(message);
+    const hasAnalysisKeywords = /\b(analyze|explain|understand|help|how|why|what|compare|review)\b/i.test(message);
+    const hasDataKeywords = /\b(data|file|document|spreadsheet|list|export|save)\b/i.test(message);
+    const isQuestion = /\?|how|what|why|when|where|can you|do you|will you|should/i.test(message);
+    
+    // Intelligent routing decision tree (90%+ specialist routing)
+    
+    // 1. Code-related but ambiguous -> Route to best code specialist
+    if (hasCodeKeywords || message.includes('debug') || message.includes('fix')) {
+      console.log('[Coordinator] Code-related ambiguous request → routing to code_generation');
+      return 'code_generation'; // Claude Sonnet 4.5 - best for code
+    }
+    
+    // 2. Creative but ambiguous -> Route to creative specialist  
+    if (hasCreativeKeywords && !hasCodeKeywords) {
+      console.log('[Coordinator] Creative ambiguous request → routing to creative_writing');
+      return 'creative_writing'; // Mythomax - specialized for creativity
+    }
+    
+    // 3. Data/file related -> Route to data specialist
+    if (hasDataKeywords) {
+      console.log('[Coordinator] Data-related ambiguous request → routing to data_generation');
+      return 'data_generation'; // Qwen - excellent for structured data
+    }
+    
+    // 4. Complex analysis/reasoning needed -> Route to reasoning specialist
+    if (complexity.isComplex || hasAnalysisKeywords) {
+      console.log('[Coordinator] Complex reasoning needed → routing to complex_reasoning');
+      return 'complex_reasoning'; // GLM-4 Plus - strong reasoning
+    }
+    
+    // 5. Question about capabilities/help -> Route to general but with best model
+    if (isQuestion && (message.includes('can you') || message.includes('do you') || message.includes('help'))) {
+      console.log('[Coordinator] Capability question → routing to general_chat with premium model');
+      return 'general_chat'; // Will use Claude Sonnet 4.5 fallback
+    }
+    
+    // 6. Ultimate fallback - Route to Claude Sonnet 4.5 (most capable general model)
+    // This ensures Grace almost never handles complex requests herself
+    console.log('[Coordinator] Ultimate fallback → routing to complex_reasoning (Claude Sonnet 4.5)');
+    return 'complex_reasoning'; // Claude Sonnet 4.5 fallback - handles anything
+  }
+  
+  /**
+   * Analyze request complexity to help with intelligent routing
+   */
+  analyzeComplexity(message) {
+    const complexityIndicators = {
+      longRequest: message.length > 100,
+      multipleSteps: (message.match(/and|then|also|plus|additionally/g) || []).length >= 2,
+      technicalTerms: /\b(algorithm|architecture|implementation|optimization|performance|scalability|integration|framework|library|database|api|backend|frontend)\b/i.test(message),
+      businessTerms: /\b(strategy|analysis|report|presentation|proposal|requirements|specification|workflow|process)\b/i.test(message),
+      complexQuestions: /\b(how.*work|why.*happen|what.*difference|compare.*between|pros.*cons|advantages.*disadvantages)\b/i.test(message)
+    };
+    
+    const complexityScore = Object.values(complexityIndicators).filter(Boolean).length;
+    
+    return {
+      isComplex: complexityScore >= 2,
+      score: complexityScore,
+      indicators: complexityIndicators
+    };
   }
 
   /**
