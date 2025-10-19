@@ -5,32 +5,64 @@ const { Op } = require('sequelize');
  * Get or create a user profile entry
  */
 const upsertProfile = async (user_id, key, value, confidence = 1.0, source = 'conversation') => {
+  const { sequelize } = require('@src/models');
+  
+  // CRITICAL FIX: Use atomic transaction with row-level locking to prevent race conditions
+  const transaction = await sequelize.transaction();
+  
   try {
-    const [profile, created] = await UserProfile.findOrCreate({
+    // Step 1: Find existing profile with FOR UPDATE lock (prevents concurrent modifications)
+    let profile = await UserProfile.findOne({
       where: { user_id, key },
-      defaults: {
+      lock: transaction.LOCK.UPDATE, // Row-level lock prevents race conditions
+      transaction
+    });
+
+    if (profile) {
+      // PRIORITY ENFORCEMENT: Only update if new source has higher or equal priority
+      const sourcePriority = {
+        'settings': 3,      // Highest priority
+        'conversation': 2,  // Medium priority  
+        'other': 1         // Lowest priority
+      };
+      
+      const currentPriority = sourcePriority[profile.source] || 1;
+      const newPriority = sourcePriority[source] || 1;
+      
+      // Only update if new source has higher or equal priority
+      if (newPriority >= currentPriority) {
+        await profile.update({
+          value,
+          confidence,
+          source,
+          last_updated: new Date()
+        }, { transaction });
+      } else {
+        console.log(`[Profile] Skipping update - ${source} (priority ${newPriority}) < ${profile.source} (priority ${currentPriority})`);
+      }
+    } else {
+      // Create new profile
+      profile = await UserProfile.create({
         user_id,
         key,
         value,
         confidence,
         source,
         last_updated: new Date()
-      }
-    });
-
-    if (!created) {
-      // Update existing profile
-      profile.value = value;
-      profile.confidence = confidence;
-      profile.source = source;
-      profile.last_updated = new Date();
-      await profile.save();
+      }, { transaction });
     }
 
+    // Commit transaction - all operations are atomic
+    await transaction.commit();
+    
+    console.log(`[Profile] Successfully upserted ${key}=${value} for user ${user_id} (source: ${source})`);
     return profile;
+    
   } catch (error) {
-    console.error('Error upserting user profile:', error);
-    return null;
+    // Rollback on any error
+    await transaction.rollback();
+    console.error('CRITICAL: Profile upsert transaction failed:', error);
+    throw error; // Re-throw to signal failure to caller
   }
 };
 

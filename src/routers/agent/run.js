@@ -223,10 +223,18 @@ router.post("/run", async (ctx, next) => {
     enableSpecialistRouting: true, // Enable routing for complex tasks
   }
 
-  // Extract profile info from user message (non-blocking)
-  extractProfileFromMessage(ctx.state.user.id, question, conversation_id).catch(err => {
-    console.error('Profile extraction error (non-critical):', err);
-  });
+  // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
+  try {
+    await Promise.race([
+      extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+      )
+    ]);
+    console.log('[Task] Profile extraction completed successfully');
+  } catch (err) {
+    console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
+  }
 
   // 根据mode参数确定处理方式
   let intent;
@@ -276,10 +284,18 @@ router.post("/run", async (ctx, next) => {
   const modeNotification = `__lemon_mode__${JSON.stringify({ mode: intent })}\n\n`;
   onTokenStream(modeNotification);
 
-  // Extract profile info from user message (non-blocking) - ALL MODES
-  extractProfileFromMessage(ctx.state.user.id, question, conversation_id).catch(err => {
-    console.error('Profile extraction error (non-critical):', err);
-  });
+  // CRITICAL FIX: Synchronous profile extraction with timeout - ALL MODES
+  try {
+    await Promise.race([
+      extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+      )
+    ]);
+    console.log('[Auto] Profile extraction completed successfully');
+  } catch (err) {
+    console.error('[Auto] Profile extraction failed (continuing anyway):', err.message);
+  }
 
   // 提取公共参数
   const commonParams = {

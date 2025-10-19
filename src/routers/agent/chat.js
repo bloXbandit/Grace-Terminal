@@ -138,10 +138,20 @@ ${profileContext}
   // 调用大模型
   let content
 
-  // Extract profile info from user message (non-blocking, won't break anything)
-  extractProfileFromMessage(user_id, question, conversation_id).catch(err => {
-    console.error('Profile extraction error (non-critical):', err);
-  });
+  // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
+  try {
+    // Use Promise.race to ensure profile extraction completes within 2 seconds
+    await Promise.race([
+      extractProfileFromMessage(user_id, question, conversation_id),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+      )
+    ]);
+    console.log('[Chat] Profile extraction completed successfully');
+  } catch (err) {
+    console.error('[Chat] Profile extraction failed (continuing anyway):', err.message);
+    // Continue with chat - profile extraction failure shouldn't block user
+  }
 
   // Check if we should route to specialist
   let responsePromise;

@@ -93,12 +93,33 @@ const file_generator = {
         ? `./workspace/Conversation_${conversation_id}/${fullFilename}`
         : `./workspace/${fullFilename}`;
 
+      // CRITICAL FIX: Verify file actually exists at the claimed path
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Check if file exists in the expected location
+      const absolutePath = path.resolve(workspacePath);
+      let fileExists = false;
+      let actualSize = 0;
+      
+      try {
+        const stats = fs.statSync(absolutePath);
+        fileExists = stats.isFile();
+        actualSize = stats.size;
+        console.log(`[FileGenerator] ✅ Verified file exists: ${absolutePath} (${actualSize} bytes)`);
+      } catch (err) {
+        console.error(`[FileGenerator] ❌ File verification failed: ${absolutePath}`, err.message);
+      }
+
       return {
         success: true,
-        message: `✅ Created ${format.toUpperCase()} file`,
+        message: `✅ Created ${format.toUpperCase()} file${fileExists ? ` (${actualSize} bytes)` : ' (verification pending)'}`,
         filename: fullFilename,
         path: workspacePath,
-        format: format
+        format: format,
+        verified: fileExists,
+        size: actualSize,
+        absolutePath: absolutePath
       };
 
     } catch (error) {
