@@ -7,7 +7,7 @@
 
 const file_generator = {
   name: "file_generator",
-  description: "Generate files in 25+ formats: Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PDF, images (.png, .jpg, .svg, QR codes), data files (JSON, XML, YAML, TOML, CSV), archives (.zip), calendars (.ics), contacts (.vcf), HTML, Markdown, and OpenDocument formats (.odt, .odp). Validates libraries and creates files correctly.",
+  description: "Generate files in 27+ formats: Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PDF, images (.png, .jpg, .svg, QR codes), data files (JSON, XML, YAML, TOML, CSV), archives (.zip), calendars (.ics), contacts (.vcf), project files (.xer Primavera P6, .mpp Microsoft Project), HTML, Markdown, and OpenDocument formats (.odt, .odp). Validates libraries and creates files correctly.",
   
   params: {
     type: "object",
@@ -20,7 +20,8 @@ const file_generator = {
           "pptx", "odp",
           "json", "xml", "yaml", "yml", "toml",
           "png", "jpg", "jpeg", "svg", "gif", "qr",
-          "zip", "ics", "vcf"
+          "zip", "ics", "vcf",
+          "xer", "mpp"
         ],
         description: "File format"
       },
@@ -131,7 +132,9 @@ const file_generator = {
       rtf: () => this.genRtf(filename, content),
       zip: () => this.genZip(filename, content),
       ics: () => this.genIcs(filename, content),
-      vcf: () => this.genVcf(filename, content)
+      vcf: () => this.genVcf(filename, content),
+      xer: () => this.genXer(filename, content),
+      mpp: () => this.genMpp(filename, content)
     };
 
     return generators[format] ? generators[format]() : null;
@@ -453,6 +456,54 @@ TEL:${phone}
 END:VCARD'''
 with open('${fn}', 'w') as f:
     f.write(vcf_content)
+print('✅ Created: ${fn}')`;
+  },
+
+  genXer(fn, c) {
+    const projectName = this.esc(c.title || 'Project');
+    const tasks = JSON.stringify(c.tasks || [{id: 1, name: 'Task 1', duration: 5}]);
+    return `import json
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+# Primavera P6 XER format (simplified)
+tasks = json.loads('''${tasks}''')
+
+xer_content = f'''ERMHDR\\t{projectName}\\t2025-01-01\\n'''
+for task in tasks:
+    xer_content += f'''TASK\\t{task.get('id', 1)}\\t{task.get('name', 'Task')}\\t{task.get('duration', 5)}\\n'''
+
+with open('${fn}', 'w') as f:
+    f.write(xer_content)
+print('✅ Created: ${fn}')`;
+  },
+
+  genMpp(fn, c) {
+    const projectName = this.esc(c.title || 'Project');
+    const tasks = JSON.stringify(c.tasks || [{id: 1, name: 'Task 1', duration: 5}]);
+    return `import json
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+# Microsoft Project XML format (can be imported to .mpp)
+tasks = json.loads('''${tasks}''')
+
+root = ET.Element('Project', xmlns='http://schemas.microsoft.com/project')
+name = ET.SubElement(root, 'Name')
+name.text = '${projectName}'
+tasks_elem = ET.SubElement(root, 'Tasks')
+
+for task in tasks:
+    task_elem = ET.SubElement(tasks_elem, 'Task')
+    uid = ET.SubElement(task_elem, 'UID')
+    uid.text = str(task.get('id', 1))
+    name_elem = ET.SubElement(task_elem, 'Name')
+    name_elem.text = task.get('name', 'Task')
+    duration = ET.SubElement(task_elem, 'Duration')
+    duration.text = f"PT{task.get('duration', 5)}H"
+
+tree = ET.ElementTree(root)
+tree.write('${fn}', encoding='utf-8', xml_declaration=True)
 print('✅ Created: ${fn}')`;
   }
 };

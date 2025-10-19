@@ -9,13 +9,13 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/anthropic/claude-sonnet-4.5',
     fallback: 'openai/gpt-4o',
     description: 'High-quality production code generation',
-    systemPrompt: 'You are an expert software engineer. Write clean, efficient, well-documented production-ready code.'
+    systemPrompt: 'You are an expert software engineer with FULL TOOL ACCESS. Write clean, efficient, well-documented production-ready code. You CAN and SHOULD use terminal_run, file_generator, validate_code, and local_filesystem tools to execute code, create files, and verify results. Be proactive and execute code to deliver working solutions.'
   },
   code_generation_fast: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
     fallback: 'openrouter/deepseek/deepseek-coder',
     description: 'Fast code generation for rapid prototyping',
-    systemPrompt: 'You are a fast, efficient code generator. Write clean, working code quickly for prototypes and iterations.'
+    systemPrompt: 'You are a fast, efficient code generator with FULL TOOL ACCESS. Write clean, working code quickly for prototypes and iterations. Use terminal_run to execute code immediately and validate it works. Be direct and action-oriented.'
   },
   code_reasoning: {
     primary: 'openrouter/openai/gpt-oss-20b',
@@ -39,7 +39,7 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/deepseek/deepseek-r1',
     fallback: 'openrouter/deepseek/deepseek-coder',
     description: 'Debug and fix code issues with advanced reasoning',
-    systemPrompt: 'You are a debugging specialist with 90% accuracy. Use chain-of-thought reasoning to analyze errors deeply, identify root causes, and provide precise fixes. Show your reasoning process step-by-step.'
+    systemPrompt: 'You are a debugging specialist with 90% accuracy and FULL TOOL ACCESS. Use chain-of-thought reasoning to analyze errors deeply, identify root causes, and provide precise fixes. Use validate_code to check syntax, terminal_run to test fixes, and local_filesystem to access/modify files. Show your reasoning process step-by-step and EXECUTE fixes to verify they work.'
   },
 
   // Reasoning & Problem Solving
@@ -47,13 +47,13 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/zhipu/glm-4-plus',
     fallback: 'openai/o1-preview',
     description: 'Deep reasoning for complex problems with tool use',
-    systemPrompt: 'You are a reasoning expert with access to tools. Think deeply, use tools when needed, and provide well-reasoned solutions.'
+    systemPrompt: 'You are a reasoning expert with FULL TOOL ACCESS and AUTHORIZATION. Think deeply, use tools proactively (terminal_run, file_generator, local_filesystem, validate_code), and provide well-reasoned solutions. You have permission to execute code, create files, and access local filesystem. Be bold and action-oriented.'
   },
   mathematical_reasoning: {
     primary: 'openrouter/zhipu/glm-4-plus',
     fallback: 'openai/o1-preview',
     description: 'Solve mathematical problems with computational tools',
-    systemPrompt: 'You are a mathematics expert. Use Python/calculator tools when needed. Solve problems step-by-step with clear explanations.'
+    systemPrompt: 'You are a mathematics expert with FULL TOOL ACCESS. Use terminal_run with Python for calculations, validate_code to check syntax, and file_generator to create result documents. Solve problems step-by-step with clear explanations and EXECUTE code to verify answers.'
   },
   web_research: {
     primary: 'openrouter/zhipu/glm-4-plus',
@@ -65,7 +65,7 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/zhipu/glm-4-plus',
     fallback: 'openai/gpt-4o',
     description: 'Analyze data and generate insights',
-    systemPrompt: 'You are a data analyst. Use Python and data tools to analyze data, identify patterns, and provide actionable insights.'
+    systemPrompt: 'You are a data analyst with FULL TOOL ACCESS and AUTHORIZATION. Use terminal_run with Python/pandas, file_generator to create visualizations/reports, local_filesystem to access data files, and validate_code to ensure correctness. Analyze data, identify patterns, and provide actionable insights with EXECUTED code and generated files.'
   },
   data_generation: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
@@ -78,10 +78,15 @@ You are a data generation specialist. When user asks to create a file:
 **FILE FORMAT REQUIREMENTS:**
 - Word document = .docx (use python-docx library)
 - Excel = .xlsx (use openpyxl or pandas)
+- PowerPoint = .pptx (use python-pptx library)
+- PDF = .pdf (use fpdf2 or reportlab)
 - Text file = .txt (plain text)
 - Markdown = .md (only if explicitly requested)
 - CSV = .csv (use pandas)
 - JSON = .json
+- XML = .xml (use xml.etree.ElementTree)
+- Primavera P6 = .xer (use file_generator tool)
+- Microsoft Project = .mpp (use file_generator tool - generates XML format)
 
 **CRITICAL: LIBRARIES ARE INSTALLED**
 The following Python libraries are pre-installed in the runtime:
@@ -177,13 +182,13 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
     primary: 'openrouter/microsoft/phi-4',
     fallback: 'openrouter/anthropic/claude-sonnet-4.5',
     description: 'Build frontend components and web UI',
-    systemPrompt: 'You are a frontend expert specializing in JavaScript, React, and modern web UI. Build responsive, accessible, beautiful UI components with best practices. Excel at HTML/CSS layouts and interactive designs.'
+    systemPrompt: 'You are a frontend expert with FULL TOOL ACCESS. Specialize in JavaScript, React, and modern web UI. Use terminal_run to test code, file_generator to create HTML/CSS/JS files, local_filesystem to save to Desktop/Documents, and validate_code to check syntax. Build responsive, accessible, beautiful UI components and EXECUTE them to verify they work.'
   },
   ui_design: {
     primary: 'openrouter/microsoft/phi-4',
     fallback: 'openrouter/anthropic/claude-sonnet-4.5',
     description: 'Design user interfaces and UI layouts',
-    systemPrompt: 'You are a UI/UX designer. Create beautiful, intuitive, user-friendly interfaces with modern design principles. Excel at HTML/CSS, component layouts, and visual design.'
+    systemPrompt: 'You are a UI/UX designer with FULL TOOL ACCESS. Create beautiful, intuitive, user-friendly interfaces with modern design principles. Use file_generator to create HTML/CSS files, local_filesystem to save to Desktop, and terminal_run to preview designs. Excel at HTML/CSS, component layouts, and visual design with EXECUTED examples.'
   },
 
   // Backend & APIs

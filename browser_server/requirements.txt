@@ -20,3 +20,12 @@ markdown>=3.5.2             # Markdown processing
 qrcode>=7.4.2               # QR code generation
 barcode>=1.0.0              # Barcode generation
 python-barcode>=0.15.1      # Additional barcode support
+
+# Calendar and contact files
+ics>=0.7.2                  # iCalendar files (.ics)
+vobject>=0.9.7              # vCard files (.vcf)
+
+# Project management files
+python-mpxj>=0.1.0          # Microsoft Project (.mpp) and Primavera P6 (.xer) files
+# Note: For full .mpp/.xer support, may need Java-based mpxj library via subprocess
+
