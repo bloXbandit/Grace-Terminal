@@ -79,6 +79,30 @@ class MultiAgentCoordinator {
       return 'creative_writing';
     }
     
+    // P6 Project Management / XER Analysis detection
+    const p6Indicators = [
+      /\b(xer|primavera|p6)\b/i,
+      /\b(project.*schedule|schedule.*analysis)\b/i,
+      /\b(dcma|14.*point)\b/i,
+      /\b(critical.*path|float.*analysis)\b/i,
+      /\b(earned.*value|evm|cpi|spi)\b/i,
+      /\b(resource.*utilization|over.*allocat)\b/i,
+      /\b(wbs|work.*breakdown)\b/i,
+      /\b(activity.*code|predecessor|successor)\b/i
+    ];
+    
+    let p6Score = 0;
+    for (const pattern of p6Indicators) {
+      if (pattern.test(message)) {
+        p6Score++;
+      }
+    }
+    
+    if (p6Score >= 1) {
+      console.log(`[Coordinator] P6 project management detected (score: ${p6Score})`);
+      return 'p6_project_management';
+    }
+    
     // Context-aware data generation detection
     // Detects when user needs structured data/files created
     const dataGenIndicators = [

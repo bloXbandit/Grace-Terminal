@@ -29,3 +29,8 @@ vobject>=0.9.7              # vCard files (.vcf)
 python-mpxj>=0.1.0          # Microsoft Project (.mpp) and Primavera P6 (.xer) files
 # Note: For full .mpp/.xer support, may need Java-based mpxj library via subprocess
 
+
+
+# Primavera P6 XER file parsing and analysis
+PyP6XER>=1.0.0              # Complete P6 XER parser with DCMA 14-point analysis
+
