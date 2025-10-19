@@ -146,14 +146,30 @@ class LLM {
       return response;
     } catch (err) {
       // Log detailed error for debugging
-      console.error('[LLM Request Failed]', {
+      // Safe stringify to avoid circular reference errors
+      const safeStringify = (obj) => {
+        try {
+          return JSON.stringify(obj, (key, value) => {
+            // Skip circular references and socket objects
+            if (value instanceof Object && value.constructor && 
+                (value.constructor.name === 'TLSSocket' || value.constructor.name === 'Socket')) {
+              return '[Socket]';
+            }
+            return value;
+          }).substring(0, 500);
+        } catch (e) {
+          return String(obj).substring(0, 500);
+        }
+      };
+
+      console.error('❌ [LLM Error]', {
         model: this.model,
         url: config.url,
         status: err.response?.status,
         statusText: err.response?.statusText,
         errorCode: err.code,
         errorMessage: err.message,
-        responseData: err.response?.data ? JSON.stringify(err.response.data).substring(0, 500) : 'N/A'
+        responseData: err.response?.data ? safeStringify(err.response.data) : 'N/A'
       });
       
       // Return structured error object for retry logic
