@@ -9,14 +9,16 @@ const extractProfileFromMessage = async (user_id, user_message, conversation_id)
   try {
     const prompt = `You are a profile extraction assistant. Analyze the user's message and extract any personal information that could be useful for building a user profile.
 
-**IMPORTANT RULES:**
-1. Only extract EXPLICIT information stated by the user
-2. Do NOT infer or assume anything
-3. Return ONLY valid JSON, no additional text
-4. If no profile information found, return empty array
+**CRITICAL RULES:**
+1. ONLY extract EXPLICIT information DIRECTLY stated by the user
+2. Do NOT infer, assume, or hallucinate ANY information
+3. Do NOT use example values - extract ACTUAL values from the message
+4. If the user says "my name is kenny", extract "kenny" NOT "John" or any other name
+5. Return ONLY valid JSON array, no additional text
+6. If no profile information found, return empty array: []
 
-**Extract these categories:**
-- name: User's name
+**Extract these categories (ONLY if explicitly mentioned):**
+- name: User's actual name (extract exact name they provide)
 - profession: Job title or occupation
 - location: City, country, or region
 - interests: Hobbies, topics of interest
@@ -25,13 +27,14 @@ const extractProfileFromMessage = async (user_id, user_message, conversation_id)
 - goals: What the user wants to achieve
 
 **User Message:**
-${user_message}
+"${user_message}"
 
-**Output Format (JSON only):**
+**Output Format (JSON array only, no markdown, no explanation):**
 [
-  {"key": "name", "value": "John", "confidence": 0.9},
-  {"key": "profession", "value": "Software Developer", "confidence": 0.8}
-]`;
+  {"key": "category", "value": "actual_value_from_message", "confidence": 0.9}
+]
+
+If no information to extract, return: []`;
 
     const response = await call(prompt, conversation_id);
     

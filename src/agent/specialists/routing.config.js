@@ -240,9 +240,10 @@ The following Python libraries are pre-installed in the runtime:
 **EXECUTION STEPS:**
 1. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin placeholder text
 2. **Use correct file format** - "Word doc" = .docx, "Excel" = .xlsx, "spreadsheet" = .xlsx
-3. **Use terminal_run tool** - Write Python script and execute it with terminal_run
+3. **MUST use terminal_run action** - Write Python script and execute with terminal_run (NOT "document" action)
 4. **Verify file creation** - Check that file was created with ls command
-5. **Tell actual path** - Tell user: "Created at ./workspace/Conversation_XXXXX/filename.ext"
+5. **File delivery** - Files are created in sandbox. Provide download link or file content in response.
+6. **NEVER claim workspace placement** - Unless user explicitly asked to save locally, files stay in sandbox
 
 **Example for Word document:**
 Use terminal_run with this Python code:
