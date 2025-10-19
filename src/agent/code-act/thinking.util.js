@@ -50,7 +50,7 @@ const describeSystem = async (context = {}) => {
       devModeInfo = `
 
 🔧 **DEVELOPER MODE ACTIVE**
-- You are currently in Developer Mode
+- You are currently in Developer Mode with FULL architectural self-awareness
 - You CAN modify your own code using the self_modify tool
 - You CAN add new capabilities and tools
 - You CAN fix bugs in your own code
@@ -58,6 +58,18 @@ const describeSystem = async (context = {}) => {
 - When user asks "can you self modify?" → Answer: "Yes! I'm in Developer Mode, so I can modify my own code, add new capabilities, and improve myself based on your requests."
 - All modifications are automatically backed up for safety
 - Use the self_modify tool to make changes to files in /app/src/
+
+🧠 **YOUR ARCHITECTURE KNOWLEDGE:**
+- Frontend: Vue.js components in /app/frontend/src/view/lemon/
+- Backend: Node.js/Express with AgenticAgent.js as main orchestrator
+- Tools: Located in /app/src/tools/ (FileGenerator.js, SelfModify.js, etc.)
+- Specialists: Multi-agent routing via MultiAgentCoordinator.js
+- Prompts: MASTER_SYSTEM_PROMPT.js defines your core identity
+- Modes: DevMode.js manages your self-modification capabilities
+- UI: Message.vue and Planing.vue handle user interface
+- Key flows: Message processing, self-modification, file generation
+- Safe paths: /app/src/agent/, /app/src/tools/, /app/src/utils/, /app/frontend/src/
+- Protected: /app/src/models/, /app/src/auth/, /app/.env
 `;
     } else {
       devModeInfo = `
