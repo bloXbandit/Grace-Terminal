@@ -276,10 +276,16 @@ router.post("/run", async (ctx, next) => {
   const modeNotification = `__lemon_mode__${JSON.stringify({ mode: intent })}\n\n`;
   onTokenStream(modeNotification);
 
+  // Extract profile info from user message (non-blocking) - ALL MODES
+  extractProfileFromMessage(ctx.state.user.id, question, conversation_id).catch(err => {
+    console.error('Profile extraction error (non-critical):', err);
+  });
+
   // 提取公共参数
   const commonParams = {
     conversation_id, question, newFiles, feedbackOptions,
-    onTokenStream, stream, context, agent_id, ctx
+    onTokenStream, stream, context, agent_id, ctx,
+    profileContext // CRITICAL: Pass profile context to all modes
   };
 
   // 执行对应的模式
@@ -643,7 +649,7 @@ async function executeTwinsMode(params, dir_path) {
 
 // 通用Chat执行函数
 async function runChatPhase(params, isTwinsMode) {
-  const { conversation_id, question, newFiles, onTokenStream, stream, agent_id, feedbackOptions } = params;
+  const { conversation_id, question, newFiles, onTokenStream, stream, agent_id, feedbackOptions, profileContext } = params;
 
   // 准备上下文消息
   let messagesContext = []
@@ -658,11 +664,13 @@ async function runChatPhase(params, isTwinsMode) {
     messagesContext = getMessagesContextByTime(messages)
   }
 
-  // CRITICAL FIX: Use MASTER_SYSTEM_PROMPT for consistent capabilities across all modes
+  // CRITICAL FIX: Use MASTER_SYSTEM_PROMPT + profileContext for consistent capabilities across all modes
   const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
   let sysPromptMessage = {
     role: 'system',
-    content: MASTER_SYSTEM_PROMPT
+    content: `${MASTER_SYSTEM_PROMPT}
+
+${profileContext || ''}`
   }
   messagesContext.unshift(sysPromptMessage)
 
