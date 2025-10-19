@@ -100,7 +100,9 @@ const thinking_local = async (requirement, context = {}) => {
   let content;
   if (context.coordinator && context.enableSpecialistRouting) {
     console.log('[Thinking] Using specialist routing for task...');
-    content = await context.coordinator.routeRequest(prompt, context.conversation_id, options);
+    // Use execute method which auto-detects task type and routes to specialist
+    const result = await context.coordinator.execute(prompt, options);
+    content = result.content || result;
   } else {
     content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
   }

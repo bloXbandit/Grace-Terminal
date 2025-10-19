@@ -58,13 +58,15 @@ class ModeCommandHandler {
    * @returns {Object|null} - Response or null if not a command
    */
   async handleCommand(message, conversationId) {
+    console.log(`🎮 [ModeCommand] Checking message: "${message}"`);
     const command = this.parseCommand(message);
     
     if (!command) {
+      console.log(`🎮 [ModeCommand] Not a mode command`);
       return null;
     }
 
-    console.log(`🎮 [ModeCommand] Handling: ${command.command}`);
+    console.log(`🎮 [ModeCommand] Handling: ${command.command} for conversation: ${conversationId}`);
 
     switch (command.command) {
       case 'enable_dev':

@@ -34,6 +34,8 @@ According to the current situation, **in your single reply, you must and only re
 {system}
 ====
 
+{user_profile}
+
 === Best Practices Memory ===
 {best_practices_knowledge}
 === END ===

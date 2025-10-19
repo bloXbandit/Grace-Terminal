@@ -44,10 +44,11 @@ router.post("/chat", async (ctx, next) => {
   const modeCommandResult = await modeCommandHandler.handleCommand(question, conversation_id);
   if (modeCommandResult) {
     // This was a mode command, return the result directly
+    const content = modeCommandResult.message || modeCommandResult.error || 'Mode command executed';
     const msg = Message.format({
-      status: 'success',
+      status: modeCommandResult.success ? 'success' : 'failure',
       action_type: 'auto_reply',
-      content: modeCommandResult.message
+      content: content
     });
     onTokenStream(msg);
     await Message.saveToDB(msg, conversation_id);
