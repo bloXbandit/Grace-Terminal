@@ -39,7 +39,13 @@ const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], 
 
   // STRATEGIC: Validate file delivery claims in task summaries
   const ResponseValidator = require('@src/utils/responseValidator');
-  const validatedResult = ResponseValidator.validateFileDeliveryClaims(result, conversation_id);
+  let validatedResult = ResponseValidator.validateFileDeliveryClaims(result, conversation_id);
+
+  // CRITICAL FIX: Ensure validatedResult is always a string
+  if (typeof validatedResult !== 'string') {
+    console.error('[Summary] ValidatedResult is not a string:', typeof validatedResult, validatedResult);
+    validatedResult = String(validatedResult || result || '');
+  }
 
   return validatedResult;
 }

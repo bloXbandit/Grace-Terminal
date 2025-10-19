@@ -9,175 +9,80 @@ const path = require('path');
 class ResponseValidator {
   
   /**
-   * Validate file delivery claims in Grace's response
+   * Lightweight file delivery validation - passthrough layer with graceful fallback
    * @param {string} response - Grace's response text
    * @param {string} conversationId - Current conversation ID
-   * @returns {string} - Validated and corrected response
+   * @returns {string} - Enhanced response or original if validation fails
    */
   static validateFileDeliveryClaims(response, conversationId) {
     try {
-      // Pattern to detect file delivery claims
-      const deliveryPatterns = [
-        /(?:created|generated|saved|built|made)\s+([^.\s]+\.(?:docx|pdf|xlsx|csv|json|xml|png|jpg|svg|html|md|txt|zip|pptx|xer|mpp))/gi,
-        /(?:file|document)\s+(?:is\s+)?(?:ready|available|created|saved)/gi,
-        /(?:saved to|placed in|available in)\s+(?:workspace|your\s+workspace)/gi
-      ];
-
-      let hasDeliveryClaims = false;
-      for (const pattern of deliveryPatterns) {
-        if (pattern.test(response)) {
-          hasDeliveryClaims = true;
-          break;
-        }
+      // FAILSAFE: Ensure we always have a string to work with
+      if (typeof response !== 'string') {
+        response = String(response?.content || response?.message || response || '');
       }
 
-      if (!hasDeliveryClaims) {
-        return response; // No delivery claims to validate
-      }
-
-      console.log('[ResponseValidator] File delivery claims detected, validating...');
-
-      // Extract potential filenames from response
-      const filenameMatches = response.match(/([^.\s]+\.(?:docx|pdf|xlsx|csv|json|xml|png|jpg|svg|html|md|txt|zip|pptx|xer|mpp))/gi);
+      // TARGETED: Only check responses that claim file creation/delivery
+      const hasFileClaimPattern = /(?:created|generated|built|made|saved)\s+\w+\.\w+|file.*(?:ready|available|created)|saved to.*workspace/i;
       
-      if (!filenameMatches) {
-        return response; // No specific filenames found
+      if (!hasFileClaimPattern.test(response)) {
+        return response; // No file claims - pass through unchanged
       }
 
-      const validatedFiles = [];
-      const missingFiles = [];
+      // Extract any filenames mentioned (any extension)
+      const filenames = response.match(/\b\w+\.\w{2,5}\b/g) || [];
+      
+      if (filenames.length === 0) {
+        return response; // No filenames found - pass through
+      }
 
-      // Check each mentioned file
-      for (const filename of filenameMatches) {
-        const fileExists = this.checkFileExists(filename, conversationId);
-        if (fileExists.exists) {
-          validatedFiles.push({
-            name: filename,
-            path: fileExists.path,
-            size: fileExists.size
-          });
-        } else {
-          missingFiles.push(filename);
+      // Quick validation check
+      const verifiedFiles = [];
+      for (const filename of filenames) {
+        if (this.quickFileCheck(filename, conversationId)) {
+          verifiedFiles.push(filename);
         }
       }
 
-      // Strategically modify response based on validation results
-      return this.adjustResponseForValidation(response, validatedFiles, missingFiles);
+      // Enhance response only if files are verified
+      if (verifiedFiles.length > 0) {
+        return response.replace(/(\b\w+\.\w{2,5}\b)/g, (match) => {
+          return verifiedFiles.includes(match) ? `${match} ✅` : match;
+        });
+      }
+
+      return response; // Return original if no files verified
 
     } catch (error) {
-      console.error('[ResponseValidator] Validation error:', error);
-      return response; // Return original response on error
+      console.warn('[ResponseValidator] Validation failed, passing through:', error.message);
+      return response; // FAILSAFE: Always return original response on any error
     }
   }
 
   /**
-   * Check if file actually exists in expected locations
+   * Quick file existence check - lightweight and fast
    */
-  static checkFileExists(filename, conversationId) {
-    const possiblePaths = [
-      // Conversation-specific workspace
-      path.resolve(`./workspace/Conversation_${conversationId}/${filename}`),
-      // General workspace
-      path.resolve(`./workspace/${filename}`),
-      // Current working directory
-      path.resolve(`./${filename}`)
-    ];
+  static quickFileCheck(filename, conversationId) {
+    try {
+      // Check most common locations only
+      const commonPaths = [
+        `./workspace/Conversation_${conversationId}/${filename}`,
+        `./workspace/${filename}`,
+        `./${filename}`
+      ];
 
-    for (const filePath of possiblePaths) {
-      try {
-        const stats = fs.statSync(filePath);
-        if (stats.isFile()) {
-          return {
-            exists: true,
-            path: filePath,
-            size: stats.size,
-            relativePath: path.relative(process.cwd(), filePath)
-          };
+      for (const filePath of commonPaths) {
+        try {
+          if (fs.statSync(filePath).isFile()) {
+            return true;
+          }
+        } catch (err) {
+          // Continue to next path
         }
-      } catch (err) {
-        // File doesn't exist at this path, continue checking
       }
+      return false;
+    } catch (error) {
+      return false; // Fail silently
     }
-
-    return { exists: false };
-  }
-
-  /**
-   * Strategically adjust response based on file validation results
-   */
-  static adjustResponseForValidation(response, validatedFiles, missingFiles) {
-    let adjustedResponse = response;
-
-    if (validatedFiles.length > 0 && missingFiles.length === 0) {
-      // All files verified - enhance response with confidence
-      adjustedResponse = this.enhanceVerifiedResponse(response, validatedFiles);
-    } else if (missingFiles.length > 0) {
-      // Some files missing - provide honest correction
-      adjustedResponse = this.correctMissingFilesResponse(response, validatedFiles, missingFiles);
-    }
-
-    return adjustedResponse;
-  }
-
-  /**
-   * Enhance response when all files are verified
-   */
-  static enhanceVerifiedResponse(response, validatedFiles) {
-    // Add verification badges to build confidence
-    let enhanced = response;
-
-    for (const file of validatedFiles) {
-      const sizeText = file.size > 0 ? ` (${this.formatFileSize(file.size)})` : '';
-      const verificationBadge = ` ✅ Verified${sizeText}`;
-      
-      // Add verification badge after filename mentions
-      enhanced = enhanced.replace(
-        new RegExp(`(${this.escapeRegex(file.name)})`, 'gi'),
-        `$1${verificationBadge}`
-      );
-    }
-
-    return enhanced;
-  }
-
-  /**
-   * Correct response when files are missing
-   */
-  static correctMissingFilesResponse(response, validatedFiles, missingFiles) {
-    let corrected = response;
-
-    // Replace overconfident claims with honest status
-    const overconfidentPatterns = [
-      /(?:saved to|placed in|available in)\s+(?:workspace|your\s+workspace)/gi,
-      /(?:file|document)\s+(?:is\s+)?(?:ready|available)/gi
-    ];
-
-    for (const pattern of overconfidentPatterns) {
-      corrected = corrected.replace(pattern, 'file creation attempted');
-    }
-
-    // Add honest disclaimer at the end
-    if (missingFiles.length > 0) {
-      const disclaimer = `\n\n⚠️ **File Status Update:** I attempted to create ${missingFiles.join(', ')} but cannot verify the file${missingFiles.length > 1 ? 's' : ''} ${missingFiles.length > 1 ? 'were' : 'was'} successfully saved. Please check your workspace or let me know if you need me to retry the file creation.`;
-      corrected += disclaimer;
-    }
-
-    return corrected;
-  }
-
-  /**
-   * Helper methods
-   */
-  static formatFileSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  static escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 

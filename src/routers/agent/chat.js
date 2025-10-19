@@ -187,7 +187,13 @@ ${profileContext}
   responsePromise.then(async (content) => {
     // STRATEGIC: Validate file delivery claims before sending response
     const ResponseValidator = require('@src/utils/responseValidator');
-    const validatedContent = ResponseValidator.validateFileDeliveryClaims(content, conversation_id);
+    let validatedContent = ResponseValidator.validateFileDeliveryClaims(content, conversation_id);
+    
+    // CRITICAL FIX: Ensure validatedContent is always a string
+    if (typeof validatedContent !== 'string') {
+      console.error('[Chat] ValidatedContent is not a string:', typeof validatedContent, validatedContent);
+      validatedContent = String(validatedContent || content || '');
+    }
     
     // Check if we should ask a profile question (natural inquiry)
     let finalContent = validatedContent;
