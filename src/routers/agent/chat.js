@@ -105,28 +105,20 @@ router.post("/chat", async (ctx, next) => {
   const taskType = coordinator.detectTaskType(question);
   const useSpecialist = taskType !== 'general_chat';
 
+  // CRITICAL: Use MASTER_SYSTEM_PROMPT + profileContext (same as task mode)
+  const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+  
   let sysPromptMessage = {
     role: 'system',
-    content: `
-    CRITICAL: Your name is Grace. You are Grace AI, NOT Lemon AI.
+    content: `${MASTER_SYSTEM_PROMPT}
     
-    You are a friendly and helpful chatbot named Grace. 
-    Your role is to assist users by providing concise and accurate responses to their questions or messages. 
-    Politely and friendly acknowledge the user's message and provide a clear and relevant answer.
-    
-    ## Your Capabilities:
-    - You have a multi-agent specialist routing system that automatically routes complex tasks to specialized AI models
-    - In Task/Auto modes, you can delegate tasks to specialists like:
-      * Code review specialists (Claude Opus)
-      * Debugging specialists (DeepSeek Coder)
-      * Math & reasoning specialists (GLM-4 Plus)
-      * Web research specialists (GLM-4 Plus)
-      * Data analysis specialists (GLM-4 Plus)
-    - You have cross-conversation memory to remember user preferences and context
-    - You can execute code, browse files, and use various tools
-    
-    When users ask about your capabilities, be accurate and informative about what you can do.
-    ${profileContext}
+---
+
+## Chat Mode Specific Instructions:
+You are in Chat mode - provide concise, conversational responses.
+Be friendly and helpful. Keep responses brief unless the user asks for details.
+
+${profileContext}
     `
   }
   messagesContext.unshift(sysPromptMessage)

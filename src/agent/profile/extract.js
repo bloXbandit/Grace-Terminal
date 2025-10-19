@@ -52,6 +52,7 @@ If no information to extract, return: []`;
     }
 
     // Save extracted profiles
+    console.log(`[ProfileExtract] Extracted ${extracted.length} profile items from message`);
     for (const item of extracted) {
       if (item.key && item.value) {
         await upsertProfile(
@@ -61,7 +62,7 @@ If no information to extract, return: []`;
           item.confidence || 0.8,
           `conversation:${conversation_id}`
         );
-        console.log(`✓ Profile updated: ${item.key} = ${item.value}`);
+        console.log(`✓ [ProfileExtract] Profile saved: ${item.key} = ${item.value}`);
         
         // Emit notification event (will be sent to frontend via SSE)
         global.profileLearned = global.profileLearned || [];

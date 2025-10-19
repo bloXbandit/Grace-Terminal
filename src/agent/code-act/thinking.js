@@ -100,9 +100,16 @@ const thinking_local = async (requirement, context = {}) => {
   let content;
   if (context.coordinator && context.enableSpecialistRouting) {
     console.log('[Thinking] Using specialist routing for task...');
-    // Use execute method which auto-detects task type and routes to specialist
-    const result = await context.coordinator.execute(prompt, options);
-    content = result.content || result;
+    try {
+      // Use execute method which auto-detects task type and routes to specialist
+      const result = await context.coordinator.execute(prompt, options);
+      // Extract content from specialist response
+      content = result.result || result.content || result;
+    } catch (error) {
+      console.log('[Thinking] Specialist routing failed, falling back to default model:', error.message);
+      // Fallback to default model if specialists fail
+      content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+    }
   } else {
     content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
   }

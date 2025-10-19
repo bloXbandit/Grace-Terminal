@@ -70,7 +70,10 @@ const getProfileContext = async (user_id) => {
   try {
     const profiles = await getAllProfiles(user_id);
     
+    console.log(`[Profile] Loading profile for user ${user_id}: ${profiles.length} entries found`);
+    
     if (profiles.length === 0) {
+      console.log('[Profile] No profile entries found - returning empty context');
       return '';
     }
 
@@ -79,7 +82,9 @@ const getProfileContext = async (user_id) => {
       .map(p => `- ${p.key}: ${p.value}`)
       .join('\n');
 
-    return `\n## User Profile:\n${profileLines}\n`;
+    const context = `\n## User Profile:\n${profileLines}\n`;
+    console.log('[Profile] Profile context:', context);
+    return context;
   } catch (error) {
     console.error('Error formatting profile context:', error);
     return '';

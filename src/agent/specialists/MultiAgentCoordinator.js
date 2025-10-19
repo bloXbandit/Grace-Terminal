@@ -354,13 +354,26 @@ class MultiAgentCoordinator {
       const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
       const fullSystemPrompt = `${MASTER_SYSTEM_PROMPT}\n\n---\n\n${systemPrompt}`;
       
-      // Build context with combined system prompt
-      const context = {
-        messages: [
+      // Build context - use existing messages if provided, otherwise create new
+      let contextMessages;
+      if (options.messages && options.messages.length > 0) {
+        // Use existing conversation history, but replace/prepend system prompt
+        contextMessages = [...options.messages];
+        // Replace first message if it's a system message, otherwise prepend
+        if (contextMessages[0]?.role === 'system') {
+          contextMessages[0] = { role: 'system', content: fullSystemPrompt };
+        } else {
+          contextMessages.unshift({ role: 'system', content: fullSystemPrompt });
+        }
+      } else {
+        // No conversation history, create simple context
+        contextMessages = [
           { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: userMessage }
-        ]
-      };
+        ];
+      }
+      
+      const context = { messages: contextMessages };
       
       // Call the model with streaming
       const result = await llm.completion('', context, {
@@ -375,9 +388,7 @@ class MultiAgentCoordinator {
       console.error(`[Specialist] Error calling ${modelPath}:`, {
         message: error.message,
         stack: error.stack,
-        modelPath,
-        provider: parts[0],
-        modelName: parts.slice(1).join('/')
+        modelPath
       });
       
       // Return a graceful error response instead of throwing

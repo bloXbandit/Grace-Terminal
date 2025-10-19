@@ -295,8 +295,8 @@ export default {
       yearsAgo: "years ago", // years ago
       copySuccess: "Copy successful", // Copy successful
       copyError: "Copy failed", // Copy failed
-      botInitialResponse: "Hello, I have received your request, I am analyzing this problem. Please wait.",
-      botInitialPlan: "Planning in progress"
+      botInitialResponse: "Thinking...",
+      botInitialPlan: "Planning..."
     },
     // 输入框
     input: {
@@ -770,7 +770,7 @@ export default {
   },
   thinking: "Thinking",
   task_error: "Task exception terminated",
-  stop_task: "Task stopped",
+  stop_task: "Grace AI task stopped",
   jump_to_result: "Jump to result",
   replay: "Replay",
   task_finished: "Task finished",

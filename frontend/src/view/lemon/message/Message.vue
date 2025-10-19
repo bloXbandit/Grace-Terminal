@@ -15,7 +15,7 @@
   </div>
   <!-- 停止 -->
   <div v-else-if="message?.meta?.action_type === 'stop'" class="stop">
-    <Stop /> <span>LemonAI {{ $t("stop_task") }}</span>
+    <Stop /> <span>{{ $t("stop_task") }}</span>
   </div>
   <!-- 任务异常 暂无积分-->
   <div v-else-if="message?.meta?.action_type === 'error' && message?.content.includes('Insufficient credits balance')" class="credits">
