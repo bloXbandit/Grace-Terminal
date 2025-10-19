@@ -285,7 +285,16 @@ class MultiAgentCoordinator {
       return 'complex_reasoning';
     }
     
-    // Data Generation (before data_analysis)
+    // ENHANCED: Format-Specific File Generation Routing
+    const fileGenerationMatch = message.match(/create.*(\w+)|generate.*(\w+)|make.*(\w+).*file/i);
+    if (fileGenerationMatch) {
+      const detectedFormat = this.detectFileFormat(message);
+      if (detectedFormat) {
+        return this.getFileGenerationSpecialist(detectedFormat, message);
+      }
+    }
+    
+    // Legacy data generation patterns (fallback)
     if (message.match(/create.*excel|generate.*excel|make.*excel|excel.*file/i) ||
         message.match(/create.*csv|generate.*csv|make.*csv|csv.*file/i) ||
         message.match(/create.*spreadsheet|generate.*spreadsheet|make.*spreadsheet/i) ||
@@ -391,6 +400,129 @@ class MultiAgentCoordinator {
       score: complexityScore,
       indicators: complexityIndicators
     };
+  }
+
+  /**
+   * Detect file format from user message
+   */
+  detectFileFormat(message) {
+    const formatPatterns = {
+      // Documents
+      'docx': /word|docx|document/i,
+      'pdf': /pdf/i,
+      'odt': /odt|opendocument/i,
+      
+      // Spreadsheets  
+      'xlsx': /excel|xlsx|spreadsheet/i,
+      'csv': /csv/i,
+      
+      // Presentations
+      'pptx': /powerpoint|pptx|presentation|slides/i,
+      'odp': /odp|opendocument.*presentation/i,
+      
+      // Data formats
+      'json': /json/i,
+      'xml': /xml/i,
+      'yaml': /yaml|yml/i,
+      
+      // Images
+      'png': /png|image/i,
+      'jpg': /jpg|jpeg|photo/i,
+      'svg': /svg|vector/i,
+      'qr': /qr.*code|qrcode/i,
+      
+      // Project files
+      'xer': /xer|primavera|p6/i,
+      'mpp': /mpp|microsoft.*project/i,
+      
+      // Archives
+      'zip': /zip|archive/i,
+      
+      // Other
+      'html': /html|webpage/i,
+      'md': /markdown|md/i,
+      'txt': /text|txt/i
+    };
+    
+    for (const [format, pattern] of Object.entries(formatPatterns)) {
+      if (pattern.test(message)) {
+        return format;
+      }
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Get optimal specialist for file generation based on format and content
+   */
+  getFileGenerationSpecialist(format, message) {
+    console.log(`[Coordinator] File format detected: ${format}`);
+    
+    // Content analysis for intelligent routing
+    const isCreative = /story|poem|creative|narrative|fiction|novel|write.*about/i.test(message);
+    const isAnalytical = /report|analysis|business|research|study|findings/i.test(message);
+    const isPresentation = /presentation|slides|pitch|demo/i.test(message);
+    
+    // Format-specific routing with content awareness
+    switch (format) {
+      case 'docx':
+      case 'pdf':
+      case 'odt':
+      case 'rtf':
+        if (isCreative) {
+          console.log('[Coordinator] Creative document → creative_writing specialist');
+          return 'creative_writing'; // Mythomax for creative content
+        } else if (isAnalytical) {
+          console.log('[Coordinator] Analytical document → complex_reasoning specialist');
+          return 'complex_reasoning'; // GLM-4 for analytical content
+        } else {
+          console.log('[Coordinator] Standard document → data_generation specialist');
+          return 'data_generation'; // Qwen for structured content
+        }
+        
+      case 'pptx':
+      case 'odp':
+      case 'html':
+        console.log('[Coordinator] Presentation/UI file → ui_design specialist');
+        return 'ui_design'; // Phi-4 for visual content
+        
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'svg':
+      case 'qr':
+        console.log('[Coordinator] Image/graphics → ui_design specialist');
+        return 'ui_design'; // Phi-4 for graphics
+        
+      case 'xer':
+      case 'mpp':
+        console.log('[Coordinator] Project file → p6_project_management specialist');
+        return 'p6_project_management'; // Specialized for project files
+        
+      case 'xlsx':
+      case 'csv':
+      case 'json':
+      case 'xml':
+      case 'yaml':
+      case 'yml':
+        console.log('[Coordinator] Data file → data_generation specialist');
+        return 'data_generation'; // Qwen for structured data
+        
+      case 'md':
+      case 'txt':
+        if (isCreative) {
+          console.log('[Coordinator] Creative text → creative_writing specialist');
+          return 'creative_writing';
+        } else {
+          console.log('[Coordinator] Technical text → code_generation specialist');
+          return 'code_generation';
+        }
+        
+      default:
+        console.log('[Coordinator] Unknown format → data_generation specialist (fallback)');
+        return 'data_generation';
+    }
   }
 
   /**
