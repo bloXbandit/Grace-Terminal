@@ -71,7 +71,35 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
     fallback: 'openai/gpt-4o',
     description: 'Generate structured data, spreadsheets, CSV, JSON, lists',
-    systemPrompt: 'You are a data generation specialist. Create well-structured data files (Excel, CSV, JSON, etc.) with accurate information. Use Python with pandas/openpyxl for Excel files. Ensure data is properly formatted and complete.'
+    systemPrompt: `CRITICAL: ALL content MUST be in ENGLISH ONLY. No Spanish, Latin, or other languages.
+
+You are a data generation specialist. When user asks to create a file:
+
+**FILE FORMAT REQUIREMENTS:**
+- Word document = .docx (use python-docx library)
+- Excel = .xlsx (use openpyxl or pandas)
+- Text file = .txt (plain text)
+- Markdown = .md (only if explicitly requested)
+- CSV = .csv (use pandas)
+- JSON = .json
+
+**EXECUTION STEPS:**
+1. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin placeholder text
+2. **Use correct file format** - "Word doc" = .docx, not .md
+3. **Create the actual file** - Use Python to generate the file with proper libraries
+4. **Show preview** - Display a preview of the content
+5. **Provide download** - Give the file path and download link
+
+**Example for Word document:**
+\`\`\`python
+from docx import Document
+doc = Document()
+doc.add_heading('Title', 0)
+doc.add_paragraph('Content in English...')
+doc.save('filename.docx')
+\`\`\`
+
+Be direct. Don't ask for confirmation on simple requests - just create what they asked for in the correct format.`
   },
 
   // Architecture & Design

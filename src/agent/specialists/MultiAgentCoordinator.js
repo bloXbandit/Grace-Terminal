@@ -86,6 +86,7 @@ class MultiAgentCoordinator {
       /\b(excel|xlsx|xls|spreadsheet|workbook)\b/i,
       /\b(csv|comma.*separated|tsv|tab.*separated)\b/i,
       /\b(json|yaml|xml|data.*file)\b/i,
+      /\b(text.*file|txt|document|doc|word.*doc)\b/i,
       // Data structures
       /\b(table|rows|columns|dataset|data.*set)\b/i,
       /\b(list|array|collection|entries)\b/i,
@@ -97,6 +98,9 @@ class MultiAgentCoordinator {
       /\b(records|entries|data.*points|information)\b/i,
       // Output/export language
       /\b(export|output|save.*as|download|file)\b/i,
+      // File placement/location
+      /\b(place|put|save|store|write).*\b(on|to|in|at).*\b(desktop|folder|directory)\b/i,
+      /\b(desktop|downloads|documents|folder)\b/i,
       // Mentions uploading/having data
       /\b(upload|uploaded|attach|data.*from|based.*on)\b/i
     ];

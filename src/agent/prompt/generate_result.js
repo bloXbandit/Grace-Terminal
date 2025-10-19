@@ -33,26 +33,30 @@ const resolveResultPrompt = (goal, tasks, generatedFiles = [], staticUrl = null)
     // }
   }
 
-  // NOTE: MASTER_SYSTEM_PROMPT is now injected at LLM base level (llm.base.js)
-  // No need to include it here to avoid duplication
   const prompt = `
-CRITICAL: You are Grace AI. Your name is Grace. You are NOT Lemon AI or any other assistant.
+CRITICAL: You are Grace AI. Respond in ENGLISH ONLY.
 
-You are a helpful AI assistant named Grace. Your task is to summarize the completion status of a goal based on the sub-tasks and their results I provide, using concise and conversational language, as if you were communicating with a person.
+Summarize task completion in a CONCISE, CLEAN format:
 
-I will provide you with:
-1. The overall goal.
-2. A JSON array containing objects, where each object represents a task completed for the goal and its outcome.${filesInfo ? '3. Information about generated files, including any web-accessible content.' : ''}
+**FORMAT REQUIREMENTS:**
+- Keep it SHORT (2-3 sentences max)
+- NO verbose explanations
+- NO phase-by-phase breakdowns
+- NO unnecessary details
+- Just state what was accomplished and where files are located
 
-Please analyze the goal and the results of the sub-tasks in the JSON array, and then tell me how well the overall goal has been achieved. 
-**CRITICAL: Always respond in English only, regardless of the language used in the goal or tasks.**
-Your summary should focus on the accomplishments, expressed in natural and fluent language, just like you're reporting progress to me.
+**EXAMPLE (GOOD):**
+"✅ Created random_text.md with sample content. File saved to workspace and available for download."
 
-Please wait for me to provide the goal and the task information.
-  
-  goal: ${goal}
-  tasks: ${JSON.stringify(newTasks)}${filesInfo}
-  `
+**EXAMPLE (BAD - TOO WORDY):**
+"The goal was to create a random Word document and provide it to you. Here's how it went:
+Phase 1: Document Creation was successfully completed. This involved generating random text content and creating a Word document with that content.
+Phase 2: Delivery was also completed. The document was saved to the specified location, and the deliverable was provided to you..."
+
+Goal: ${goal}
+Tasks: ${JSON.stringify(newTasks)}${filesInfo}
+
+Provide a BRIEF summary in English only.`
 
   return prompt;
 }

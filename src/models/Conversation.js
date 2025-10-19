@@ -123,6 +123,12 @@ const fields = {
     defaultValue: 0,
     comment: '推荐次数'
   },
+  metadata: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {},
+    comment: 'Metadata for conversation (dev_mode, routing preferences, etc.)'
+  },
 };
 
 ConversationTable.init(fields, {

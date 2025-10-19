@@ -342,6 +342,7 @@ router.post("/run", async (ctx, next) => {
       
       // SEAL: Log successful task execution
       try {
+        const conversation = await Conversation.findOne({ where: { conversation_id } });
         await TaskLogger.logTask({
           user_id: ctx.state.user?.id || 1,
           conversation_id,
@@ -349,7 +350,7 @@ router.post("/run", async (ctx, next) => {
           task_description: question,
           input_data: { question, mode, files: newFiles },
           output_data: { content },
-          model_used: conversation.model_id || 'default',
+          model_used: conversation?.model_id || 'default',
           execution_time_ms: Date.now() - startTime,
           success: true,
           tools_used: agent.toolsUsed || [],
@@ -656,15 +657,11 @@ async function runChatPhase(params, isTwinsMode) {
     messagesContext = getMessagesContextByTime(messages)
   }
 
+  // CRITICAL FIX: Use MASTER_SYSTEM_PROMPT for consistent capabilities across all modes
+  const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
   let sysPromptMessage = {
     role: 'system',
-    content: `
-    CRITICAL: Your name is Grace. You are Grace AI, NOT Lemon AI.
-    
-    You are a friendly and helpful chatbot named Grace with full sandbox capabilities. 
-    Your role is to assist users by providing concise and accurate responses to their questions or messages. 
-    Politely and friendly acknowledge the user's message and provide a clear and relevant answer.
-    `
+    content: MASTER_SYSTEM_PROMPT
   }
   messagesContext.unshift(sysPromptMessage)
 

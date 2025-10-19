@@ -53,9 +53,44 @@ const resolveXML = (content) => {
   return result;
 }
 
+/**
+ * Extract XML from LLM response that might contain markdown, explanations, etc.
+ */
+const extractXML = (content) => {
+  if (!content || typeof content !== 'string') return content;
+  
+  // Remove markdown code blocks if present
+  let cleaned = content.replace(/```xml\s*/g, '').replace(/```\s*/g, '');
+  
+  // Try to find XML tags (most common actions)
+  const xmlTags = [
+    'finish', 'write_code', 'terminal_run', 'web_search', 'read_file',
+    'revise_plan', 'browser', 'git_commit', 'manage_env', 'self_modify'
+  ];
+  
+  for (const tag of xmlTags) {
+    const regex = new RegExp(`<${tag}[^>]*>.*?</${tag}>`, 's');
+    const match = cleaned.match(regex);
+    if (match) {
+      return match[0]; // Return just the XML part
+    }
+  }
+  
+  // If no specific tag found, try to extract any XML-like content
+  const genericXmlMatch = cleaned.match(/<(\w+)[^>]*>.*?<\/\1>/s);
+  if (genericXmlMatch) {
+    return genericXmlMatch[0];
+  }
+  
+  // Return original if no XML found
+  return content;
+};
+
 const resolveActions = xml => {
   try {
-    const resolved = resolveXML(xml);
+    // Extract XML from potentially messy LLM response
+    const cleanedXml = extractXML(xml);
+    const resolved = resolveXML(cleanedXml);
     const actions = []
     for (let key in resolved) {
       const value = resolved[key];
@@ -67,7 +102,8 @@ const resolveActions = xml => {
     }
     return actions;
   } catch (err) {
-    console.log(err);
+    console.log('[resolveActions] Parse error:', err.message);
+    console.log('[resolveActions] Original content:', xml?.substring(0, 200));
     return [];
   }
 }

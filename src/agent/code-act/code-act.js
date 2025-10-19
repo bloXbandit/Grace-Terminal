@@ -98,11 +98,20 @@ const completeCodeAct = async (task = {}, context = {}) => {
     retryCount++;
     totalRetryAttempts++;
     context.retryCount = retryCount;
-    await delay(500);
+    // Exponential backoff to prevent API rate limits
+    const delayMs = Math.min(1000 * Math.pow(2, retryCount - 1), 10000); // 1s, 2s, 4s, 8s, max 10s
+    console.log(`[CodeAct] Waiting ${delayMs}ms before retry...`);
+    await delay(delayMs);
   }
 
-  // Main execution loop
-  while (true) {
+  // Main execution loop with safety limit
+  const MAX_LOOP_ITERATIONS = 10; // Prevent infinite API calls
+  let loopIterations = 0;
+  
+  while (loopIterations < MAX_LOOP_ITERATIONS) {
+    loopIterations++;
+    console.log(`[CodeAct] Loop iteration ${loopIterations}/${MAX_LOOP_ITERATIONS}`);
+    
     try {
       // 1. LLM thinking
       context.depth = depth || 1;
@@ -123,7 +132,25 @@ const completeCodeAct = async (task = {}, context = {}) => {
       console.log("action", action);
 
       if (action && action.type === 'parse_error') {
-        await memory.addMessage('user', action.params?.message || 'resolve action failed, Please only generate valid xml format content');
+        const errorMsg = `CRITICAL ERROR: Your response was not valid XML. You MUST respond with ONE XML action tag only.
+
+Example of CORRECT format:
+<finish>
+  <message>Your response here</message>
+</finish>
+
+OR
+
+<write_code>
+  <path>filename.py</path>
+  <content><![CDATA[
+your code here
+]]></content>
+</write_code>
+
+DO NOT include any text outside the XML tags. Try again with proper XML format.`;
+        
+        await memory.addMessage('user', errorMsg);
         await handleRetry();
         continue;
       }
@@ -216,7 +243,10 @@ const completeCodeAct = async (task = {}, context = {}) => {
         context.reflection = comments;
         console.log("code-act.memory logging user prompt");
         await memory.addMessage("user", comments);
-        await delay(500);
+        // Exponential backoff for reflection retries
+        const reflectionDelayMs = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+        console.log(`[CodeAct] Reflection retry - waiting ${reflectionDelayMs}ms...`);
+        await delay(reflectionDelayMs);
         console.log(`Retrying (${retryCount}/${maxRetries}). Total attempts: ${totalRetryAttempts}/${maxTotalRetries}...`);
       }
     } catch (error) {
@@ -244,6 +274,14 @@ const completeCodeAct = async (task = {}, context = {}) => {
       console.log(`Retrying (${retryCount}/${maxRetries}). Total attempts: ${totalRetryAttempts}/${maxTotalRetries}...`);
     }
   }
+  
+  // If we exit the loop without finishing, return failure
+  console.error(`[CodeAct] Max loop iterations (${MAX_LOOP_ITERATIONS}) reached. Task incomplete.`);
+  return {
+    status: "failure",
+    comments: `Task exceeded maximum execution attempts (${MAX_LOOP_ITERATIONS} iterations). This prevents infinite API calls. Please simplify the task or break it into smaller steps.`,
+    error: new Error("Max loop iterations exceeded")
+  };
 };
 
 module.exports = exports = completeCodeAct;

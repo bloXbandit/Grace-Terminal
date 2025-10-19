@@ -193,15 +193,29 @@ class AgenticAgent {
         console.log(`[AgenticAgent] Task handled by ${autoReplyResult.specialist} specialist`);
         console.log('[AgenticAgent] Task type:', autoReplyResult.taskType);
         
-        // For creative/data generation tasks, specialist result is final
-        // No need for planning or execution
-        const directCompletionTasks = ['creative_writing', 'data_generation', 'code_generation', 'code_generation_fast'];
+        // For PURE text tasks, specialist result is final (no tools needed)
+        // Tasks that need file creation/code execution should continue to planning
+        const directCompletionTasks = [
+          'creative_writing',    // Stories, poems, lyrics - just text
+          'general_chat',        // Conversation - just text
+          'code_explanation',    // Explaining code - just text
+          'code_review',         // Reviewing code - just text (no file creation)
+          'brainstorming',       // Ideas - just text
+          'roleplay',            // Character dialogue - just text
+          'system_design',       // Architecture diagrams - just text/description
+          'database_design',     // Schema design - just text/description
+          'api_design'           // API spec - just text/description
+        ];
         
         if (directCompletionTasks.includes(autoReplyResult.taskType)) {
-          console.log('[AgenticAgent] Direct completion task - marking as done');
+          console.log('[AgenticAgent] Direct completion task (text-only) - marking as done');
           await Conversation.update({ status: 'done' }, { where: { conversation_id: this.context.conversation_id } });
           return autoReplyResult.result;
         }
+        
+        // For tasks needing tools (code/data/file generation, math, research, etc.)
+        // Specialist provides guidance, then we continue to planning for tool execution
+        console.log('[AgenticAgent] Task requires tools - continuing to planning for execution');
         
         // For other tasks, specialist provided initial response but may need follow-up
         console.log('[AgenticAgent] Specialist provided initial response, checking if follow-up needed');
