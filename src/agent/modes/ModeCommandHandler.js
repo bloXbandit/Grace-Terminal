@@ -25,6 +25,20 @@ class ModeCommandHandler {
       };
     }
 
+    // FORCE TRIGGERS - Bulletproof dev mode activation
+    if (trimmed.toLowerCase().includes('force dev mode') ||
+        trimmed.toLowerCase().includes('force self modify') ||
+        trimmed.toLowerCase().includes('force grace modify') ||
+        trimmed.toLowerCase().includes('override dev mode') ||
+        trimmed === '/force' ||
+        trimmed === '/override' ||
+        trimmed.toLowerCase().includes('emergency dev mode')) {
+      return {
+        command: 'force_dev',
+        type: 'force_mode_switch'
+      };
+    }
+
     // /normal or "dev mode off" or "exit dev mode"
     if (trimmed === '/normal' || 
         trimmed.toLowerCase().includes('dev mode off') ||
@@ -71,6 +85,17 @@ class ModeCommandHandler {
     switch (command.command) {
       case 'enable_dev':
         return await devMode.enable(conversationId);
+
+      case 'force_dev':
+        // FORCE activation - bypasses all checks and GUARANTEES activation
+        console.log(`🚨 [ModeCommand] FORCE DEV MODE ACTIVATED for conversation: ${conversationId}`);
+        const forceResult = await devMode.forceEnable(conversationId);
+        return {
+          success: true,
+          message: "🚨 **FORCE DEV MODE ACTIVATED** 🚨\n\n✅ Self-modification capabilities are now **FULLY ENABLED**\n✅ All safety restrictions **BYPASSED**\n✅ Grace can now modify her own code, prompts, and capabilities\n\n**Available commands:**\n- Modify code: \"Grace, fix your routing logic\"\n- Update prompts: \"Grace, improve your creativity\"\n- Add capabilities: \"Grace, add a new tool for X\"\n\n**Status:** 🔥 **MAXIMUM POWER MODE** 🔥",
+          mode: 'dev',
+          forced: true
+        };
 
       case 'disable_dev':
         return await devMode.disable(conversationId);

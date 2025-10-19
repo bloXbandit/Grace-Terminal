@@ -147,7 +147,11 @@ ${profileContext}
   let responsePromise;
   if (useSpecialist) {
     console.log(`[Chat] Routing to specialist: ${taskType}`);
-    responsePromise = coordinator.execute(question).then(result => {
+    responsePromise = coordinator.execute(question, { 
+      messages: messagesContext, 
+      temperature: 0.7,
+      onTokenStream 
+    }).then(result => {
       if (result.success) {
         console.log(`[Chat] Specialist ${result.specialist} (${taskType}) completed the request`);
         // Direct completion tasks - specialist result is final
