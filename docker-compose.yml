@@ -17,7 +17,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.cache:/.cache
       - ${WORKSPACE_BASE:-$PWD/workspace}:/app/workspace
-      - ${WORKSPACE_BASE:-$PWD/data}:/app/data
+      - $PWD/data:/app/data
       - ./.backups:/app/.backups
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files

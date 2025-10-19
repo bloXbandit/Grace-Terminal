@@ -124,7 +124,7 @@ router.get("/", async ({ state, query, response }) => {
     };
 
     // 如果 mode_type 不是 'chat'，才加上 agent_id 条件
-    if (mode_type !== 'chat') {
+    if (mode_type !== 'chat' && agent_id !== undefined && agent_id !== 'null') {
       whereClause.agent_id = agent_id;
     }
 
