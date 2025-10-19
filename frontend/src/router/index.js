@@ -101,9 +101,9 @@ const routes = [
         component: () => import("@/view/auth/usage.vue"),
         meta: { verify: true }
       },{
-        //UserProfile.vue
+        //ProfileSettings.vue
         path: "profile",
-        component: () => import("@/view/auth/UserProfile.vue"),
+        component: () => import("@/views/ProfileSettings.vue"),
         meta: { verify: true }
       }
     ]

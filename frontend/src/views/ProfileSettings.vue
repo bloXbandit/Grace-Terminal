@@ -142,7 +142,7 @@ const learnedProfile = ref([]);
 const loadProfile = async () => {
   try {
     const response = await request({
-      url: '/api/user/profile',
+      url: '/api/users/profile',
       method: 'GET'
     });
     
@@ -171,7 +171,7 @@ const saveField = async (key) => {
   
   try {
     await request({
-      url: '/api/user/profile',
+      url: '/api/users/profile',
       method: 'POST',
       data: {
         key,
