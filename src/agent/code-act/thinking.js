@@ -95,7 +95,15 @@ const thinking_local = async (requirement, context = {}) => {
       return { role: item.role, content: item.content }
     })
   }
-  const content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+  
+  // Use specialist routing if available (prevents hitting gpt-4o rate limits)
+  let content;
+  if (context.coordinator && context.enableSpecialistRouting) {
+    console.log('[Thinking] Using specialist routing for task...');
+    content = await context.coordinator.routeRequest(prompt, context.conversation_id, options);
+  } else {
+    content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+  }
   global.logging(context, 'thinking', content);
   if (prompt) {
     await memory.addMessage('user', prompt);

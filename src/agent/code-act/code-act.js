@@ -269,8 +269,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
       if (!shouldContinue) {
         return result;
       }
-      retryCount++;
-      totalRetryAttempts++;
+      
+      // Apply exponential backoff before retrying (prevents 429 rate limit errors)
+      await handleRetry();
       console.log(`Retrying (${retryCount}/${maxRetries}). Total attempts: ${totalRetryAttempts}/${maxTotalRetries}...`);
     }
   }

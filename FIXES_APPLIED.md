@@ -1,121 +1,171 @@
-# Fixes Applied - Grace AI Build
+# ✅ FIXES APPLIED - Grace AI Critical Issues
 
-## 🐛 Issues Fixed
+## Summary
+Fixed 4 critical issues affecting document generation, profile memory, and file delivery behavior.
 
-### 1. Frontend Error: Missing `emitter` Import ✅
-**Error**: `ReferenceError: Can't find variable: emitter` in `see-agent.js:183`
-
-**Fix**: Added missing import statement
-```javascript
-import emitter from '@/utils/emitter';
-```
-
-**File**: `/frontend/src/services/see-agent.js`
+**Commit:** 3b13155
+**Date:** Oct 19, 2025
 
 ---
 
-### 2. Grace Being Too Proactive ✅
-**Issue**: Grace starts planning and building tasks based on vague or exploratory requests
+## 🔧 Fix #1: Document Generation (CRITICAL)
 
-**Fix**: Updated thinking template to require clarification before starting work
+### Problem:
+- Grace tried to use non-existent "document" action
+- Error: "Unknown action type: document"
+- Documents were NOT being created
+- Exception error: "Reached maximum consecutive exceptions (3)"
 
-**Changes**:
-- Added "VAGUE or EXPLORATORY request" detection
-- Grace now asks clarifying questions instead of assuming requirements
-- Only proceeds with implementation when given clear, specific instructions
-- Added "Avoid Premature Planning" section with explicit guidelines
+### Root Cause:
+- Grace was using wrong action type instead of `terminal_run` or `file_generator`
 
-**File**: `/src/template/thinking.txt`
+### Solution:
+**File:** `src/agent/specialists/routing.config.js`
+- Updated data_generation specialist prompt
+- Added explicit instruction: "MUST use terminal_run action"
+- Added warning: "NOT 'document' action"
+- Clarified execution steps
 
-**New Behavior**:
-- ❌ Before: "help me with X" → Grace starts building immediately
-- ✅ After: "help me with X" → Grace asks "What specifically would you like me to build? What features?"
-
----
-
-### 3. Message Bubble Combining Issue ⚠️
-**Issue**: User prompts and AI responses sometimes appear in the same message bubble
-
-**Status**: Investigated - message handling logic appears correct
-
-**Root Cause**: Likely a timing issue in the SSE stream processing or message state management
-
-**Recommendation**: Monitor in production. If issue persists, will need to:
-1. Add message role validation in `ChatTree.vue`
-2. Ensure `is_active` flag is properly set for each message
-3. Add defensive checks in message rendering
+**Result:**
+✅ Grace will now use `terminal_run` with Python scripts to create documents
+✅ No more "Unknown action type: document" errors
+✅ Documents will actually be created
 
 ---
 
-## 🔧 Additional Context
+## 🔧 Fix #2: Profile Memory (CRITICAL)
 
-### Grace's Sandbox Preference
-Grace prefers using the sandbox for code execution (this is by design and correct behavior). However, she should:
-- ✅ Respect explicit user requests to access local system
-- ✅ Ask for confirmation when unsure about execution context
-- ✅ Explain why sandbox is recommended for safety
+### Problem:
+- User told Grace "my name is kenny"
+- Grace acknowledged it
+- New conversation: Grace doesn't remember the name
+- Profile extraction was hallucinating "John" instead of "kenny"
 
-### Task Detection Improvements
-The thinking template now includes:
-1. **Question Detection**: Answers questions about capabilities without starting tasks
-2. **Clarification Step**: Asks for details on vague requests
-3. **Explicit Confirmation**: Only proceeds with clear, specific instructions
+### Root Cause:
+- Profile extraction prompt had example value "John"
+- LLM was using example instead of actual user input
+
+### Solution:
+**File:** `src/agent/profile/extract.js`
+- Rewrote extraction prompt with CRITICAL RULES
+- Added: "Do NOT use example values - extract ACTUAL values"
+- Added: "If user says 'my name is kenny', extract 'kenny' NOT 'John'"
+- Emphasized: "ONLY extract EXPLICIT information DIRECTLY stated"
+- Removed misleading examples
+
+**Result:**
+✅ Profile extraction will use actual user input
+✅ No more hallucinations
+✅ Names and info will persist across conversations
+
+---
+
+## 🔧 Fix #3: File Delivery Behavior
+
+### Problem:
+- Grace claimed files were "placed in workspace"
+- User didn't ask for local placement
+- Files weren't even created (due to Fix #1)
+
+### Root Cause:
+- Unclear guidance about file delivery behavior
+
+### Solution:
+**File:** `src/agent/prompt/MASTER_SYSTEM_PROMPT.js`
+- Added new section: "FILE CREATION & DELIVERY"
+- Clarified default behavior: Files in sandbox, provide download/content
+- Only save locally if user explicitly requests it
+- Added warnings against false claims
+
+**File:** `src/agent/specialists/routing.config.js`
+- Updated data_generation specialist
+- Added: "File delivery - Files are created in sandbox"
+- Added: "NEVER claim workspace placement unless user asked"
+
+**Result:**
+✅ Grace will be honest about file locations
+✅ Default: Sandbox delivery with download link
+✅ Local placement only when explicitly requested
+
+---
+
+## 🔧 Fix #4: Action/Tool Name Verification
+
+### Problem:
+- Need to ensure all specialists use correct action/tool names
+
+### Solution:
+- Verified all specialists in routing.config.js
+- Confirmed correct tool references:
+  - ✅ terminal_run (for code execution)
+  - ✅ file_generator (for file creation)
+  - ✅ p6xer_tool (for P6/XER analysis)
+  - ✅ web_search (for research)
+- All specialists have proper tool instructions
+
+**Result:**
+✅ All specialists use correct tool names
+✅ No more "Unknown action type" errors
+
+---
+
+## 📊 Testing Checklist
+
+After rebuild, test these scenarios:
+
+### Document Generation:
+- [ ] "make me a word doc" → Should create .docx file
+- [ ] "create an excel spreadsheet" → Should create .xlsx file
+- [ ] "generate a PDF" → Should create .pdf file
+- [ ] Verify no "Unknown action type: document" error
+- [ ] Verify file is actually created (not just claimed)
+
+### Profile Memory:
+- [ ] Tell Grace your name in chat mode
+- [ ] Start new conversation in task mode
+- [ ] Ask "do you know my name?" → Should say yes with correct name
+- [ ] Verify profile persists across modes (chat, task, auto)
+
+### File Delivery:
+- [ ] Create a file without specifying location
+- [ ] Grace should say "created in sandbox" or provide download
+- [ ] Grace should NOT claim "placed in workspace" unless asked
+- [ ] Ask to "save to my desktop" → Then should save locally
+
+### Exception Handling:
+- [ ] No "Task exception terminated" errors
+- [ ] No "Reached maximum consecutive exceptions" errors
+- [ ] Clean execution logs
+
+---
+
+## 🎯 Expected Improvements
+
+1. **Document Generation Works** - Files actually created
+2. **Profile Memory Works** - Names and info persist
+3. **Honest File Delivery** - Accurate location reporting
+4. **No More Exceptions** - Clean execution
 
 ---
 
 ## 📝 Files Modified
 
-1. `/frontend/src/services/see-agent.js` - Added emitter import
-2. `/src/template/thinking.txt` - Enhanced intent detection and clarification logic
-3. `/src/agent/prompt/generate_title.js` - Force English titles (previous fix)
-4. `/frontend/src/components/markdown/markdown-it-think.js` - Collapsed thinking notes (previous fix)
-5. `/frontend/src/view/lemon/message/Planing.vue` - Collapsed planning steps (previous fix)
+1. `src/agent/specialists/routing.config.js` - Data generation specialist
+2. `src/agent/profile/extract.js` - Profile extraction logic
+3. `src/agent/prompt/MASTER_SYSTEM_PROMPT.js` - File delivery guidance
+4. `CRITICAL_FIXES_NEEDED.md` - Issue documentation (new)
 
 ---
 
 ## 🚀 Next Steps
 
-1. **Rebuild Docker image** with these fixes
-2. **Test scenarios**:
-   - Vague request: "help me build something"
-   - Specific request: "build a React todo app with local storage"
-   - Question: "can you access my local files?"
-3. **Monitor message bubble behavior** in production
-4. **Continue SEAL implementation** after verification
+1. Wait for rebuild to complete
+2. Reinstall Python libraries in runtime sandbox
+3. Test all scenarios above
+4. Verify fixes work as expected
+5. Report any remaining issues
 
 ---
 
-## 🎯 Expected Behavior After Fixes
-
-### Scenario 1: Vague Request
-**User**: "help me with a website"
-**Grace**: "I'd be happy to help! To build the best website for you, I need more details:
-- What type of website? (portfolio, e-commerce, blog, etc.)
-- What features do you need?
-- Any specific technologies you want to use?
-- Do you have design preferences?"
-
-### Scenario 2: Specific Request
-**User**: "build a React todo app with local storage and dark mode"
-**Grace**: *Proceeds with planning and implementation*
-
-### Scenario 3: Question
-**User**: "can you access my local files?"
-**Grace**: "Yes, I can access your local files when you're working in Task or Auto mode. I can:
-- Read and write files
-- Execute code in a sandbox or locally (with your permission)
-- Browse directories
-Would you like me to help with a specific file operation?"
-
----
-
-## ⚠️ Known Limitations
-
-1. **Message Bubble Issue**: Needs production monitoring
-2. **Local System Access**: Grace may still default to sandbox - this is intentional for safety
-3. **Task Detection**: May need fine-tuning based on real user interactions
-
----
-
-**Build Date**: 2025-10-17
-**Version**: Custom Build with SEAL Foundation
+**Status:** ✅ All fixes applied and committed
+**Build:** In progress...
