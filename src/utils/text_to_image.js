@@ -373,7 +373,7 @@ class TextToImageService {
             }
 
             // 处理错误响应
-            if (content.startsWith('ERR_BAD_REQUEST')) {
+            if (content && typeof content === 'string' && content.startsWith('ERR_BAD_REQUEST')) {
                 throw new Error('LLM request failed: Bad request');
             }
 

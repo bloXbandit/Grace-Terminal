@@ -44,7 +44,7 @@ const generate_title_local = async (question, conversation_id) => {
     console.log('=== END DEBUG ===');
     
     // handle thinking model result
-    if (content && content.startsWith('<think>')) {
+    if (content && typeof content === 'string' && content.startsWith('<think>')) {
         const { thinking: _, content: title } = resolveThinking(content);
         return title;
     }

@@ -81,7 +81,7 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   }
 
   // 处理 ERR_BAD_REQUEST 错误 (rate limits, etc.)
-  if (typeof content === 'string' && content.startsWith('ERR_BAD_REQUEST')) {
+  if (content && typeof content === 'string' && content.startsWith('ERR_BAD_REQUEST')) {
     const errorCode = content.split(':')[1]?.split('An')[0]?.trim() || 'unknown';
     
     // Retry on rate limit (429) or server errors (5xx)

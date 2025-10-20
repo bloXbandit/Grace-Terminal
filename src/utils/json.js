@@ -1,6 +1,7 @@
 const resolveThinking = require('@src/utils/thinking.js')
 
 const parseJSON = (content) => {
+  if (!content || typeof content !== 'string') return null;
   content = content.trim();
   if (content.startsWith('<think>')) {
     const { thinking: _, content: output } = resolveThinking(content);

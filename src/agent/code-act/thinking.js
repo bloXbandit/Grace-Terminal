@@ -55,7 +55,7 @@ const thinking_server = async (requirement, context = {}) => {
   if (prompt) {
     await memory.addMessage('user', prompt);
   }
-  if (content && content.startsWith('<think>')) {
+  if (content && typeof content === 'string' && content.startsWith('<think>')) {
     const { thinking: _, content: output } = resolveThinking(content);
     await memory.addMessage('assistant', output);
     return output;
@@ -118,7 +118,7 @@ const thinking_local = async (requirement, context = {}) => {
     await memory.addMessage('user', prompt);
   }
 
-  if (content && content.startsWith('<think>')) {
+  if (content && typeof content === 'string' && content.startsWith('<think>')) {
     const { thinking: _, content: output } = resolveThinking(content);
     await memory.addMessage('assistant', output);
     return output;

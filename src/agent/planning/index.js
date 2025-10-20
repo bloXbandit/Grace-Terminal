@@ -45,8 +45,13 @@ const planning_local = async (goal, options = {}) => {
   // 结果处理器
   const processResult = async (markdown) => {
     // CRITICAL: Ensure markdown is a string
-    if (typeof markdown !== 'string') {
+    if (!markdown || typeof markdown !== 'string') {
       console.error('[Planning] Response is not a string:', typeof markdown, markdown);
+      // If undefined or null, return empty string to avoid crashes
+      if (markdown === undefined || markdown === null) {
+        console.error('[Planning] Response is undefined/null - LLM call likely failed');
+        return [];
+      }
       markdown = JSON.stringify(markdown);
     }
     

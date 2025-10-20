@@ -45,7 +45,7 @@ const detect_intent_local = async (question, conversation_id, messagesContext = 
         // 如果是字符串，尝试解析为 JSON
         if (typeof content === 'string') {
             // handle thinking model result first
-            if (content.startsWith('<think>')) {
+            if (typeof content === 'string' && content.startsWith('<think>')) {
                 const { thinking: _, content: intent } = resolveThinking(content);
                 return intent.trim().toLowerCase();
             }
