@@ -56,11 +56,20 @@ class AgenticAgent {
 
   async _publishMessage(options) {
     const { uuid, action_type, status, content, json, task_id, meta_content, filepath } = options;
+    
+    // CRITICAL: Convert content to string before Message.format
+    const ResponseValidator = require('@src/utils/responseValidator');
+    let safeContent = content;
+    if (typeof content !== 'string') {
+      console.error('[AgenticAgent] Content is not a string:', typeof content, content);
+      safeContent = ResponseValidator.intelligentStringConversion(content);
+    }
+    
     const msg = Message.format({
       uuid,
       action_type,
       status,
-      content,
+      content: safeContent,
       // @ts-ignore
       json,
       task_id,

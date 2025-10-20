@@ -39,7 +39,20 @@ const fields = {
   content: {
     type: DataTypes.TEXT,
     allowNull: false,
-    comment: 'Content'
+    comment: 'Content',
+    set(value) {
+      // Auto-convert any value to string to avoid validation errors
+      if (value === null || value === undefined) {
+        this.setDataValue('content', '');
+      } else if (typeof value === 'string') {
+        this.setDataValue('content', value);
+      } else if (typeof value === 'object') {
+        // Convert objects to JSON string instead of "[object Object]"
+        this.setDataValue('content', JSON.stringify(value));
+      } else {
+        this.setDataValue('content', String(value));
+      }
+    }
   },
   timestamp: {
     type: DataTypes.BIGINT,
