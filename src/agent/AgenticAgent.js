@@ -118,6 +118,13 @@ class AgenticAgent {
       return reply; // Return specialist result
     }
     
+    // CRITICAL: Don't publish error objects from failed specialist calls
+    // The fallback will handle the request, so no need to show the error
+    if (reply && typeof reply === 'object' && reply.error) {
+      console.log('[AgenticAgent] Specialist failed but fallback will handle it, not publishing error');
+      return null; // Continue to planning with fallback
+    }
+    
     await this._publishMessage({ action_type: 'auto_reply', status: 'success', content: reply });
     return null; // Continue to planning
   }

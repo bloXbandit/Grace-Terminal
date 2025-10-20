@@ -31,12 +31,32 @@ const auto_reply = async (goal, conversation_id, user_id = 1) => {
   
   if (taskType !== 'general_chat') {
     console.log(`[AutoReply] Routing to specialist: ${taskType}`);
+    
+    // CRITICAL: Tasks that require tool execution should NOT be marked as "handled"
+    // These task types need AgenticAgent to continue to planning and tool execution
+    const requiresToolExecution = [
+      'data_generation',      // Creating files, documents, etc.
+      'code_generation',      // Writing code files
+      'system_design',        // Creating diagrams, architecture files
+      'web_research'          // Fetching and saving research data
+    ];
+    
+    const needsTools = requiresToolExecution.includes(taskType);
+    
     try {
       const result = await coordinator.execute(goal);
       console.log(`[AutoReply] Coordinator execute result:`, result.success ? 'SUCCESS' : 'FAILED');
       if (result.success) {
         console.log(`[AutoReply] Specialist ${result.specialist} handled the request`);
-        // Return with flag to indicate specialist handled it
+        
+        // If task needs tools, return the response but DON'T mark as handled
+        // This allows AgenticAgent to continue to planning and tool execution
+        if (needsTools) {
+          console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
+          return result.result; // Return response but let AgenticAgent continue
+        }
+        
+        // For tasks that don't need tools (like chat, analysis), mark as handled
         return {
           handledBySpecialist: true,
           result: result.result,
