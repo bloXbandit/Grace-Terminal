@@ -29,7 +29,7 @@
                 <div class="model-field">
                   <label>Primary Model</label>
                   <a-select
-                    v-model:value="preferences[taskType.key]?.primary_model"
+                    :value="preferences[taskType.key]?.primary_model"
                     :placeholder="getDefaultModel(taskType.key, 'primary')"
                     @change="updatePreference(taskType.key, 'primary_model', $event)"
                     style="width: 100%"
@@ -47,7 +47,7 @@
                 <div class="model-field">
                   <label>Fallback Model</label>
                   <a-select
-                    v-model:value="preferences[taskType.key]?.fallback_model"
+                    :value="preferences[taskType.key]?.fallback_model"
                     :placeholder="getDefaultModel(taskType.key, 'fallback')"
                     @change="updatePreference(taskType.key, 'fallback_model', $event)"
                     style="width: 100%"
@@ -92,7 +92,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import axios from '@/utils/axios'
+import http from '@/utils/http'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -139,7 +139,7 @@ const defaultRouting = {
 const loadPreferences = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/api/users/routing-preferences')
+    const response = await http.get('/api/users/routing-preferences')
     if (response.data && response.data.preferences) {
       Object.assign(preferences, response.data.preferences)
     }
@@ -183,7 +183,7 @@ const resetToDefault = (taskType) => {
 // Reset all to defaults
 const resetAllToDefaults = async () => {
   try {
-    await axios.delete('/api/users/routing-preferences')
+    await http.delete('/api/users/routing-preferences')
     Object.keys(preferences).forEach(key => {
       delete preferences[key]
     })
@@ -198,7 +198,7 @@ const resetAllToDefaults = async () => {
 const saveAllPreferences = async () => {
   saving.value = true
   try {
-    await axios.post('/api/users/routing-preferences', {
+    await http.post('/api/users/routing-preferences', {
       preferences: preferences
     })
     message.success('Routing preferences saved successfully!')
