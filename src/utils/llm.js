@@ -70,6 +70,23 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   let content;
   try {
     content = await llm.completion(prompt, context, restOptions);
+    
+    // CRITICAL: Ensure content is always a string
+    if (content === undefined || content === null) {
+      console.error('[LLM] Response is undefined/null!');
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Retrying due to null response (${retryCount + 1}/${MAX_RETRIES})...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[retryCount]));
+        return call(prompt, conversation_id, model_type, options, onTokenStream, retryCount + 1);
+      }
+      throw new Error('LLM returned null/undefined response after retries');
+    }
+    
+    // Convert non-string responses to strings
+    if (typeof content !== 'string') {
+      console.warn('[LLM] Response is not a string, converting:', typeof content);
+      content = JSON.stringify(content);
+    }
   } catch (error) {
     // Handle completion errors with retry
     if (retryCount < MAX_RETRIES) {
