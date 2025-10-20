@@ -34,6 +34,17 @@ const fields = {
   requirement: {
     type: DataTypes.TEXT,
     allowNull: false,
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue('requirement', '');
+      } else if (typeof value === 'string') {
+        this.setDataValue('requirement', value);
+      } else if (typeof value === 'object') {
+        this.setDataValue('requirement', JSON.stringify(value));
+      } else {
+        this.setDataValue('requirement', String(value));
+      }
+    }
   },
   status: {
     type: DataTypes.STRING,
@@ -42,10 +53,32 @@ const fields = {
   error: {
     type: DataTypes.TEXT,
     allowNull: true,
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue('error', null);
+      } else if (typeof value === 'string') {
+        this.setDataValue('error', value);
+      } else if (typeof value === 'object') {
+        this.setDataValue('error', JSON.stringify(value));
+      } else {
+        this.setDataValue('error', String(value));
+      }
+    }
   },
   result: {
     type: DataTypes.TEXT,
     allowNull: true,
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue('result', null);
+      } else if (typeof value === 'string') {
+        this.setDataValue('result', value);
+      } else if (typeof value === 'object') {
+        this.setDataValue('result', JSON.stringify(value));
+      } else {
+        this.setDataValue('result', String(value));
+      }
+    }
   },
   memorized: {
     type: DataTypes.TEXT('long'),
