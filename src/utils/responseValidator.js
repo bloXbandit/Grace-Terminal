@@ -16,9 +16,9 @@ class ResponseValidator {
    */
   static validateFileDeliveryClaims(response, conversationId) {
     try {
-      // FAILSAFE: Ensure we always have a string to work with
+      // INTELLIGENT: Convert objects to meaningful strings
       if (typeof response !== 'string') {
-        response = String(response?.content || response?.message || response || '');
+        response = this.intelligentStringConversion(response);
       }
 
       // TARGETED: Only check responses that claim file creation/delivery
@@ -55,6 +55,99 @@ class ResponseValidator {
     } catch (error) {
       console.warn('[ResponseValidator] Validation failed, passing through:', error.message);
       return response; // FAILSAFE: Always return original response on any error
+    }
+  }
+
+  /**
+   * Intelligent object-to-string conversion that preserves content
+   */
+  static intelligentStringConversion(obj) {
+    try {
+      // Handle null/undefined
+      if (obj === null || obj === undefined) {
+        return '';
+      }
+
+      // Already a string
+      if (typeof obj === 'string') {
+        return obj;
+      }
+
+      // Handle common response object patterns
+      if (typeof obj === 'object') {
+        // Try common content properties first
+        if (obj.content && typeof obj.content === 'string') {
+          return obj.content;
+        }
+        if (obj.message && typeof obj.message === 'string') {
+          return obj.message;
+        }
+        if (obj.text && typeof obj.text === 'string') {
+          return obj.text;
+        }
+        if (obj.response && typeof obj.response === 'string') {
+          return obj.response;
+        }
+        if (obj.result && typeof obj.result === 'string') {
+          return obj.result;
+        }
+
+        // Handle nested content objects
+        if (obj.content && typeof obj.content === 'object') {
+          return this.intelligentStringConversion(obj.content);
+        }
+
+        // Handle arrays - join meaningful content
+        if (Array.isArray(obj)) {
+          return obj.map(item => this.intelligentStringConversion(item)).join(' ');
+        }
+
+        // For complex objects, try to extract meaningful text
+        const meaningfulText = this.extractMeaningfulText(obj);
+        if (meaningfulText) {
+          return meaningfulText;
+        }
+
+        // Last resort: clean JSON stringify
+        return JSON.stringify(obj, null, 0)
+          .replace(/[{}[\]"]/g, '') // Remove JSON syntax
+          .replace(/,/g, ' ') // Replace commas with spaces
+          .replace(/:/g, ': ') // Make colons readable
+          .trim();
+      }
+
+      // Handle primitives
+      return String(obj);
+    } catch (error) {
+      console.warn('[ResponseValidator] String conversion failed:', error);
+      return String(obj || '');
+    }
+  }
+
+  /**
+   * Extract meaningful text from complex objects
+   */
+  static extractMeaningfulText(obj) {
+    try {
+      const textFields = [];
+      
+      // Recursively find string values
+      const extractStrings = (item, depth = 0) => {
+        if (depth > 3) return; // Prevent infinite recursion
+        
+        if (typeof item === 'string' && item.length > 0) {
+          textFields.push(item);
+        } else if (typeof item === 'object' && item !== null) {
+          Object.values(item).forEach(value => extractStrings(value, depth + 1));
+        }
+      };
+
+      extractStrings(obj);
+      
+      // Return joined meaningful text
+      return textFields.length > 0 ? textFields.join(' ').trim() : null;
+    } catch (error) {
+      return null;
     }
   }
 

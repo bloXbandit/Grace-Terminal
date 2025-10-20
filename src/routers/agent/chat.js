@@ -188,13 +188,11 @@ ${profileContext}
     // STRATEGIC: Validate file delivery claims before sending response
     const ResponseValidator = require('@src/utils/responseValidator');
     let validatedContent = ResponseValidator.validateFileDeliveryClaims(content, conversation_id);
-    
-    // CRITICAL FIX: Ensure validatedContent is always a string
+    // INTELLIGENT FIX: Ensure validatedContent is always a meaningful string
     if (typeof validatedContent !== 'string') {
       console.error('[Chat] ValidatedContent is not a string:', typeof validatedContent, validatedContent);
-      validatedContent = String(validatedContent || content || '');
-    }
-    
+      validatedContent = ResponseValidator.intelligentStringConversion(validatedContent || content || '');
+    }  
     // Check if we should ask a profile question (natural inquiry)
     let finalContent = validatedContent;
     try {
