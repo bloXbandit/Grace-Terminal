@@ -180,6 +180,8 @@ router.post("/run", async (ctx, next) => {
     });
     // Send only content to frontend stream, not full object
     onTokenStream(content);
+    // Give stream time to flush before ending
+    await new Promise(resolve => setImmediate(resolve));
     await Message.saveToDB(msg, conversation_id);
     await Conversation.update({ status: 'done' }, { where: { conversation_id } });
     ctx.body = stream;
