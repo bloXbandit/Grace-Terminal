@@ -93,6 +93,11 @@ const routes = [
         meta: { verify: true }
       },
       {
+        path: "routing-preferences",
+        component: () => import("@/view/setting/routing-preferences.vue"),
+        meta: { verify: true }
+      },
+      {
         path: "about",
         component: () => import("@/view/setting/about.vue"),
         meta: { verify: true }
@@ -103,7 +108,7 @@ const routes = [
       },{
         //ProfileSettings.vue
         path: "profile",
-        component: () => import("@/views/ProfileSettings.vue"),
+        component: () => import("@/view/setting/profile.vue"),
         meta: { verify: true }
       }
     ]

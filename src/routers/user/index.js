@@ -6,6 +6,7 @@ const modules = [
   "users",
   "profile",
   "github",
+  "routing-preferences",
 ]
 
 for (const module of modules) {

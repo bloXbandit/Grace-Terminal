@@ -437,6 +437,7 @@ export default {
       modelService: "Model service",
       searchService: "Search service",
       mcpService: "MCP service",
+      routingPreferences: "Routing Preferences",
       experience: 'Experience library',
       account: "Account",
       //积分管理

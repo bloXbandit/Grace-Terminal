@@ -55,6 +55,7 @@ let menuItems = [
     icon: GlobalOutlined,
   },
   { key: "mcp-service", name: "setting.menu.mcpService", icon: CodeOutlined },
+  { key: "routing-preferences", name: "setting.menu.routingPreferences", icon: AppstoreOutlined },
   { key: "about", name: "setting.menu.about", icon: InfoCircleOutlined },
 ];
 
