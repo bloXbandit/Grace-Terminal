@@ -178,7 +178,8 @@ router.post("/run", async (ctx, next) => {
       action_type: 'auto_reply',
       content: content
     });
-    onTokenStream(msg);
+    // Send only content to frontend stream, not full object
+    onTokenStream(content);
     await Message.saveToDB(msg, conversation_id);
     await Conversation.update({ status: 'done' }, { where: { conversation_id } });
     ctx.body = stream;

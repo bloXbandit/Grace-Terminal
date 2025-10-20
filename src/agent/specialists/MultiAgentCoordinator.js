@@ -556,8 +556,25 @@ class MultiAgentCoordinator {
       // Get streaming callback if provided
       const onTokenStream = options.onTokenStream || (() => {});
       
-      // Create LLM instance with streaming support
-      const llm = await createLLMInstance(model, onTokenStream, {});
+      // CRITICAL: Construct model_info for specialist models
+      // Specialists use hardcoded API keys from env, not database
+      const model_info = {
+        model_name: modelName,
+        platform_name: provider,
+        api_key: process.env[`${provider.toUpperCase()}_API_KEY`] || process.env.OPENROUTER_API_KEY || '',
+        api_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 
+                 provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
+                 provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' :
+                 'https://api.openai.com/v1/chat/completions',
+        base_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1' :
+                  provider === 'openai' ? 'https://api.openai.com/v1' :
+                  provider === 'anthropic' ? 'https://api.anthropic.com/v1' :
+                  'https://api.openai.com/v1',
+        is_subscribe: false
+      };
+      
+      // Create LLM instance with streaming support and model_info
+      const llm = await createLLMInstance(model, onTokenStream, { model_info });
       
       // CRITICAL: Prepend MASTER_SYSTEM_PROMPT to ensure Grace's identity and capabilities are always present
       const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
