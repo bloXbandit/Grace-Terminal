@@ -75,6 +75,12 @@ const extractDescription = content => {
  * Parse XML to extract actions (single or multiple)
  */
 const resolveActions = xml => {
+  // CRITICAL: Check if xml is valid before processing
+  if (!xml || typeof xml !== 'string') {
+    console.error('[editor/resolveActions] Invalid input - not a string:', typeof xml);
+    return [];
+  }
+  
   try {
     const resolved = resolveXML(xml);
     const actions = [];

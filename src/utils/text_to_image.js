@@ -337,7 +337,21 @@ class TextToImageService {
 
         try {
             // 获取默认模型信息
-            const model_info = await getDefaultModel(conversationId);
+            let model_info = await getDefaultModel(conversationId);
+            
+            // CRITICAL: Fallback if no model found
+            if (!model_info) {
+                console.warn('[text_to_image] No default model found, using fallback');
+                model_info = {
+                    model_name: 'anthropic/claude-sonnet-4.5',
+                    platform_name: 'OpenRouter',
+                    api_key: process.env.OPENROUTER_API_KEY || '',
+                    api_url: 'https://openrouter.ai/api/v1/chat/completions',
+                    base_url: 'https://openrouter.ai/api/v1',
+                    is_subscribe: false
+                };
+            }
+            
             const model = `provider#${model_info.platform_name}#${model_info.model_name}`;
             
             console.log(`🤖 Using model: ${model_info.platform_name}#${model_info.model_name}`);

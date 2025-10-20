@@ -63,18 +63,54 @@ const getDefaultModel = async (conversation_id) => {
     const conversation = await Conversation.findOne({ where: { conversation_id } })
     if (!conversation || !conversation.dataValues.model_id) {
       // Fallback to default model setting
-      return await _fetchDefaultModel('assistant');
+      const defaultModel = await _fetchDefaultModel('assistant');
+      if (defaultModel) return defaultModel;
+      
+      // ULTIMATE FALLBACK: Return hardcoded model
+      console.warn('[getDefaultModel] No models in database, using hardcoded fallback');
+      return {
+        model_name: 'anthropic/claude-sonnet-4.5',
+        platform_name: 'OpenRouter',
+        api_key: process.env.OPENROUTER_API_KEY || '',
+        api_url: 'https://openrouter.ai/api/v1/chat/completions',
+        base_url: 'https://openrouter.ai/api/v1',
+        is_subscribe: false
+      };
     }
     
     const model = await Model.findOne({ where: { id: conversation.dataValues.model_id } });
     if (!model) {
-      return await _fetchDefaultModel('assistant');
+      const defaultModel = await _fetchDefaultModel('assistant');
+      if (defaultModel) return defaultModel;
+      
+      // ULTIMATE FALLBACK
+      console.warn('[getDefaultModel] Conversation model not found, using hardcoded fallback');
+      return {
+        model_name: 'anthropic/claude-sonnet-4.5',
+        platform_name: 'OpenRouter',
+        api_key: process.env.OPENROUTER_API_KEY || '',
+        api_url: 'https://openrouter.ai/api/v1/chat/completions',
+        base_url: 'https://openrouter.ai/api/v1',
+        is_subscribe: false
+      };
     }
     
     const model_name = model.dataValues.model_id;
     const platform = await Plantform.findOne({ where: { id: model.dataValues.platform_id } });
     if (!platform) {
-      return await _fetchDefaultModel('assistant');
+      const defaultModel = await _fetchDefaultModel('assistant');
+      if (defaultModel) return defaultModel;
+      
+      // ULTIMATE FALLBACK
+      console.warn('[getDefaultModel] Platform not found, using hardcoded fallback');
+      return {
+        model_name: 'anthropic/claude-sonnet-4.5',
+        platform_name: 'OpenRouter',
+        api_key: process.env.OPENROUTER_API_KEY || '',
+        api_url: 'https://openrouter.ai/api/v1/chat/completions',
+        base_url: 'https://openrouter.ai/api/v1',
+        is_subscribe: false
+      };
     }
 
     const api_key = platform.dataValues.api_key;
@@ -92,8 +128,20 @@ const getDefaultModel = async (conversation_id) => {
       is_subscribe: platform.is_subscribe || false 
     };
   } catch (error) {
-    console.error('Error in getDefaultModel:', error);
-    return await _fetchDefaultModel('assistant');
+    console.error('[getDefaultModel] Critical error:', error.message);
+    const defaultModel = await _fetchDefaultModel('assistant');
+    if (defaultModel) return defaultModel;
+    
+    // ULTIMATE FALLBACK - NEVER RETURN NULL
+    console.warn('[getDefaultModel] Exception caught, using hardcoded fallback');
+    return {
+      model_name: 'anthropic/claude-sonnet-4.5',
+      platform_name: 'OpenRouter',
+      api_key: process.env.OPENROUTER_API_KEY || '',
+      api_url: 'https://openrouter.ai/api/v1/chat/completions',
+      base_url: 'https://openrouter.ai/api/v1',
+      is_subscribe: false
+    };
   }
 };
 

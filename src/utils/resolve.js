@@ -87,6 +87,12 @@ const extractXML = (content) => {
 };
 
 const resolveActions = xml => {
+  // CRITICAL: Check if xml is valid before processing
+  if (!xml || typeof xml !== 'string') {
+    console.error('[resolveActions] Invalid input - not a string:', typeof xml);
+    return [];
+  }
+  
   try {
     // Extract XML from potentially messy LLM response
     const cleanedXml = extractXML(xml);
@@ -103,7 +109,7 @@ const resolveActions = xml => {
     return actions;
   } catch (err) {
     console.log('[resolveActions] Parse error:', err.message);
-    console.log('[resolveActions] Original content:', xml?.substring(0, 200));
+    console.log('[resolveActions] Original content:', xml.substring(0, 200));
     return [];
   }
 }
