@@ -11,13 +11,21 @@ const _fetchDefaultModel = async (type = 'assistant') => {
   try {
     const defaultModelSetting = await DefaultModelSetting.findOne({ where: { setting_type: type } });
     if (!defaultModelSetting) {
-      // Return first enabled model as ultimate fallback
-      const firstModel = await Model.findOne({ where: { enabled: true } });
-      if (!firstModel) return null;
+      console.log('[DefaultModel] No default setting found, looking for first enabled model...');
+      // Return first enabled model as fallback
+      const firstModel = await Model.findOne({ where: { enabled: 1 } });
+      if (!firstModel) {
+        console.error('[DefaultModel] No enabled models found! Please enable a model in settings.');
+        return null;
+      }
       
       const platform = await Plantform.findOne({ where: { id: firstModel.dataValues.platform_id } });
-      if (!platform) return null;
+      if (!platform) {
+        console.error('[DefaultModel] Enabled model found but platform missing!');
+        return null;
+      }
       
+      console.log(`[DefaultModel] Using first enabled model: ${firstModel.dataValues.model_id}`);
       return {
         model_name: firstModel.dataValues.model_id,
         platform_name: platform.dataValues.name,
@@ -44,7 +52,8 @@ const _fetchDefaultModel = async (type = 'assistant') => {
 
     return { model_name, platform_name, api_key, api_url, base_url: base_url, is_subscribe: platform.is_subscribe || false };
   } catch (error) {
-    console.error('Error in _fetchDefaultModel:', error);
+    console.error('Error in _fetchDefaultModel:', error.message);
+    console.error('Stack:', error.stack);
     return null;
   }
 };

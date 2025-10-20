@@ -44,6 +44,12 @@ const planning_local = async (goal, options = {}) => {
 
   // 结果处理器
   const processResult = async (markdown) => {
+    // CRITICAL: Ensure markdown is a string
+    if (typeof markdown !== 'string') {
+      console.error('[Planning] Response is not a string:', typeof markdown, markdown);
+      markdown = JSON.stringify(markdown);
+    }
+    
     // 处理 thinking 标签
     if (markdown && markdown.startsWith('<think>')) {
       const { content: output } = resolveThinking(markdown);

@@ -35,11 +35,19 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
     // Log for audit but don't block (MASTER_SYSTEM_PROMPT will still enforce)
   }
   
-  const model_info = await getDefaultModel(conversation_id)
+  let model_info = await getDefaultModel(conversation_id)
   
-  // CRITICAL: Check if model_info is null
+  // CRITICAL: Fallback to hardcoded model if none configured
   if (!model_info) {
-    throw new Error('No default model found. Please configure a model in settings.');
+    console.warn('[LLM] No default model found, using fallback: Claude Sonnet 4.5');
+    model_info = {
+      model_name: 'anthropic/claude-sonnet-4.5',
+      platform_name: 'OpenRouter',
+      api_key: process.env.OPENROUTER_API_KEY || '',
+      api_url: 'https://openrouter.ai/api/v1/chat/completions',
+      base_url: 'https://openrouter.ai/api/v1',
+      is_subscribe: false
+    };
   }
   
   const model = `provider#${model_info.platform_name}#${model_info.model_name}`;
