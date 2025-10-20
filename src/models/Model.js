@@ -51,6 +51,12 @@ const fields = {
     allowNull: false,
     defaultValue: DataTypes.NOW,
     comment: 'Updated At'
+  },
+  enabled: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    comment: 'Whether the model is enabled (1) or disabled (0)'
   }
 };
 

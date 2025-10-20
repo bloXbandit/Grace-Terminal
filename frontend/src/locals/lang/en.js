@@ -432,7 +432,7 @@ export default {
     tourClickSettingDescription: "Click the \"Settings\" button to enter the settings page for model configuration",
     tourUnderstood: "Go to Settings",
     menu: {
-      basic: "Basic settings",
+      basic: "User Settings",
       defaultModel: "Default model",
       modelService: "Model service",
       searchService: "Search service",
@@ -445,7 +445,7 @@ export default {
       about: 'About',
     },
     basic: {
-      title: "Basic settings",
+      title: "User Settings",
       langTitle: "Language settings",
       languagePreference: "Language preference",
       lang: {
