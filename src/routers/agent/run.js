@@ -178,8 +178,8 @@ router.post("/run", async (ctx, next) => {
       action_type: 'auto_reply',
       content: content
     });
-    // Send only content to frontend stream, not full object
-    onTokenStream(content);
+    // Send full message object like AgenticAgent does
+    onTokenStream(msg);
     // Give stream time to flush before ending
     await new Promise(resolve => setImmediate(resolve));
     await Message.saveToDB(msg, conversation_id);
