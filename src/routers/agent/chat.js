@@ -44,7 +44,9 @@ router.post("/chat", async (ctx, next) => {
   const modeCommandResult = await modeCommandHandler.handleCommand(question, conversation_id);
   if (modeCommandResult) {
     // This was a mode command, return the result directly
-    const content = modeCommandResult.message || modeCommandResult.error || 'Mode command executed';
+    const ResponseValidator = require('@src/utils/responseValidator');
+    const rawContent = modeCommandResult.message || modeCommandResult.error || 'Mode command executed';
+    const content = ResponseValidator.intelligentStringConversion(rawContent);
     const msg = Message.format({
       status: modeCommandResult.success ? 'success' : 'failure',
       action_type: 'auto_reply',
@@ -228,7 +230,9 @@ ${profileContext}
 
     await Conversation.update({ status: 'done' }, { where: { conversation_id } })
   }).catch(async (error) => {
-    content = error.message
+    // CRITICAL: Convert error.message to string before Message.format
+    const ResponseValidator = require('@src/utils/responseValidator');
+    content = ResponseValidator.intelligentStringConversion(error.message || error || 'An error occurred');
     const assistant_msg = Message.format({
       role: 'assistant',
       status: 'success',
@@ -307,6 +311,12 @@ router.post("/re_chat", async (ctx, next) => {
   console.log("messagesContext[messagesContext.length - 1]", message)
   const contextMessages = messagesContext.slice(0, -1)
   call(question, conversation_id, 'assistant', { temperature: 0.7, messages: contextMessages }, onTokenStream).then(async (content) => {
+    // CRITICAL: Convert LLM content to string before Message.format
+    const ResponseValidator = require('@src/utils/responseValidator');
+    if (typeof content !== 'string') {
+      console.error('[Chat] LLM Content is not a string:', typeof content, content);
+      content = ResponseValidator.intelligentStringConversion(content);
+    }
     const assistant_msg = Message.format({
       role: 'assistant',
       status: 'success',
@@ -323,7 +333,9 @@ router.post("/re_chat", async (ctx, next) => {
 
     await Conversation.update({ status: 'done' }, { where: { conversation_id } })
   }).catch(async (error) => {
-    let content = error.message
+    // CRITICAL: Convert error.message to string before Message.format
+    const ResponseValidator = require('@src/utils/responseValidator');
+    let content = ResponseValidator.intelligentStringConversion(error.message || error || 'An error occurred');
     const assistant_msg = Message.format({
       role: 'assistant',
       status: 'success',
