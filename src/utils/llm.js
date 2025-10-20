@@ -36,6 +36,12 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   }
   
   const model_info = await getDefaultModel(conversation_id)
+  
+  // CRITICAL: Check if model_info is null
+  if (!model_info) {
+    throw new Error('No default model found. Please configure a model in settings.');
+  }
+  
   const model = `provider#${model_info.platform_name}#${model_info.model_name}`;
   const llm = await createLLMInstance(model, onTokenStream, { model_info });
   // 判断模型
