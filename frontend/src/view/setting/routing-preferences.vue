@@ -111,28 +111,49 @@ const availableTaskTypes = ref([
   { key: 'general_chat', name: 'General Chat', description: 'Casual conversation and Q&A' }
 ])
 
-// Available models
+// Available models (matching backend routing.config.js)
 const availableModels = ref([
+  // OpenAI Models
   { key: 'openai/gpt-4o', name: 'GPT-4o (OpenAI)' },
   { key: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+  { key: 'openai/o1-preview', name: 'GPT-o1 Preview (OpenAI)' },
+  
+  // Anthropic Models
+  { key: 'openrouter/anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
   { key: 'openrouter/anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
   { key: 'openrouter/anthropic/claude-3-opus', name: 'Claude 3 Opus' },
+  
+  // DeepSeek Models
+  { key: 'openrouter/deepseek/deepseek-r1', name: 'DeepSeek R1 (Reasoning)' },
+  { key: 'openrouter/deepseek/deepseek-coder', name: 'DeepSeek Coder' },
   { key: 'openrouter/deepseek/deepseek-chat', name: 'DeepSeek Chat' },
+  
+  // Qwen Models
+  { key: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct', name: 'Qwen3 Coder 30B' },
+  { key: 'openrouter/qwen/qwen3-30b-a3b', name: 'Qwen3 30B' },
+  
+  // GLM Models
+  { key: 'openrouter/zhipu/glm-4-plus', name: 'GLM-4 Plus' },
+  
+  // Other Models
+  { key: 'openrouter/openai/gpt-oss-20b', name: 'GPT OSS 20B' },
+  { key: 'openrouter/microsoft/phi-4', name: 'Phi-4 (Microsoft)' },
   { key: 'openrouter/google/gemini-pro-1.5', name: 'Gemini Pro 1.5' },
-  { key: 'openrouter/meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B' }
+  { key: 'openrouter/meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B' },
+  { key: 'openrouter/gryphe/mythomax-l2-13b', name: 'MythoMax L2 13B (Creative)' }
 ])
 
-// Default routing configuration (from backend)
+// Default routing configuration (matching backend routing.config.js exactly)
 const defaultRouting = {
-  'code_generation': { primary: 'openai/gpt-4o', fallback: 'openrouter/deepseek/deepseek-chat' },
-  'code_review': { primary: 'openrouter/anthropic/claude-3.5-sonnet', fallback: 'openai/gpt-4o' },
-  'debugging': { primary: 'openai/gpt-4o', fallback: 'openrouter/deepseek/deepseek-chat' },
-  'data_analysis': { primary: 'openrouter/anthropic/claude-3.5-sonnet', fallback: 'openai/gpt-4o' },
-  'creative_writing': { primary: 'openrouter/anthropic/claude-3.5-sonnet', fallback: 'openai/gpt-4o' },
-  'technical_writing': { primary: 'openai/gpt-4o', fallback: 'openrouter/anthropic/claude-3.5-sonnet' },
-  'web_research': { primary: 'openai/gpt-4o', fallback: 'openrouter/google/gemini-pro-1.5' },
-  'system_design': { primary: 'openai/gpt-4o', fallback: 'openrouter/anthropic/claude-3-opus' },
-  'general_chat': { primary: 'openai/gpt-4o-mini', fallback: 'openai/gpt-4o' }
+  'code_generation': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-4o' },
+  'code_review': { primary: 'openrouter/deepseek/deepseek-coder', fallback: 'openrouter/anthropic/claude-3-opus' },
+  'debugging': { primary: 'openrouter/deepseek/deepseek-r1', fallback: 'openrouter/deepseek/deepseek-coder' },
+  'data_analysis': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/gpt-4o' },
+  'creative_writing': { primary: 'openrouter/gryphe/mythomax-l2-13b', fallback: 'openrouter/anthropic/claude-sonnet-4.5' },
+  'technical_writing': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-4o' },
+  'web_research': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/gpt-4o' },
+  'system_design': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/o1-preview' },
+  'general_chat': { primary: 'openai/gpt-4o', fallback: 'openrouter/anthropic/claude-sonnet-4.5' }
 }
 
 // Load user preferences

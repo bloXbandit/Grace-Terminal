@@ -125,7 +125,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { request } from '@/utils/request';
+import http from '@/utils/http';
 
 const profile = ref({
   name: '',
@@ -156,10 +156,7 @@ const setupProfileListener = () => {
 // Load profile from backend
 const loadProfile = async () => {
   try {
-    const response = await request({
-      url: '/api/users/profile',
-      method: 'GET'
-    });
+    const response = await http.get('/api/users/profile');
     
     if (response.success) {
       // Populate form fields
@@ -185,15 +182,11 @@ const saveField = async (key) => {
   if (!value || value.trim() === '') return;
   
   try {
-    await request({
-      url: '/api/users/profile',
-      method: 'POST',
-      data: {
-        key,
-        value: value.trim(),
-        confidence: 1.0,
-        source: 'settings'
-      }
+    await http.post('/api/users/profile', {
+      key,
+      value: value.trim(),
+      confidence: 1.0,
+      source: 'settings'
     });
     
     // Trigger notification

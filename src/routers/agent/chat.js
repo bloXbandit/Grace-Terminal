@@ -185,10 +185,16 @@ ${profileContext}
   }
 
   responsePromise.then(async (content) => {
-    // STRATEGIC: Validate file delivery claims before sending response
+    // CRITICAL: Convert content to string FIRST before any processing
     const ResponseValidator = require('@src/utils/responseValidator');
+    if (typeof content !== 'string') {
+      console.error('[Chat] LLM Content is not a string:', typeof content, content);
+      content = ResponseValidator.intelligentStringConversion(content);
+    }
+    
+    // STRATEGIC: Validate file delivery claims before sending response
     let validatedContent = ResponseValidator.validateFileDeliveryClaims(content, conversation_id);
-    // INTELLIGENT FIX: Ensure validatedContent is always a meaningful string
+    // DOUBLE CHECK: Ensure validatedContent is always a meaningful string
     if (typeof validatedContent !== 'string') {
       console.error('[Chat] ValidatedContent is not a string:', typeof validatedContent, validatedContent);
       validatedContent = ResponseValidator.intelligentStringConversion(validatedContent || content || '');
