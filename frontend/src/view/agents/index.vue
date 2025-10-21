@@ -146,7 +146,7 @@ function confirmDelete(id) {
       await agentService.delete(id)
       fetchAgents()
       message.success("Delete Success")
-      router.push("/lemon")
+      router.push("/grace")
     }
   })
 }
@@ -226,9 +226,9 @@ async function  selectAgent(item, isClick = false,needSelect = true) {
   
   if (isClick) {
     if(conversationId.value){
-      router.push(`/lemon/${agent.value.id}/${conversationId.value}`)
+      router.push(`/grace/${agent.value.id}/${conversationId.value}`)
     }else{
-      router.push(`/lemon/${agent.value.id}`)
+      router.push(`/grace/${agent.value.id}`)
     }
    
   }

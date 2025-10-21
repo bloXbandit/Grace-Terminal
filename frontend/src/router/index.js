@@ -6,11 +6,11 @@ const routes = [
     path: "/",
     component: () => import(/* webpackChunkName: "lemon" */ "@/view/lemon/index.vue"),
     meta: { verify: true },
-    redirect: { name: "lemon" },
+    redirect: { name: "grace" },
     children: [
       {
-        path: "lemon/:agentId?/:id?",
-        name: "lemon",
+        path: "grace/:agentId?/:id?",
+        name: "grace",
         component: () => import(/* webpackChunkName: "lemon" */ "@/view/lemon/components/ChatPanel.vue"),
         meta: { verify: true }
       }

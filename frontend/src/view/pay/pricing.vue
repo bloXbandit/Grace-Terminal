@@ -22,7 +22,7 @@ import Pricing from './components/pricing.vue'
 
 const { t } = useI18n()
 const router = useRouter()
-const back = () => router.push({ name: 'lemon' })
+const back = () => router.push({ name: 'grace' })
 
 
 

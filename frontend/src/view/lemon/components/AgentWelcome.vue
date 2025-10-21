@@ -78,7 +78,7 @@ const handleWelcomeInput = async (value) => {
   const result = await chatStore.createConversation(text, mode.value);
   const { conversation_id } = result;
   if (conversation_id) {
-    router.push(`/lemon/${agent.value.id}/${conversation_id}`);
+    router.push(`/grace/${agent.value.id}/${conversation_id}`);
   }
   if (mode.value === 'chat') {
     await seeAgent.sendMessage(text, conversation_id, [], mcp_server_ids,workMode);

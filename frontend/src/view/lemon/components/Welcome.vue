@@ -80,7 +80,7 @@ const handleWelcomeInput = async (value) => {
   const result = await chatStore.createConversation(text,mode.value);
   const { conversation_id } = result;
   if(mode.value === 'chat' && conversation_id){
-    router.push(`/lemon/chat/${conversation_id}`);
+    router.push(`/grace/chat/${conversation_id}`);
     await seeAgent.sendMessage(text,conversation_id,[],mcp_server_ids,workMode);
   }else{
     show('Creating Agent...')
@@ -90,7 +90,7 @@ const handleWelcomeInput = async (value) => {
     hide();
     //刷新agent
     emitter.emit('selectedAgent', res);
-    router.push(`/lemon/${res.id}/${conversation_id}`);
+    router.push(`/grace/${res.id}/${conversation_id}`);
     await seeAgent.sendMessage(text,conversation_id,files,mcp_server_ids,workMode);
   }
 };

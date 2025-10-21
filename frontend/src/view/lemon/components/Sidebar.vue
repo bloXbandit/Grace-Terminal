@@ -105,7 +105,7 @@ const router = useRouter();
 const setActiveChat = (chat) => {
   conversationId.value = chat.conversation_id;
   chatStore.clearMessages();
-  router.push(`/lemon/${chat.conversation_id}`);
+  router.push(`/grace/${chat.conversation_id}`);
 };
 </script>
 

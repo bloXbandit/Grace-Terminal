@@ -245,7 +245,7 @@ function changeMode(modeType) {
     emitter.emit('mobileMenuStateChange', false)
   }
   
-  router.push('/lemon')
+  router.push('/grace')
 }
 
 function toStore() {

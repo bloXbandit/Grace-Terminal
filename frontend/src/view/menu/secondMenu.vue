@@ -273,9 +273,9 @@ const handleNewChat = () => {
   chatStore.conversationId = null;
   chatStore.clearMessages();
   if(mode.value === 'task'){
-    router.push(`/lemon/${agent.value.id}`);
+    router.push(`/grace/${agent.value.id}`);
   }else{
-    router.push('/lemon');
+    router.push('/grace');
   }
   
 };
@@ -298,9 +298,9 @@ const handleChatClick = (chat) => {
   chatStore.clearMessages();
   chatStore.initConversation(chat.conversation_id);
   if(mode.value == 'chat'){
-    router.push(`/lemon/chat/${chat.conversation_id}`);
+    router.push(`/grace/chat/${chat.conversation_id}`);
   }else{
-    router.push(`/lemon/${agent.value.id}/${chat.conversation_id}`);
+    router.push(`/grace/${agent.value.id}/${chat.conversation_id}`);
   }
 };
 
@@ -342,7 +342,7 @@ const handleDelete = async () => {
       await chatStore.removeConversation(chatToDelete.value.conversation_id);
       deleteModalVisible.value = false;
       chatToDelete.value = null;
-      router.push('/lemon');
+      router.push('/grace');
     } catch (error) {
       console.error('Failed to delete conversation:', error);
     }

@@ -29,7 +29,7 @@ const handleCardClick = async (card) => {
   console.log('createConversation', result);
   const { conversation_id } = result;
   if (conversation_id) {
-    router.push(`/lemon/${conversation_id}`);
+    router.push(`/grace/${conversation_id}`);
     await seeAgent.sendMessage(card.title,conversation_id,[]);
   }
 }

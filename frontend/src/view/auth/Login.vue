@@ -184,7 +184,7 @@ const handleLogin = async (values) => {
     console.log('res', res);
     if (res.code === 200) {
       message.success(t('auth.loginSuccessful'));
-      router.push({ name: 'lemon' });
+      router.push({ name: 'grace' });
     } else {
       message.error(res.message);
     }
@@ -201,7 +201,7 @@ const handleLoginSMSCode = async (values) => {
   const res = await auth.loginSMSCode(values.phone, values.smsCode);
   if (res.code === 200) {
     message.success(t('auth.loginSuccessful'));
-    router.push({ name: 'lemon' });
+    router.push({ name: 'grace' });
   }else{
     message.error(res.message);
     return;

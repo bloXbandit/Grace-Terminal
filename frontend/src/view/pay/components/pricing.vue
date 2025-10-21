@@ -547,7 +547,7 @@ const filteredPlans = computed(() => {
   )
 })
 
-const back = () => router.push({ name: 'lemon' })
+const back = () => router.push({ name: 'grace' })
 
 const membershipBenefitsMap = computed(() => ({
   'Free': [
