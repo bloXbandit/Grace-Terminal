@@ -16,7 +16,14 @@ const write_file = async (filepath, content) => {
 }
 
 const write_code = async (action, uuid, user_id) => {
-  let { path: filepath, content } = action.params;
+  // Handle both 'path' and 'file_path' (XML attribute becomes '@_file_path')
+  let { path: filepath, file_path, '@_file_path': xmlFilePath, content } = action.params;
+  filepath = filepath || file_path || xmlFilePath;
+  
+  if (!filepath) {
+    throw new Error('write_code requires a file path parameter (path, file_path, or @_file_path)');
+  }
+  
   filepath = await restrictFilepath(filepath, user_id);
   await write_file(filepath, content);
   // const result = await executeCode(filepath);
