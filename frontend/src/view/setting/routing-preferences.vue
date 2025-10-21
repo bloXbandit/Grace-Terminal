@@ -114,6 +114,7 @@ const availableTaskTypes = ref([
 // Available models (matching backend routing.config.js)
 const availableModels = ref([
   // OpenAI Models
+  { key: 'openrouter/openai/gpt-5', name: 'GPT-5 (OpenAI)' },
   { key: 'openai/gpt-4o', name: 'GPT-4o (OpenAI)' },
   { key: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
   { key: 'openai/o1-preview', name: 'GPT-o1 Preview (OpenAI)' },
@@ -145,15 +146,15 @@ const availableModels = ref([
 
 // Default routing configuration (matching backend routing.config.js exactly)
 const defaultRouting = {
-  'code_generation': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-4o' },
+  'code_generation': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openrouter/openai/gpt-5' },
   'code_review': { primary: 'openrouter/deepseek/deepseek-coder', fallback: 'openrouter/anthropic/claude-3-opus' },
   'debugging': { primary: 'openrouter/deepseek/deepseek-r1', fallback: 'openrouter/deepseek/deepseek-coder' },
-  'data_analysis': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/gpt-4o' },
+  'data_analysis': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openrouter/openai/gpt-5' },
   'creative_writing': { primary: 'openrouter/gryphe/mythomax-l2-13b', fallback: 'openrouter/anthropic/claude-sonnet-4.5' },
-  'technical_writing': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-4o' },
-  'web_research': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/gpt-4o' },
+  'technical_writing': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openrouter/openai/gpt-5' },
+  'web_research': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openrouter/openai/gpt-5' },
   'system_design': { primary: 'openrouter/zhipu/glm-4-plus', fallback: 'openai/o1-preview' },
-  'general_chat': { primary: 'openai/gpt-4o', fallback: 'openrouter/anthropic/claude-sonnet-4.5' }
+  'general_chat': { primary: 'openrouter/openai/gpt-5', fallback: 'openrouter/anthropic/claude-sonnet-4.5' }
 }
 
 // Load user preferences

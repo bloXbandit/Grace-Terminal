@@ -4,7 +4,7 @@
     <div>
       <a-form :model="formState" layout="vertical" @finish="handleSubmit">
         <a-form-item label="自定义模型">
-          <a-input v-model:value="formState.modelName" placeholder="例如: GPT-4" :disabled="loading" />
+          <a-input v-model:value="formState.modelName" placeholder="例如: GPT-5" :disabled="loading" />
         </a-form-item>
         <a-form-item label="模型 URL">
           <a-input v-model:value="formState.modelUrl" placeholder="https://api.example.com/v1" :disabled="loading" />
