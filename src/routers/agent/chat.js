@@ -108,7 +108,19 @@ router.post("/chat", async (ctx, next) => {
   
   // Check if this is a specialist-worthy task
   const taskType = coordinator.detectTaskType(question);
-  const useSpecialist = taskType !== 'general_chat';
+  
+  // CRITICAL: Chat mode cannot execute code, so exclude tasks that require execution
+  const executionRequiredTasks = [
+    'data_generation',      // Excel, CSV, JSON files - needs pandas execution
+    'code_generation',      // Code files - needs file writing
+    'code_generation_fast', // Quick code - needs file writing
+    'system_design',        // Diagrams - needs file generation
+    'web_research'          // Research with file output
+  ];
+  
+  // If task requires execution, skip specialist and use default model
+  // Default model will provide helpful response or guide user to task mode
+  const useSpecialist = taskType !== 'general_chat' && !executionRequiredTasks.includes(taskType);
 
   // CRITICAL: Use MASTER_SYSTEM_PROMPT + profileContext (same as task mode)
   const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
@@ -169,11 +181,6 @@ ${profileContext}
     }).then(result => {
       if (result.success) {
         console.log(`[Chat] Specialist ${result.specialist} (${taskType}) completed the request`);
-        // Direct completion tasks - specialist result is final
-        const directCompletionTasks = ['creative_writing', 'data_generation', 'code_generation', 'code_generation_fast'];
-        if (directCompletionTasks.includes(taskType)) {
-          console.log('[Chat] Direct completion task - using specialist result as-is');
-        }
         return result.result;
       }
       // Fallback to default if specialist fails
