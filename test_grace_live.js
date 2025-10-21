@@ -108,6 +108,13 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
+    },
+    {
+      name: 'Hype Williams Music Video',
+      goal: 'I need a creative music video concept for an up-and-coming rapper. Make it in the style of Hype Williams - super visual, cinematic, with that signature fisheye lens aesthetic and bold colors. The rapper\'s vibe is confident, luxurious, and futuristic. Give me a full treatment with scenes, visuals, and the overall mood.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
     }
   ],
   auto: [
