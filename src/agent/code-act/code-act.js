@@ -235,11 +235,39 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
       // console.log("action_result", action_result);
 
       // 6. Reflection and evaluation
-      // CRITICAL: Skip reflection for pre-generated specialist actions - they're already validated
+      // For pre-generated specialist actions, check if they succeeded before skipping reflection
       if (task.preGeneratedAction) {
-        console.log('[CodeAct] Skipping reflection for pre-generated specialist action');
+        console.log('[CodeAct] Pre-generated specialist action detected');
         
-        // Extract filename from action result content (e.g., "✅ Created: filename.docx")
+        // Check if the action actually succeeded
+        if (action_result.status === 'failure' || action_result.error) {
+          console.log('[CodeAct] ⚠️ Specialist action failed - enabling reflection and retry');
+          console.log('[CodeAct] Error:', action_result.error);
+          
+          // Clear the pre-generated flag so we can adapt and retry
+          task.preGeneratedAction = false;
+          
+          // Use reflection to figure out how to fix the issue
+          const reflection_result = await reflection(requirement, action_result, context.conversation_id);
+          console.log("reflection_result", reflection_result);
+          const { status, comments } = reflection_result;
+          
+          if (status === "failure") {
+            // Add reflection to context for next iteration
+            context.reflection = comments;
+            console.log('[CodeAct] Reflection suggests:', comments);
+            await memory.addMessage("user", comments);
+            
+            // Retry with reflection guidance
+            retryCount++;
+            totalRetryAttempts++;
+            console.log(`[CodeAct] Retrying with adaptation (${retryCount}/${maxRetries})...`);
+            continue;
+          }
+        }
+        
+        // If successful, extract filename and finish
+        console.log('[CodeAct] Specialist action succeeded - finishing');
         if (action_result.content) {
           const filenameMatch = action_result.content.match(/Created:\s*([^\s\n]+\.(docx|xlsx|pdf|txt|csv))/i);
           if (filenameMatch) {
@@ -258,9 +286,8 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           }
         }
         
-        // Assume success and finish - show user-friendly message without technical paths
+        // Show user-friendly message without technical paths
         let userMessage = action_result.content || 'File created successfully';
-        // Remove technical paths from the message (e.g., "✅ Created: filename.docx" -> "✅ File created successfully")
         if (userMessage.includes('Created:')) {
           const filenameOnly = userMessage.match(/Created:\s*([^\s\n/]+)$/i);
           if (filenameOnly) {
