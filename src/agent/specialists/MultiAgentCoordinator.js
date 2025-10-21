@@ -580,6 +580,29 @@ class MultiAgentCoordinator {
       const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
       const fullSystemPrompt = `${MASTER_SYSTEM_PROMPT}\n\n---\n\n${systemPrompt}`;
       
+      // CRITICAL: Get existing files in conversation for context
+      let existingFilesContext = '';
+      if (this.conversation_id) {
+        try {
+          const { getAllFilesRecursively } = require('@src/agent/fileUtils');
+          const { getDirpath } = require('@src/utils/electron');
+          const path = require('path');
+          const dir_name = 'Conversation_' + this.conversation_id.slice(0, 6);
+          const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.user_id);
+          const conversationDir = path.join(WORKSPACE_DIR, dir_name);
+          
+          const files = await getAllFilesRecursively(conversationDir);
+          const docFiles = files.filter(f => f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf'));
+          
+          if (docFiles.length > 0) {
+            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**IMPORTANT:** If the user asks to modify/expand/update a document, you should READ the existing file first, then modify it, rather than creating a new file. Use the same filename to overwrite.`;
+            console.log('[Specialist] Adding file context:', docFiles.length, 'files found');
+          }
+        } catch (e) {
+          // Silently fail if directory doesn't exist yet
+        }
+      }
+      
       // Build context - use existing messages if provided, otherwise create new
       let contextMessages;
       if (options.messages && options.messages.length > 0) {
@@ -587,14 +610,14 @@ class MultiAgentCoordinator {
         contextMessages = [...options.messages];
         // Replace first message if it's a system message, otherwise prepend
         if (contextMessages[0]?.role === 'system') {
-          contextMessages[0] = { role: 'system', content: fullSystemPrompt };
+          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext };
         } else {
-          contextMessages.unshift({ role: 'system', content: fullSystemPrompt });
+          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext });
         }
       } else {
         // No conversation history, create simple context
         contextMessages = [
-          { role: 'system', content: fullSystemPrompt },
+          { role: 'system', content: fullSystemPrompt + existingFilesContext },
           { role: 'user', content: userMessage }
         ];
       }

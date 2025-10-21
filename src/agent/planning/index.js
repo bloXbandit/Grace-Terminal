@@ -43,7 +43,7 @@ const planning_local = async (goal, options = {}) => {
   
   // CRITICAL: If specialist provided executable code, extract and execute it immediately
   if (specialistResponse && typeof specialistResponse === 'string') {
-    console.log('[Planning] Got it... give me a moment... 💡');
+    console.log('[Planning] Thinking...');
     
     // Extract Python code blocks
     const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
@@ -55,7 +55,8 @@ const planning_local = async (goal, options = {}) => {
       const timestamp = Date.now();
       
       // Pre-generate the action XML so execution doesn't need LLM to parse it
-      const escapedCode = pythonCode.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+      // Escape quotes but keep actual newlines for Python -c
+      const escapedCode = pythonCode.replace(/"/g, '\\"');
       const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
       
       return [{

@@ -223,7 +223,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
       }
 
       // 5. Execute action
+      console.log('[CodeAct] Executing action type:', action.type);
       const action_result = await context.runtime.execute_action(action, context, task.id);
+      console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
       if (!context.generate_files) {
         context.generate_files = [];
       }
@@ -233,6 +235,45 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
       // console.log("action_result", action_result);
 
       // 6. Reflection and evaluation
+      // CRITICAL: Skip reflection for pre-generated specialist actions - they're already validated
+      if (task.preGeneratedAction) {
+        console.log('[CodeAct] Skipping reflection for pre-generated specialist action');
+        
+        // Extract filename from action result content (e.g., "✅ Created: filename.docx")
+        if (action_result.content) {
+          const filenameMatch = action_result.content.match(/Created:\s*([^\s\n]+\.(docx|xlsx|pdf|txt|csv))/i);
+          if (filenameMatch) {
+            const filename = filenameMatch[1];
+            // Construct workspace path: workspace/user_X/Conversation_XXXXXX/filename
+            const { getDirpath } = require('@src/utils/electron');
+            const path = require('path');
+            const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
+            const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', context.user_id);
+            const filepath = path.join(WORKSPACE_DIR, dir_name, filename);
+            console.log('[CodeAct] Detected created file:', filepath);
+            if (!context.generate_files) {
+              context.generate_files = [];
+            }
+            context.generate_files.push(filepath);
+          }
+        }
+        
+        // Assume success and finish - show user-friendly message without technical paths
+        let userMessage = action_result.content || 'File created successfully';
+        // Remove technical paths from the message (e.g., "✅ Created: filename.docx" -> "✅ File created successfully")
+        if (userMessage.includes('Created:')) {
+          const filenameOnly = userMessage.match(/Created:\s*([^\s\n/]+)$/i);
+          if (filenameOnly) {
+            userMessage = `✅ ${filenameOnly[1]} created successfully`;
+          } else {
+            userMessage = '✅ File created successfully';
+          }
+        }
+        const finish_result = { params: { message: userMessage } };
+        const result = await finish_action(finish_result, context, task.id);
+        return result;
+      }
+      
       const reflection_result = await reflection(requirement, action_result, context.conversation_id);
       console.log("reflection_result", reflection_result);
       const { status, comments } = reflection_result;

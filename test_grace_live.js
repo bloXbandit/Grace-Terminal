@@ -52,7 +52,7 @@ const TEST_CASES = {
   task: [
     {
       name: 'Word Document Creation',
-      goal: 'Create a Word document with the text "love"',
+      goal: 'Create a Word document about love with a title and 2 paragraphs',
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary'],
@@ -75,6 +75,18 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary']
+    },
+    {
+      name: 'WW2 Essay Document',
+      goal: 'Create a Word document with a detailed essay about World War 2. Include: a title "World War II: A Comprehensive Overview", an introduction paragraph, 3-4 body paragraphs covering major events (Pearl Harbor, D-Day), key figures (Churchill, Roosevelt, Hitler), and the war\'s impact. Add a conclusion with proper formatting.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /world.*war.*\.docx$/i,
+        location: '/workspace'
+      }
     }
   ],
   auto: [
