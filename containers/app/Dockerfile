@@ -32,7 +32,8 @@ RUN pip3 install --no-cache-dir \
     python-pptx \
     Pillow \
     matplotlib \
-    numpy
+    numpy \
+    xerparser
 
 # --- Layer 2: Package Manager Manifests (Infrequent Change) ---
 # Copy package.json and Makefile. If you have a lock file (package-lock.json or yarn.lock),
