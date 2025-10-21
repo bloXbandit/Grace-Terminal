@@ -87,6 +87,27 @@ const TEST_CASES = {
         pattern: /world.*war.*\.docx$/i,
         location: '/workspace'
       }
+    },
+    {
+      name: 'Phi-4 Frontend Test',
+      goal: 'Create a beautiful HTML landing page with a hero section, navigation bar, and call-to-action button using modern CSS',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
+    },
+    {
+      name: 'MythoMax Creative Test',
+      goal: 'Write a short fantasy story about a dragon who learns to code. Make it creative and engaging with vivid descriptions.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
+    },
+    {
+      name: 'GPT-OSS Reasoning Test',
+      goal: 'Design an algorithm to find the shortest path in a weighted graph. Explain the logic step by step with pseudocode.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
     }
   ],
   auto: [
