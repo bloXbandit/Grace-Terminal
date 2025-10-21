@@ -50,20 +50,22 @@ const planning_local = async (goal, options = {}) => {
     if (pythonCodeMatch) {
       const pythonCode = pythonCodeMatch[1];
       console.log('[Planning] Extracted Python code:', pythonCode.substring(0, 100) + '...');
+      console.log('[Planning] Python code length:', pythonCode.length, 'bytes');
       
       // Create a single task to execute the specialist's code directly
       const timestamp = Date.now();
+      const scriptFilename = `specialist_${timestamp}.py`;
       
-      // Pre-generate the action XML so execution doesn't need LLM to parse it
-      // Escape quotes but keep actual newlines for Python -c
-      const escapedCode = pythonCode.replace(/"/g, '\\"');
-      const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
+      // CRITICAL: For large code, write to file first then execute
+      // This avoids command-line argument length limits
+      const escapedCode = pythonCode.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+      const actionXML = `<write_code>\n<filepath>${scriptFilename}</filepath>\n<code>${escapedCode}</code>\n</write_code>\n<terminal_run>\n<command>python3</command>\n<args>${scriptFilename}</args>\n</terminal_run>`;
       
       return [{
         id: `${timestamp}_specialist`,
-        title: '⚡ Creating your file...',
-        description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
-        tool: 'terminal_run',
+        title: '⚡ Creating your application...',
+        description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode.substring(0, 500)}...\n\`\`\``,
+        tool: 'write_code',
         status: 'pending',
         // Pre-generated action for direct execution
         preGeneratedAction: actionXML,
