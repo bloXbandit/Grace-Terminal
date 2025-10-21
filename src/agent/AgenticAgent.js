@@ -318,7 +318,6 @@ class AgenticAgent {
         files,
         previousResult,
         specialistResponse: this.context.specialistResponse, // Pass specialist code to planning
-        taskType: this.context.taskType // Pass task type for dual-path execution
       }
       const plannedTasks = await planning(goal, options) || [];
 
