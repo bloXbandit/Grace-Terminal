@@ -114,7 +114,16 @@ class LLM {
         body[key] = options[key]; // User options override defaults
       }
     }
-    // console.log('body', body);
+    // Log request for debugging 400 errors
+    console.log('🔍 [LLM Request]', {
+      url: this.CHAT_COMPLETION_URL,
+      model: body.model,
+      messageCount: body.messages?.length,
+      stream: body.stream,
+      temperature: body.temperature,
+      max_tokens: body.max_tokens
+    });
+    
     const config = {
       url: this.CHAT_COMPLETION_URL,
       method: "post",
@@ -123,7 +132,8 @@ class LLM {
         "Content-Type": 'application/json'
       },
       data: body,
-      responseType: "stream"
+      // CRITICAL: Only use stream responseType if streaming is enabled
+      responseType: body.stream ? "stream" : "json"
     };
 
     if (options.signal) {
@@ -169,7 +179,7 @@ class LLM {
         statusText: err.response?.statusText,
         errorCode: err.code,
         errorMessage: err.message,
-        responseData: err.response?.data ? safeStringify(err.response.data) : 'N/A'
+        responseData: err.response?.data
       });
       
       // Return structured error object for retry logic
@@ -236,14 +246,62 @@ class LLM {
       error.code = response.code;
       throw error;
     }
+    
+    // Handle non-streaming JSON response (when responseType: "json")
+    if (response.data && typeof response.data === 'object' && !response.data.on) {
+      console.log('[LLM handleSSE] Non-streaming JSON response detected');
+      const choices = response.data.choices || [];
+      const choice = choices[0] || {};
+      if (choice.message && choice.message.content) {
+        const content = choice.message.content;
+        console.log('[LLM handleSSE] Extracted content:', content.substring(0, 100));
+        this.onTokenStream(content);
+        return content;
+      }
+      console.error('[LLM handleSSE] No content in non-streaming response');
+      return "";
+    }
 
     // 处理流式返回
     let fullContent = "";
     let reasoning = false;
     const fn = new Promise((resolve, reject) => {
       let content = "";
+      let isNonStreaming = false;
+      
       response.data.on("data", (chunk) => {
         content += chunk;
+        
+        // Debug: Log first chunk to see format
+        if (fullContent === "" && content.length > 0) {
+          console.log('[LLM Stream] First chunk received:', content.substring(0, 200));
+          
+          // Detect non-streaming response (single JSON object without "data: " prefix)
+          if (!content.startsWith('data:') && content.trim().startsWith('{')) {
+            isNonStreaming = true;
+            console.log('[LLM Stream] Non-streaming response detected');
+          }
+        }
+        
+        // Handle non-streaming response
+        if (isNonStreaming) {
+          // Wait for complete JSON
+          try {
+            const jsonResponse = JSON.parse(content);
+            const choices = jsonResponse.choices || [];
+            const choice = choices[0] || {};
+            if (choice.message && choice.message.content) {
+              fullContent = choice.message.content;
+              console.log('[LLM Stream] Non-streaming content extracted:', fullContent.substring(0, 100));
+              this.onTokenStream(fullContent);
+            }
+          } catch (e) {
+            // Not complete JSON yet, wait for more chunks
+          }
+          return;
+        }
+        
+        // Handle streaming response (SSE format)
         const splitter = this.splitter;
         while (content.indexOf(splitter) !== -1) {
           const index = content.indexOf(splitter);
@@ -319,7 +377,17 @@ class LLM {
     const choices = value.choices || [];
     const choice = choices[0] || {};
     if (Object.keys(choice).length === 0) {
+      console.log('[messageToValue] Empty choice object');
       return { type: "text", text: "" }
+    }
+    
+    // Debug: Log what we received
+    if (!choice.delta && choice.message) {
+      console.log('[messageToValue] Non-streaming response detected:', {
+        hasMessage: !!choice.message,
+        hasContent: !!choice.message?.content,
+        contentLength: choice.message?.content?.length || 0
+      });
     }
     // 工具使用处理
     if (choice.delta && choice.delta.tool_calls && choice.delta.tool_calls.length > 0) {
@@ -331,9 +399,16 @@ class LLM {
       return { type: "reasoning", text: choice.delta.reasoning_content };
     }
 
+    // Handle streaming response (delta.content)
     if (choice.delta && choice.delta.content) {
       return { type: "text", text: choice.delta.content };
     }
+    
+    // Handle non-streaming response (message.content) - CRITICAL FIX
+    if (choice.message && choice.message.content) {
+      return { type: "text", text: choice.message.content };
+    }
+    
     return {};
   }
 }

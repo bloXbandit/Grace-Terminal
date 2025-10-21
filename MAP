@@ -1,0 +1,187 @@
+Let me map out the COMPLETE file/document delivery chain - every link must match:
+
+📄 FILE/DOCUMENT DELIVERY - COMPLETE CHAIN:
+1. User Request → Intent Detection
+javascript
+User: "Create a Word doc with red text"
+↓
+src/agent/intent-detection/index.js
+↓
+Detects: task_type = 'data_generation'
+2. Routing → Specialist Selection
+javascript
+src/agent/auto-reply/index.js
+↓
+Calls: MultiAgentCoordinator.execute()
+↓
+src/agent/specialists/MultiAgentCoordinator.js
+↓
+Routes to: GPT-4o (data_generation specialist)
+↓
+Returns: { handledBySpecialist: false } ← MUST NOT be true for file tasks!
+3. Planning Phase
+javascript
+src/agent/AgenticAgent.js → run()
+↓
+Calls: planning(goal, options)
+↓
+src/agent/planning/index.js
+↓
+Creates tasks: [
+  {
+    id: "task_001",
+    requirement: "Create Word document with 'Love' in red text",
+    tool: "file_generator"
+  }
+]
+↓
+Publishes: onTokenStream({
+  action_type: 'plan',
+  status: 'success',
+  json: tasks  ← Frontend shows task list
+})
+4. Task Execution
+javascript
+src/agent/AgenticAgent.js → _executeTasks()
+↓
+For each task:
+  src/agent/code-act/code-act.js → completeCodeAct()
+  ↓
+  Calls: thinking(requirement, context)
+  ↓
+  src/agent/code-act/thinking.js
+  ↓
+  LLM returns XML: <write_code>...</write_code>
+  ↓
+  Parses to action: {
+    type: 'write_code',
+    params: {
+      filename: 'love.docx',
+      content: '...',
+      language: 'docx'
+    }
+  }
+5. Tool Execution → File Creation
+javascript
+src/runtime/LocalRuntime.js → execute_action()
+↓
+Switch case: 'write_code'
+↓
+Calls: write_code(action, uuid, user_id)
+↓
+src/editor/coding.js → write_code()
+↓
+Calls: FileGenerator.execute()
+↓
+src/tools/FileGenerator.js
+↓
+Creates file at: /workspace/user_1/Conversation_XXX/love.docx
+↓
+Returns: {
+  status: 'success',
+  content: 'File /workspace/.../love.docx written successfully.',
+  meta: {
+    action_type: 'file',  ← MUST be 'file' for download link
+    filepath: '/workspace/.../love.docx',
+    url: '/workspace/.../love.docx',
+    filename: 'love.docx'
+  }
+}
+6. Message Publishing → Frontend
+javascript
+src/agent/AgenticAgent.js → _publishMessage()
+↓
+onTokenStream({
+  role: 'assistant',
+  status: 'success',
+  action_type: 'file',  ← MUST match meta.action_type
+  content: 'File written successfully.',
+  meta: {
+    filepath: '/workspace/.../love.docx',
+    url: '/workspace/.../love.docx',  ← Frontend uses this
+    filename: 'love.docx'
+  }
+})
+↓
+src/utils/stream.util.js
+↓
+JSON.stringify(msg) → Base64 encode → SSE stream
+7. Frontend Rendering
+javascript
+frontend/src/view/chat/components/Message/Index.vue
+↓
+Receives decoded message object
+↓
+Checks: message.action_type === 'file'
+↓
+Renders: <FileMessage>
+  <a :href="message.meta.url" download>
+    📄 love.docx - Download
+  </a>
+</FileMessage>
+🔗 CRITICAL MATCHING POINTS:
+Match Point 1: Specialist Response
+javascript
+// ❌ WRONG - Blocks file creation
+return { handledBySpecialist: true, result: "..." }
+
+// ✅ CORRECT - Allows planning to continue
+return { handledBySpecialist: false }
+Match Point 2: Action Type
+javascript
+// Tool returns:
+meta: { action_type: 'file' }
+
+// Message MUST have:
+action_type: 'file'  ← Frontend checks this!
+Match Point 3: File Path Format
+javascript
+// Tool creates:
+filepath: '/workspace/user_1/Conversation_XXX/love.docx'
+
+// Message MUST have:
+meta: {
+  filepath: '/workspace/user_1/Conversation_XXX/love.docx',
+  url: '/workspace/user_1/Conversation_XXX/love.docx',  ← Same path
+  filename: 'love.docx'
+}
+Match Point 4: Message Object Structure
+javascript
+// Backend sends:
+{
+  role: 'assistant',
+  action_type: 'file',
+  content: 'File written...',
+  meta: { filepath, url, filename }
+}
+
+// Frontend expects:
+message.action_type === 'file'
+message.meta.url  ← For download link
+message.meta.filename  ← For display
+🚨 COMMON BREAK POINTS:
+Specialist returns handledBySpecialist: true
+❌ Stops execution before file creation
+✅ Must return false for tool-requiring tasks
+Action type mismatch
+❌ Tool returns action_type: 'write_code', message has action_type: 'task'
+✅ Must match: action_type: 'file' throughout
+File path not in meta
+❌ Message has content but no meta.url
+✅ Must include full meta object with filepath/url/filename
+Message format wrong
+❌ Sending just content string instead of full object
+✅ Must send complete message object with all fields
+✅ VERIFICATION CHECKLIST:
+For file delivery to work, verify:
+
+ Specialist returns handledBySpecialist: false
+ Planning creates task with tool: 'file_generator'
+ Thinking returns XML with <write_code> action
+ FileGenerator.execute() creates physical file
+ Tool returns meta.action_type = 'file'
+ Message published with action_type: 'file'
+ Message includes meta: { filepath, url, filename }
+ Frontend receives full message object
+ Frontend renders download link from meta.url
+Every link in this chain must match the contract! 🔗

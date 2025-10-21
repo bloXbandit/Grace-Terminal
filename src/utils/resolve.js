@@ -90,6 +90,8 @@ const resolveActions = xml => {
   // CRITICAL: Check if xml is valid before processing
   if (!xml || typeof xml !== 'string') {
     console.error('[resolveActions] Invalid input - not a string:', typeof xml);
+    console.error('[resolveActions] Received value:', xml);
+    console.error('[resolveActions] Stack trace:', new Error().stack);
     return [];
   }
   

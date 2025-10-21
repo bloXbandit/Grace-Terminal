@@ -98,8 +98,18 @@ const thinking_local = async (requirement, context = {}) => {
   
   // Use specialist routing if available (prevents hitting gpt-4o rate limits)
   let content;
-  if (context.coordinator && context.enableSpecialistRouting) {
-    console.log('[Thinking] Using specialist routing for task...');
+  
+  // CRITICAL: Skip specialist routing for simple code execution tasks
+  // If the task already has code/actions from a specialist, just execute it directly
+  const isSimpleExecution = prompt && (
+    prompt.includes('```python') || 
+    prompt.includes('```javascript') ||
+    prompt.includes('terminal_run') ||
+    (prompt.length < 500 && /execute|run|create.*file/i.test(prompt))
+  );
+  
+  if (context.coordinator && context.enableSpecialistRouting && !isSimpleExecution) {
+    console.log('[Thinking] Using specialist routing for complex task...');
     try {
       // Use execute method which auto-detects task type and routes to specialist
       const result = await context.coordinator.execute(prompt, options);
@@ -111,6 +121,9 @@ const thinking_local = async (requirement, context = {}) => {
       content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
     }
   } else {
+    if (isSimpleExecution) {
+      console.log('[Thinking] Simple execution detected - using default model directly');
+    }
     content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
   }
   global.logging(context, 'thinking', content);

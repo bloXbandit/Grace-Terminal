@@ -6,6 +6,8 @@ services:
       dockerfile: ./containers/app/Dockerfile
     image: grace-ai:custom
     container_name: grace-app
+    env_file:
+      - .env
     environment:
       - DOCKER_HOST_ADDR=host.docker.internal
       - ACTUAL_HOST_WORKSPACE_PATH=${WORKSPACE_BASE:-$PWD/workspace}

@@ -49,11 +49,17 @@ const auto_reply = async (goal, conversation_id, user_id = 1) => {
       if (result.success) {
         console.log(`[AutoReply] Specialist ${result.specialist} handled the request`);
         
-        // If task needs tools, return the response but DON'T mark as handled
+        // If task needs tools, mark as needing execution but provide specialist response
         // This allows AgenticAgent to continue to planning and tool execution
         if (needsTools) {
           console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
-          return result.result; // Return response but let AgenticAgent continue
+          console.log(`[AutoReply] Specialist response content:`, result.result?.substring(0, 200) || 'EMPTY');
+          return {
+            needsExecution: true,
+            specialistResponse: result.result,
+            specialist: result.specialist,
+            taskType: taskType
+          };
         }
         
         // For tasks that don't need tools (like chat, analysis), mark as handled

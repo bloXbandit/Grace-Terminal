@@ -113,15 +113,32 @@ const completeCodeAct = async (task = {}, context = {}) => {
     console.log(`[CodeAct] Loop iteration ${loopIterations}/${MAX_LOOP_ITERATIONS}`);
     
     try {
-      // 1. LLM thinking
-      context.depth = depth || 1;
-      let content = await thinking(requirement, context);
-      // console.log("thinking.result", content);
+      // CRITICAL: Check if task has pre-generated action (from specialist)
+      let action = null;
+      let content = '';
+      
+      if (task.preGeneratedAction || task.requirement?.includes('<tool')) {
+        console.log('[CodeAct] Using pre-generated action from specialist');
+        const actionXML = task.preGeneratedAction || task.requirement;
+        console.log('[CodeAct] Action XML:', actionXML.substring(0, 200));
+        const actions = await resolveActions(actionXML);
+        action = actions[0];
+        console.log('[CodeAct] Parsed action:', JSON.stringify(action));
+        content = actionXML;
+      }
+      
+      // If no pre-generated action, use LLM thinking
+      if (!action) {
+        // 1. LLM thinking
+        context.depth = depth || 1;
+        content = await thinking(requirement, context);
+        // console.log("thinking.result", content);
 
-      // 2. Parse Action
-      // try to parse action directly avoid llm don't continue
-      const actions = await resolveActions(content);
-      let action = actions[0];
+        // 2. Parse Action
+        // try to parse action directly avoid llm don't continue
+        const actions = await resolveActions(content);
+        action = actions[0];
+      }
       const messages = await memory.getMessages();
       if (!action) {
         // Try to parse action again with all previous assistant messages

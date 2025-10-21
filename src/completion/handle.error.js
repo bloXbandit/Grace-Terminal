@@ -15,9 +15,16 @@ const handleError = async (error, onTokenStream) => {
     const res = error.response || {}
     // let content = friendlyContent;
     let content = error.message.toString();
+    
+    // Log detailed error for debugging
     if (res.status) {
+      console.error(`❌ [LLM API Error] Status: ${res.status}`);
+      if (res.data) {
+        console.error(`❌ [LLM API Error] Response:`, JSON.stringify(res.data, null, 2));
+      }
       content = resolveStatusContent(res.status);
     }
+    
     // Stream error message faster (reduced from 10ms to 0ms delay)
     for (const ch of content) {
       onTokenStream(ch);

@@ -608,6 +608,12 @@ class MultiAgentCoordinator {
         stream: !!options.onTokenStream // Enable streaming if callback provided
       });
       
+      console.log(`[Specialist] ${modelPath} returned:`, {
+        type: typeof result,
+        length: result?.length,
+        preview: typeof result === 'string' ? result.substring(0, 300) : JSON.stringify(result).substring(0, 300)
+      });
+      
       return result;
       
     } catch (error) {
@@ -1070,6 +1076,7 @@ Be thorough but concise. Format with clear sections.
       'openrouter/deepseek/deepseek-chat': 'DeepSeek Chat',
       'openrouter/anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
       'openrouter/anthropic/claude-3.5-sonnet': 'Claude 3.5 Sonnet',
+      'openrouter/openai/gpt-5': 'GPT-5',
       'openrouter/openai/gpt-4o': 'GPT-4o',
       'openrouter/openai/gpt-4o-mini': 'GPT-4o Mini',
       'openrouter/google/gemini-2.0-flash-thinking-exp': 'Gemini 2.0 Flash (Thinking)',

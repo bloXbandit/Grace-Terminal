@@ -112,6 +112,16 @@ class AgenticAgent {
 
     const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id);
     
+    // Check if specialist needs execution (don't publish object, just store for planning)
+    if (reply && typeof reply === 'object' && reply.needsExecution) {
+      console.log('[AgenticAgent] Specialist provided code - storing for execution');
+      this.context.specialistResponse = reply.specialistResponse;
+      this.context.specialist = reply.specialist;
+      this.context.taskType = reply.taskType;
+      // Don't publish the object, just return null to continue to planning
+      return null;
+    }
+    
     // Check if specialist handled it
     if (reply && typeof reply === 'object' && reply.handledBySpecialist) {
       await this._publishMessage({ action_type: 'auto_reply', status: 'success', content: reply.result });
@@ -219,8 +229,17 @@ class AgenticAgent {
       
       const autoReplyResult = await this._initialSetupAndAutoReply();
       
+      // If specialist needs execution, store response for planning to use
+      if (autoReplyResult && autoReplyResult.needsExecution) {
+        console.log(`[AgenticAgent] Specialist provided code/actions - storing for execution`);
+        this.context.specialistResponse = autoReplyResult.specialistResponse;
+        this.context.specialist = autoReplyResult.specialist;
+        this.context.taskType = autoReplyResult.taskType;
+        // Continue to planning which will extract and execute the code
+      }
+      
       // If specialist handled it completely, stop here
-      if (autoReplyResult && autoReplyResult.handledBySpecialist) {
+      else if (autoReplyResult && autoReplyResult.handledBySpecialist) {
         console.log(`[AgenticAgent] Task handled by ${autoReplyResult.specialist} specialist`);
         console.log('[AgenticAgent] Task type:', autoReplyResult.taskType);
         
@@ -294,6 +313,7 @@ class AgenticAgent {
         planning_mode,
         files,
         previousResult,
+        specialistResponse: this.context.specialistResponse, // Pass specialist code to planning
       }
       const plannedTasks = await planning(goal, options) || [];
 

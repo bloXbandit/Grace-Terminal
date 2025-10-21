@@ -39,7 +39,38 @@ const resolveThinking = require("@src/utils/thinking");
 const retryWithFormatFix = require("./retry_with_format_fix");
 
 const planning_local = async (goal, options = {}) => {
-  const { conversation_id } = options;
+  const { conversation_id, specialistResponse } = options;
+  
+  // CRITICAL: If specialist provided executable code, extract and execute it immediately
+  if (specialistResponse && typeof specialistResponse === 'string') {
+    console.log('[Planning] Got it... give me a moment... 💡');
+    
+    // Extract Python code blocks
+    const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
+    if (pythonCodeMatch) {
+      const pythonCode = pythonCodeMatch[1];
+      console.log('[Planning] Extracted Python code:', pythonCode.substring(0, 100) + '...');
+      
+      // Create a single task to execute the specialist's code directly
+      const timestamp = Date.now();
+      
+      // Pre-generate the action XML so execution doesn't need LLM to parse it
+      const escapedCode = pythonCode.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+      const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
+      
+      return [{
+        id: `${timestamp}_specialist`,
+        title: '⚡ Creating your file...',
+        description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
+        tool: 'terminal_run',
+        status: 'pending',
+        // Pre-generated action for direct execution
+        preGeneratedAction: actionXML,
+        requirement: actionXML  // Also put in requirement field for execution to find
+      }];
+    }
+  }
+  
   const prompt = await resolvePlanningPromptBP(goal, options);
 
   // 结果处理器
