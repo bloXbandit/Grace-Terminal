@@ -12,13 +12,27 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget curl sudo apt-utils git jq tmux bash curl ca-certificates file make \
     libgl1-mesa-glx \
-    libasound2-plugins libatomic1 && \
+    libasound2-plugins libatomic1 \
+    python3 python3-pip python3-venv && \
     # Remove packages with CVEs and no updates yet, if present
     (apt-get remove -y libaom3 || true) && \
     (apt-get remove -y libjxl0.7 || true) && \
     (apt-get remove -y libopenexr-3-1-30 || true) && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# --- Layer 1.5: Python Libraries for File Generation ---
+# Install Python libraries for various file types
+RUN pip3 install --no-cache-dir \
+    python-docx \
+    pandas \
+    openpyxl \
+    xlsxwriter \
+    reportlab \
+    python-pptx \
+    Pillow \
+    matplotlib \
+    numpy
 
 # --- Layer 2: Package Manager Manifests (Infrequent Change) ---
 # Copy package.json and Makefile. If you have a lock file (package-lock.json or yarn.lock),

@@ -108,7 +108,11 @@ const thinking_local = async (requirement, context = {}) => {
     (prompt.length < 500 && /execute|run|create.*file/i.test(prompt))
   );
   
-  if (context.coordinator && context.enableSpecialistRouting && !isSimpleExecution) {
+  // CRITICAL: For retries/reflection, use code-focused model (GPT-OSS), not reasoning model
+  const isRetryOrReflection = context.retryCount > 0 || 
+    (prompt && /error|failed|traceback|modulenotfound/i.test(prompt));
+  
+  if (context.coordinator && context.enableSpecialistRouting && !isSimpleExecution && !isRetryOrReflection) {
     console.log('[Thinking] Using specialist routing for complex task...');
     try {
       // Use execute method which auto-detects task type and routes to specialist
@@ -124,7 +128,24 @@ const thinking_local = async (requirement, context = {}) => {
     if (isSimpleExecution) {
       console.log('[Thinking] Simple execution detected - using default model directly');
     }
-    content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+    if (isRetryOrReflection) {
+      console.log('[Thinking] Retry/reflection detected - using GPT-OSS for code fixes');
+      // Force use of GPT-OSS (code-focused model) for retries
+      try {
+        const gptOssResult = await context.coordinator.callSpecialist(
+          'openrouter/openai/gpt-oss-20b',
+          'You are an expert code debugger. Fix the error by generating valid Grace action XML (terminal_run, write_code, etc). Only output valid XML actions, no reasoning tags.',
+          prompt,
+          options
+        );
+        content = gptOssResult;
+      } catch (error) {
+        console.log('[Thinking] GPT-OSS failed, using default model:', error.message);
+        content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+      }
+    } else {
+      content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+    }
   }
   global.logging(context, 'thinking', content);
   if (prompt) {
