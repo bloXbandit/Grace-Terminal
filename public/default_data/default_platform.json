@@ -521,6 +521,33 @@
         "model_types": [
           "network"
         ]
+      },
+      {
+        "model_id": "microsoft/phi-4",
+        "model_name": "Microsoft Phi-4",
+        "group_name": "Phi",
+        "logo_url": "",
+        "model_types": [
+          "network"
+        ]
+      },
+      {
+        "model_id": "gryphe/mythomax-l2-13b",
+        "model_name": "MythoMax L2 13B",
+        "group_name": "MythoMax",
+        "logo_url": "",
+        "model_types": [
+          "network"
+        ]
+      },
+      {
+        "model_id": "openai/gpt-oss-20b",
+        "model_name": "GPT-OSS-20B",
+        "group_name": "GPT-OSS",
+        "logo_url": "",
+        "model_types": [
+          "network"
+        ]
       }
     ]
   },
