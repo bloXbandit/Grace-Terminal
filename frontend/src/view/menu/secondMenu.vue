@@ -39,7 +39,10 @@
           <div class="chat-list">
              <!-- {{ conversationId }} -->
             <div v-for="chat in chats" :key="chat.conversation_id" class="chat-item"
-              :class="{ 'active': chat.conversation_id === conversationId }" @click="handleChatClick(chat)">
+              :class="{ 
+                'active': chat.conversation_id === conversationId,
+                'dev-mode-chat': chat.title?.includes('🔥') || chat.is_dev_mode 
+              }" @click="handleChatClick(chat)">
               <div class="chat-details">
                 <div class="chat-header">
                   <div class="chat-title">{{ chat.title }}</div>
@@ -115,7 +118,10 @@
       </template>
       <div class="search-content">
         <div v-for="chat in chats" :key="chat.conversation_id" class="chat-item"
-          :class="{ 'active': chat.conversation_id === conversationId }" @click="handleChatClick(chat)">
+          :class="{ 
+            'active': chat.conversation_id === conversationId,
+            'dev-mode-chat': chat.title?.includes('🔥') || chat.is_dev_mode 
+          }" @click="handleChatClick(chat)">
           <div class="chat-details">
             <div class="chat-header">
               <div class="chat-title">{{ chat.title }}</div>
@@ -505,6 +511,7 @@ const handleCancel = () => {
   padding: 4px 8px;
   border-radius: 10px;
   cursor: pointer;
+  position: relative;
 
   &:hover {
     background-color: #37352f0a;
@@ -516,6 +523,26 @@ const handleCancel = () => {
 
   &.active {
     background-color: #fff;
+  }
+
+  /* Dev Mode Chat Styling */
+  &.dev-mode-chat {
+    border-left: 3px solid #9333ea;
+    background: linear-gradient(90deg, rgba(147, 51, 234, 0.08) 0%, transparent 100%);
+    
+    &:hover {
+      background: linear-gradient(90deg, rgba(147, 51, 234, 0.12) 0%, rgba(55, 53, 47, 0.04) 100%);
+    }
+    
+    &.active {
+      background: linear-gradient(90deg, rgba(147, 51, 234, 0.15) 0%, #fff 100%);
+      border-left-color: #7c3aed;
+    }
+    
+    .chat-title {
+      color: #7c3aed;
+      font-weight: 600;
+    }
   }
 }
 
