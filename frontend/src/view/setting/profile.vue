@@ -91,6 +91,39 @@
       </div>
 
       <div class="settings-section">
+        <h2>🔧 Developer Mode</h2>
+        
+        <div class="form-group">
+          <div class="toggle-container">
+            <label class="toggle-label">
+              <input
+                type="checkbox"
+                v-model="devModeEnabled"
+                @change="toggleDevMode"
+                class="toggle-checkbox"
+              />
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">
+                {{ devModeEnabled ? '🔥 Dev Mode Active' : '🔒 Dev Mode Disabled' }}
+              </span>
+            </label>
+          </div>
+          <span class="field-hint dev-mode-hint">
+            <strong>⚠️ Advanced Feature:</strong> When enabled, Grace can modify her own code, prompts, and capabilities. 
+            Use this when you want Grace to improve herself or fix bugs in her logic.
+            <br><br>
+            <strong>Capabilities when enabled:</strong>
+            <ul>
+              <li>✅ Modify source code and prompts</li>
+              <li>✅ Add new tools and capabilities</li>
+              <li>✅ Fix bugs in her own logic</li>
+              <li>✅ Update routing and configurations</li>
+            </ul>
+          </span>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h2>What Grace Learned</h2>
         <div class="learned-items">
           <div v-if="learnedProfile.length === 0" class="no-learned">
@@ -137,6 +170,7 @@ const profile = ref({
 });
 
 const learnedProfile = ref([]);
+const devModeEnabled = ref(false);
 
 // Listen for real-time profile updates from chat extraction
 const setupProfileListener = () => {
@@ -223,9 +257,52 @@ const formatSource = (source) => {
   return source;
 };
 
+// Load dev mode status
+const loadDevModeStatus = async () => {
+  try {
+    const conversationId = localStorage.getItem('current_conversation_id');
+    if (!conversationId) return;
+    
+    const response = await http.get(`/api/dev-mode/status?conversation_id=${conversationId}`);
+    if (response.success) {
+      devModeEnabled.value = response.enabled;
+    }
+  } catch (error) {
+    console.error('Failed to load dev mode status:', error);
+  }
+};
+
+// Toggle dev mode
+const toggleDevMode = async () => {
+  try {
+    const conversationId = localStorage.getItem('current_conversation_id');
+    if (!conversationId) {
+      alert('⚠️ Please start a conversation first');
+      devModeEnabled.value = false;
+      return;
+    }
+    
+    const endpoint = devModeEnabled.value ? '/api/dev-mode/enable' : '/api/dev-mode/disable';
+    const response = await http.post(endpoint, { conversation_id: conversationId });
+    
+    if (response.success) {
+      const status = devModeEnabled.value ? '🔥 Dev Mode Activated' : '🔒 Dev Mode Disabled';
+      alert(`✅ ${status}\n\n${response.message}`);
+    } else {
+      alert(`❌ Failed to toggle dev mode: ${response.message}`);
+      devModeEnabled.value = !devModeEnabled.value; // Revert
+    }
+  } catch (error) {
+    console.error('Failed to toggle dev mode:', error);
+    alert('❌ Failed to toggle dev mode');
+    devModeEnabled.value = !devModeEnabled.value; // Revert
+  }
+};
+
 onMounted(() => {
   loadProfile();
   setupProfileListener();
+  loadDevModeStatus();
 });
 </script>
 
@@ -314,6 +391,79 @@ onMounted(() => {
   font-size: 12px;
   color: #888;
   margin-top: 6px;
+}
+
+.dev-mode-hint {
+  background: #fff3cd;
+  padding: 16px;
+  border-radius: 8px;
+  border-left: 4px solid #ff9800;
+  color: #856404;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dev-mode-hint ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+
+.dev-mode-hint li {
+  margin: 4px 0;
+}
+
+.toggle-container {
+  margin-bottom: 16px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-checkbox {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  background-color: #ccc;
+  border-radius: 28px;
+  transition: background-color 0.3s;
+  margin-right: 12px;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+.toggle-checkbox:checked + .toggle-slider {
+  background-color: #ff5722;
+}
+
+.toggle-checkbox:checked + .toggle-slider::before {
+  transform: translateX(24px);
+}
+
+.toggle-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
 }
 
 .learned-items {

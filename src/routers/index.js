@@ -28,6 +28,7 @@ const modules = [
   'payment',
   'membership_plan',
   'recharge_product',
+  'dev_mode',
 ];
 
 for (const module of modules) {
