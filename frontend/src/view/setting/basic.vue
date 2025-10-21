@@ -135,8 +135,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
+import { useRouter } from 'vue-router'
 import langService from '@/components/lang/index.vue'
 import http from '@/utils/http'
+import { useChatStore } from '@/store/chat'
+
+const router = useRouter()
+const chatStore = useChatStore()
 
 const saving = ref(false)
 const devModeEnabled = ref(false)
@@ -226,11 +231,39 @@ const loadDevModeStatus = async () => {
 const toggleDevMode = async () => {
   devModeLoading.value = true
   try {
-    const conversationId = localStorage.getItem('current_conversation_id')
+    let conversationId = localStorage.getItem('current_conversation_id')
     
-    if (!conversationId) {
-      message.warning('Please start a conversation first')
-      devModeEnabled.value = !devModeEnabled.value // Revert
+    // If enabling dev mode and no conversation exists, create one
+    if (devModeEnabled.value && !conversationId) {
+      message.loading('Creating Dev Mode conversation...', 0)
+      
+      // Create a new dev conversation
+      const result = await chatStore.createConversation('🔥 Dev Mode Session', 'chat')
+      conversationId = result.conversation_id
+      
+      if (!conversationId) {
+        message.destroy()
+        message.error('Failed to create dev conversation')
+        devModeEnabled.value = false
+        devModeLoading.value = false
+        return
+      }
+      
+      // Update chat store
+      chatStore.conversationId = conversationId
+      chatStore.chat = { 
+        conversation_id: conversationId, 
+        title: '🔥 Dev Mode Session',
+        is_dev_mode: true 
+      }
+      localStorage.setItem('current_conversation_id', conversationId)
+      
+      message.destroy()
+    }
+    
+    // If disabling and no conversation, just toggle off
+    if (!devModeEnabled.value && !conversationId) {
+      devModeLoading.value = false
       return
     }
     
@@ -240,6 +273,11 @@ const toggleDevMode = async () => {
     if (response.success) {
       const status = devModeEnabled.value ? '🔥 Dev Mode Activated' : '🔒 Dev Mode Disabled'
       message.success(`${status}\n\n${response.message}`)
+      
+      // If enabling, navigate to the dev conversation
+      if (devModeEnabled.value) {
+        router.push(`/grace/chat/${conversationId}`)
+      }
     } else {
       message.error(`Failed to toggle dev mode: ${response.message}`)
       devModeEnabled.value = !devModeEnabled.value // Revert

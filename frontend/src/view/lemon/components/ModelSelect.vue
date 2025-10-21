@@ -269,9 +269,16 @@ const initModel = async () => {
     try {
       modelList.value = JSON.parse(cachedData)
 
-      // 如果 model_id 还没设置，默认设置为第一个模型的 ID
+      // 如果 model_id 还没设置，默认设置为 GPT-5 或最后一个模型（usually newest)
       if (modelList.value.length > 0 && !model_id.value) {
-        const defaultId = modelList.value[0].id * 1
+        // Try to find GPT-5 first, then try last model (newest), then first
+        const gpt5Model = modelList.value.find(m => 
+          m.model_name?.toLowerCase().includes('gpt-5') || 
+          m.model_name?.toLowerCase().includes('gpt5') ||
+          m.model_name?.toLowerCase().includes('gpt 5')
+        )
+        // If no GPT-5, use last model (usually newest/best)
+        const defaultId = (gpt5Model?.id || modelList.value[modelList.value.length - 1].id) * 1
         model_id.value = defaultId
         selectedModelValue.value = defaultId
       }
@@ -289,7 +296,14 @@ const initModel = async () => {
       localStorage.setItem('modelList', JSON.stringify(res))
 
       if (res.length > 0 && !model_id.value) {
-        const defaultId = res[0].id * 1
+        // Try to find GPT-5 first, then use last model (newest)
+        const gpt5Model = res.find(m => 
+          m.model_name?.toLowerCase().includes('gpt-5') || 
+          m.model_name?.toLowerCase().includes('gpt5') ||
+          m.model_name?.toLowerCase().includes('gpt 5')
+        )
+        // If no GPT-5, use last model (usually newest/best)
+        const defaultId = (gpt5Model?.id || res[res.length - 1].id) * 1
         model_id.value = defaultId
         selectedModelValue.value = defaultId
       }
