@@ -147,6 +147,18 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['auto_reply'],
       breakPoints: ['mode_command_detection', 'status_check', 'response']
+    },
+    {
+      name: 'Dev Mode - Create Note File',
+      goal: 'Create a simple note.txt file in the project root with the text "Grace AI Test - Dev Mode Active"',
+      mode: 'dev',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /note\.txt$/,
+        location: '/Users/wonkasworld/Downloads/GRACEai'
+      }
     }
   ]
 };
