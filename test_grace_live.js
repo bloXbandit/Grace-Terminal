@@ -55,7 +55,7 @@ const TEST_CASES = {
       goal: 'Create a Word document about love with a title and 2 paragraphs',
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
-      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary', 'file_context_added'],
       verifyExecution: {
         type: 'file',
         pattern: /love.*\.docx$/i,
@@ -396,6 +396,25 @@ class GraceTester {
             }
           }
           
+          // Track file context awareness
+          else if (line.includes('[Specialist] Adding file context')) {
+            breakPointsReached.add('file_context_added');
+            const filesMatch = line.match(/(\d+) files? found/);
+            if (filesMatch) {
+              log.success(`📂 File context added: ${filesMatch[1]} existing file(s)`);
+            }
+          }
+          else if (line.includes('EXISTING FILES IN THIS CONVERSATION')) {
+            breakPointsReached.add('existing_files_detected');
+            log.info(`📋 Specialist received existing files list`);
+          }
+          
+          // Track conversation memory/context
+          else if (line.includes('conversation history') || line.includes('previous messages')) {
+            breakPointsReached.add('conversation_history');
+            log.info(`💬 Using conversation history`);
+          }
+          
           // Track specialist response and needsExecution
           else if (line.includes('needsExecution: true')) {
             breakPointsReached.add('needs_execution');
@@ -558,6 +577,22 @@ class GraceTester {
       if (missedBreakPoints.length > 0) {
         log.warn(`⚠️  Missed break points: ${missedBreakPoints.join(', ')}`);
         log.warn(`   Flow stopped at: ${reachedBreakPoints[reachedBreakPoints.length - 1] || 'start'}`);
+      }
+      
+      // Show context enhancements
+      const contextFeatures = {
+        fileContext: breakPointsReached.has('file_context_added'),
+        existingFiles: breakPointsReached.has('existing_files_detected'),
+        conversationHistory: breakPointsReached.has('conversation_history'),
+        specialistRouting: breakPointsReached.has('specialist_routing')
+      };
+      
+      if (Object.values(contextFeatures).some(v => v)) {
+        log.section('Context Enhancements');
+        if (contextFeatures.fileContext) log.success('✓ File context awareness enabled');
+        if (contextFeatures.existingFiles) log.success('✓ Existing files detected and passed to specialist');
+        if (contextFeatures.conversationHistory) log.success('✓ Conversation history utilized');
+        if (contextFeatures.specialistRouting) log.success('✓ Specialist routing active');
       }
       
       // Show LLM call summary
