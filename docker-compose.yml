@@ -23,7 +23,11 @@ services:
       - ./.backups:/app/.backups
       # Mount source code for live updates (development mode)
       - $PWD/src:/app/src:cached
-      - $PWD/frontend:/app/frontend:cached
+      # Mount frontend source but exclude node_modules (platform-specific binaries)
+      - $PWD/frontend/src:/app/frontend/src:cached
+      - $PWD/frontend/public:/app/frontend/public:cached
+      - $PWD/frontend/index.html:/app/frontend/index.html:cached
+      - $PWD/frontend/vite.config.js:/app/frontend/vite.config.js:cached
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files
       - ${HOME}:/host/home:cached
