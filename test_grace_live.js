@@ -159,6 +159,18 @@ const TEST_CASES = {
         pattern: /note\.txt$/,
         location: '/Users/wonkasworld/Downloads/GRACEai'
       }
+    },
+    {
+      name: 'Multi-Agent Challenge - Full Stack Dashboard',
+      goal: 'Create a complete dashboard application with: 1) A Python Flask backend API that generates random sales data (product name, quantity, price, date) and serves it at /api/sales endpoint. 2) An HTML/CSS/JavaScript frontend with a beautiful modern UI showing the sales data in a table with totals and a simple bar chart visualization. 3) Make it fully functional - the frontend should fetch from the backend and display real data. Use inline CSS and JavaScript, no external libraries except Flask.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /app\.py|index\.html/,
+        location: '/Users/wonkasworld/Downloads/GRACEai/workspace'
+      }
     }
   ]
 };
