@@ -5,7 +5,7 @@ const service = {
     const uri = '/api/settings'
     const res = await http.get(uri)
     return {
-      modelName: res.data?.llm_model || 'GPT-4',
+      modelName: res.data?.llm_model || 'GPT-5',
       modelUrl: res.data?.llm_base_url || '',
       apiKey: res.data?.llm_api_key || ''
     }
