@@ -53,9 +53,9 @@ const planning_local = async (goal, options = {}) => {
       console.log('[Planning] Python code length:', pythonCode.length, 'bytes');
       console.log('[Planning] Task type:', taskType);
       
-      // DUAL PATH: Only use write+execute for apps, not documents
-      if (taskType === 'data_generation' || taskType === 'web_development') {
-        console.log('[Planning] Using NEW METHOD: Write to file + execute (for apps/dashboards)');
+      // DUAL PATH: Only use write+execute for web apps, not documents/data
+      if (taskType === 'web_development') {
+        console.log('[Planning] Using NEW METHOD: Write to file + execute (for web apps/dashboards)');
         
         // Create tasks to write and execute the specialist's code
         const timestamp = Date.now();
