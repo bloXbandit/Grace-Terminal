@@ -637,6 +637,17 @@ class MultiAgentCoordinator {
         preview: typeof result === 'string' ? result.substring(0, 300) : JSON.stringify(result).substring(0, 300)
       });
       
+      // CRITICAL: Check for empty or invalid responses
+      if (!result || (typeof result === 'string' && result.trim() === '')) {
+        console.error(`[Specialist] ❌ Empty response from ${modelPath}`);
+        return {
+          error: true,
+          message: `Specialist returned empty response`,
+          fallback_needed: true,
+          empty_response: true
+        };
+      }
+      
       return result;
       
     } catch (error) {
@@ -710,6 +721,12 @@ class MultiAgentCoordinator {
           options
         );
         
+        // Check if fallback also returned error/empty
+        if (result.error && result.fallback_needed) {
+          console.error('[Coordinator] ❌ Fallback also failed/returned empty');
+          throw new Error(result.message);
+        }
+        
         const executionReport = this.generateExecutionReport({
           taskType,
           specialist: routing.fallback,
@@ -727,8 +744,17 @@ class MultiAgentCoordinator {
         };
         
       } catch (fallbackError) {
-        console.error('[Coordinator] Both primary and fallback failed');
-        throw new Error('All specialists failed to respond');
+        console.error('[Coordinator] ❌ Both primary and fallback failed');
+        console.error('[Coordinator] Primary error:', primaryError.message);
+        console.error('[Coordinator] Fallback error:', fallbackError.message);
+        
+        // Return error object instead of throwing - let caller handle it
+        return {
+          success: false,
+          error: true,
+          message: `All specialists failed. Primary: ${primaryError.message}, Fallback: ${fallbackError.message}`,
+          taskType: taskType
+        };
       }
     }
   }

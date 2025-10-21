@@ -46,29 +46,42 @@ const auto_reply = async (goal, conversation_id, user_id = 1) => {
     try {
       const result = await coordinator.execute(goal);
       console.log(`[AutoReply] Coordinator execute result:`, result.success ? 'SUCCESS' : 'FAILED');
-      if (result.success) {
+      
+      // Check if specialist failed (both primary and fallback)
+      if (!result.success || result.error) {
+        console.error('[AutoReply] ❌ All specialists failed:', result.message || 'Unknown error');
+        console.log('[AutoReply] Falling back to default model');
+        // Fall through to default model handling
+      } else if (result.success) {
         console.log(`[AutoReply] Specialist ${result.specialist} handled the request`);
         
-        // If task needs tools, mark as needing execution but provide specialist response
-        // This allows AgenticAgent to continue to planning and tool execution
-        if (needsTools) {
-          console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
-          console.log(`[AutoReply] Specialist response content:`, result.result?.substring(0, 200) || 'EMPTY');
+        // CRITICAL: Check for empty specialist response
+        if (!result.result || (typeof result.result === 'string' && result.result.trim() === '')) {
+          console.error('[AutoReply] ❌ Specialist returned empty response');
+          console.log('[AutoReply] Falling back to default model');
+          // Fall through to default model handling
+        } else {
+          // If task needs tools, mark as needing execution but provide specialist response
+          // This allows AgenticAgent to continue to planning and tool execution
+          if (needsTools) {
+            console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
+            console.log(`[AutoReply] Specialist response content:`, result.result?.substring(0, 200) || 'EMPTY');
+            return {
+              needsExecution: true,
+              specialistResponse: result.result,
+              specialist: result.specialist,
+              taskType: taskType
+            };
+          }
+          
+          // For tasks that don't need tools (like chat, analysis), mark as handled
           return {
-            needsExecution: true,
-            specialistResponse: result.result,
+            handledBySpecialist: true,
+            result: result.result,
             specialist: result.specialist,
             taskType: taskType
           };
         }
-        
-        // For tasks that don't need tools (like chat, analysis), mark as handled
-        return {
-          handledBySpecialist: true,
-          result: result.result,
-          specialist: result.specialist,
-          taskType: taskType
-        };
       }
     } catch (error) {
       console.error('[AutoReply] Specialist routing failed, falling back to default:', error);
