@@ -77,6 +77,18 @@ const TEST_CASES = {
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary']
     },
     {
+      name: 'Grammy Artists Excel',
+      goal: 'Make me an excel file with 100 well known music artists of any genre then in another column note the amount of grammies they are known to have',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /artist.*\.xlsx$|grammy.*\.xlsx$|music.*\.xlsx$/i,
+        location: '/workspace'
+      }
+    },
+    {
       name: 'WW2 Essay Document',
       goal: 'Create a Word document with a detailed essay about World War 2. Include: a title "World War II: A Comprehensive Overview", an introduction paragraph, 3-4 body paragraphs covering major events (Pearl Harbor, D-Day), key figures (Churchill, Roosevelt, Hitler), and the war\'s impact. Add a conclusion with proper formatting.',
       mode: 'task',
