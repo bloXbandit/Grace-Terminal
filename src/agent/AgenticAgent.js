@@ -124,7 +124,9 @@ class AgenticAgent {
     
     // Check if specialist handled it
     if (reply && typeof reply === 'object' && reply.handledBySpecialist) {
-      await this._publishMessage({ action_type: 'auto_reply', status: 'success', content: reply.result });
+      // Format creative content for better readability
+      const formattedContent = this._formatCreativeContent(reply.result);
+      await this._publishMessage({ action_type: 'auto_reply', status: 'success', content: formattedContent });
       return reply; // Return specialist result
     }
     
@@ -260,6 +262,8 @@ class AgenticAgent {
         if (directCompletionTasks.includes(autoReplyResult.taskType)) {
           console.log('[AgenticAgent] Direct completion task (text-only) - marking as done');
           await Conversation.update({ status: 'done' }, { where: { conversation_id: this.context.conversation_id } });
+          // Send completion signal to stop UI spinner
+          await this._publishMessage({ action_type: 'finish_summery', status: 'success', content: '' });
           return autoReplyResult.result;
         }
         
@@ -455,6 +459,28 @@ class AgenticAgent {
   async stop() {
     this.is_stop = true;
     await this._publishMessage({ action_type: 'stop', status: 'success' });
+  }
+
+  /**
+   * Format creative content for better UI readability
+   * Adds line breaks between scenes and bolds key elements
+   */
+  _formatCreativeContent(content) {
+    if (!content || typeof content !== 'string') return content;
+    
+    // Add double line break after scene headers for better spacing
+    content = content.replace(/(Scene \d+:)/g, '\n\n**$1**');
+    
+    // Bold title if present
+    content = content.replace(/^(Title: .+)$/m, '**$1**');
+    
+    // Add line break before sections like Lyrics, Verse, Chorus, Bridge
+    content = content.replace(/\n(Lyrics:|Verse \d+:|Chorus:|Bridge:|Outro:)/g, '\n\n**$1**');
+    
+    // Clean up any triple+ line breaks
+    content = content.replace(/\n{3,}/g, '\n\n');
+    
+    return content.trim();
   }
 }
 
