@@ -68,7 +68,7 @@ const planning_local = async (goal, options = {}) => {
           description: `Write Python application to ${scriptFilename}`,
           tool: 'write_code',
           status: 'pending',
-          preGeneratedAction: `<write_code>\n<filepath>${scriptFilename}</filepath>\n<content>${escapedCode}</content>\n</write_code>`,
+          preGeneratedAction: `<write_code>\n<path>${scriptFilename}</path>\n<content>${escapedCode}</content>\n</write_code>`,
           requirement: `Write code to ${scriptFilename}`
         },
         {
