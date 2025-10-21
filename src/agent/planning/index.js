@@ -39,7 +39,7 @@ const resolveThinking = require("@src/utils/thinking");
 const retryWithFormatFix = require("./retry_with_format_fix");
 
 const planning_local = async (goal, options = {}) => {
-  const { conversation_id, specialistResponse } = options;
+  const { conversation_id, specialistResponse, taskType } = options;
   
   // CRITICAL: If specialist provided executable code, extract and execute it immediately
   if (specialistResponse && typeof specialistResponse === 'string') {
@@ -51,36 +51,46 @@ const planning_local = async (goal, options = {}) => {
       const pythonCode = pythonCodeMatch[1];
       console.log('[Planning] Extracted Python code:', pythonCode.substring(0, 100) + '...');
       console.log('[Planning] Python code length:', pythonCode.length, 'bytes');
+      console.log('[Planning] Task type:', taskType);
       
-      // Create tasks to write and execute the specialist's code
-      const timestamp = Date.now();
-      const scriptFilename = `app.py`;  // Use standard name
+      // DUAL PATH: Only use write+execute for apps, not documents
+      if (taskType === 'data_generation' || taskType === 'web_development') {
+        console.log('[Planning] Using NEW METHOD: Write to file + execute (for apps/dashboards)');
+        
+        // Create tasks to write and execute the specialist's code
+        const timestamp = Date.now();
+        const scriptFilename = `app.py`;  // Use standard name
+        
+        // CRITICAL: For large code, write to file first then execute
+        // This avoids command-line argument length limits
+        const escapedCode = pythonCode.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+        
+        // Return TWO separate tasks - one to write, one to execute
+        return [
+          {
+            id: `${timestamp}_write`,
+            title: '📝 Writing application code...',
+            description: `Write Python application to ${scriptFilename}`,
+            tool: 'write_code',
+            status: 'pending',
+            preGeneratedAction: `<write_code>\n<path>${scriptFilename}</path>\n<content>${escapedCode}</content>\n</write_code>`,
+            requirement: `Write code to ${scriptFilename}`
+          },
+          {
+            id: `${timestamp}_run`,
+            title: '▶️ Running application...',
+            description: `Execute ${scriptFilename}`,
+            tool: 'terminal_run',
+            status: 'pending',
+            preGeneratedAction: `<terminal_run>\n<command>python3</command>\n<args>${scriptFilename}</args>\n</terminal_run>`,
+            requirement: `Run python3 ${scriptFilename}`
+          }
+        ];
+      }
       
-      // CRITICAL: For large code, write to file first then execute
-      // This avoids command-line argument length limits
-      const escapedCode = pythonCode.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
-      
-      // Return TWO separate tasks - one to write, one to execute
-      return [
-        {
-          id: `${timestamp}_write`,
-          title: '📝 Writing application code...',
-          description: `Write Python application to ${scriptFilename}`,
-          tool: 'write_code',
-          status: 'pending',
-          preGeneratedAction: `<write_code>\n<path>${scriptFilename}</path>\n<content>${escapedCode}</content>\n</write_code>`,
-          requirement: `Write code to ${scriptFilename}`
-        },
-        {
-          id: `${timestamp}_run`,
-          title: '▶️ Running application...',
-          description: `Execute ${scriptFilename}`,
-          tool: 'terminal_run',
-          status: 'pending',
-          preGeneratedAction: `<terminal_run>\n<command>python3</command>\n<args>${scriptFilename}</args>\n</terminal_run>`,
-          requirement: `Run python3 ${scriptFilename}`
-        }
-      ];
+      // ORIGINAL METHOD: Direct execution (for documents, etc.)
+      console.log('[Planning] Using ORIGINAL METHOD: Direct execution (for documents)');
+      // Fall through to normal planning flow below
     }
   }
   
