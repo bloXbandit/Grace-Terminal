@@ -23,7 +23,8 @@ RUN apt-get update && \
 
 # --- Layer 1.5: Python Libraries for File Generation ---
 # Install Python libraries for various file types
-RUN pip3 install --no-cache-dir \
+# Using --break-system-packages for Node 22 compatibility
+RUN pip3 install --no-cache-dir --break-system-packages \
     python-docx \
     pandas \
     openpyxl \

@@ -304,7 +304,6 @@
         "model_id": "gpt-5-search-api-2025-10-14",
         "model_name": "GPT-5",
         "group_name": "GPT 5",
-        "sort_weight": 100,
         "logo_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAAAXNSR0IArs4c6QAAIABJREFUeF7tXX+o5VW1/+wzk9Eo0XNGIojUouJNpYYKiaOP/qwsSu8ZK+pBQt5zZ1CRCqQeRvIqoUJUpnuugcErKu+9WmjWn/F05AUm2agTJaVFEOVoUTqhzZz9XOfe73TumXPOd6+11/5+995nHYjUu3+s/dl7ffZaa6+9vwYF/O7Zb3cOjuFsuw1vMAO8HsDrrMVrLbDLdPBv1uI1HeA0a3AqLF4Fi1NgsB1Ap4Dh6xDCERjA4hgMXoLBP4zFCwPgeWPwVzvAXwxwxBj8CcAfbQd/MMfx+852PHX5AfNseNfttmDa7Z7X+8rVdsfp23A+BjgPBu+wwG4DvBXALl5LWloREEHgiAV+ZYDDsHgMHTz63HE8sniHOSrSegONJE0AtLMfO4Z3dwwuscDFAM5vABPtQhEIReARAzw0sHhw+3b8JGVLITkCWF+y51jgMgDvgcWe0JnQ+opA6wgYHATwYwP8cGHZHGpdnhEBkiCAu5fsGwfAhwF0YXFeSgCpLIqAKAIGjwJY6wDfu2LZ/Fa0bY/GWiWA9SX7wQFwlbF4v4fsWkURyBoBa3BfB7hzYdn8oK2BtEIAqz27ZCz2w+BtbQ1c+1UEkkHA4glrcGBv3yw3LVOjBLC2aPdZg88Y4KymB6r9KQKpI2CBp43FV7or5utNydoIAdzVs1d0gBsBnNPUwLQfRSBjBA4NgJuu7Ju7Y48hKgEMg3sWNw+De/pTBBQBLgJrHYMbYgYLoxHAes8uWeAWAK/kjlrLKwKKwAkEXjTA9QuR4gPiBPCja+yrj/4T/ZczpD6ik6gIKAIyCLyc8frdHa9A7723m7/JtLjRiigB3NWzFxuLO43BWySF1LYUAUUAsBa/tgZXXdk3D0nhIUYA60v2Y9biW1KCaTuKgCIwGQFj8PGFZfNtCXxECGCtZz8F4KsSAmkbioAi4ITAp7t98zWnkjMKBRPA+qK90Rp8IVQQra8IKAI8BIzF5xdWzE28WltLBxGAKn8I9FpXEQhHIJQEvAlAzf7wydMWFAEhBLzdAS8C0ICf0LRpM4qAEAK+gUE2AdBRXwfD+836UwQUgYQQGAB7uEeELAKgJJ/nX8LDes6f0KyrKIrAJgKUJ3DaKbiQkyzEIoD1nv2OZvjpelME0kWAMgYX+uajrhI6E8Bmbn9j1xRdB6DlFAFF4KSjvX2udwecCGDzVt9hvdijS00RyAKBFzsGu11uEToRwFrPruqV3iwmXoVUBCoE1rp9s7cOjloC2HzMY72uIf27IqAIpIXAAFioe1SklgDWevYX+pJPWhOr0igCjggc6vbNubPKziQAesMPBgccO9NiioAikBoCFvtnvTE4kwBWe/YpfcAztRlVeRQBdwToodG9fXP2tBpTCWD4dDegx37uWGtJRSBJBCywb9qT41MJYG3RPq7v9ic5nyqUIsBDwOKJ7op5+6RKEwmAvthjLb7P60VLKwKKQKoIGIMPTfoC0UQCWF2y9+rnulKdSpVLEeAjQJ8h27tsPjBe8yQC2Mz6+w2/C62hCCgCKSPQMXjTeHbgSQSwtmQ/C4svpjwQlU0RUAQ8EDD4XHfZfGm05iQC+Ll+otsDXK2iCKSOgMGj3WXzzqkEsL5kz7EWlPmnP0VAESgQAWNw7sKyOVQNbYsFoOZ/gTOuQ1IEtm75W9yAcQJ4EBZ7FDFFQBEoFAGDg91lc8lJFsA9++3O48dxpNBh67AUAUVgE4Ft27Dr8gPmWfrXExbA6qJdMAZrilI+CJx1EbDjdGDHzg2ZT9259Z/pv73wLHB0ONUb/0w/+vdnntz4/+q/5TNqlTQUAWvR3btihlf8TxDAes/eaoFrQxvX+nEQIGWn3643A2e8ZUPZJX7P/BoY/k8JQQLOLNowwG0LfXPdF...[9773 bytes truncated]",
         "model_types": [
           "vision",
@@ -539,6 +538,16 @@
         "logo_url": "",
         "model_types": [
           "network"
+        ]
+      },
+      {
+        "model_id": "openai/gpt-5-pro",
+        "model_name": "GPT-5 Pro",
+        "group_name": "OpenAI",
+        "logo_url": "",
+        "model_types": [
+          "tool",
+          "reasoning"
         ]
       },
       {

@@ -91,39 +91,6 @@
       </div>
 
       <div class="settings-section">
-        <h2>🔧 Developer Mode</h2>
-        
-        <div class="form-group">
-          <div class="toggle-container">
-            <label class="toggle-label">
-              <input
-                type="checkbox"
-                v-model="devModeEnabled"
-                @change="toggleDevMode"
-                class="toggle-checkbox"
-              />
-              <span class="toggle-slider"></span>
-              <span class="toggle-text">
-                {{ devModeEnabled ? '🔥 Dev Mode Active' : '🔒 Dev Mode Disabled' }}
-              </span>
-            </label>
-          </div>
-          <span class="field-hint dev-mode-hint">
-            <strong>⚠️ Advanced Feature:</strong> When enabled, Grace can modify her own code, prompts, and capabilities. 
-            Use this when you want Grace to improve herself or fix bugs in her logic.
-            <br><br>
-            <strong>Capabilities when enabled:</strong>
-            <ul>
-              <li>✅ Modify source code and prompts</li>
-              <li>✅ Add new tools and capabilities</li>
-              <li>✅ Fix bugs in her own logic</li>
-              <li>✅ Update routing and configurations</li>
-            </ul>
-          </span>
-        </div>
-      </div>
-
-      <div class="settings-section">
         <h2>What Grace Learned</h2>
         <div class="learned-items">
           <div v-if="learnedProfile.length === 0" class="no-learned">
@@ -170,7 +137,6 @@ const profile = ref({
 });
 
 const learnedProfile = ref([]);
-const devModeEnabled = ref(false);
 
 // Listen for real-time profile updates from chat extraction
 const setupProfileListener = () => {
@@ -192,16 +158,16 @@ const loadProfile = async () => {
   try {
     const response = await http.get('/api/users/profile');
     
-    if (response.success) {
+    if (response.data && response.data.success) {
       // Populate form fields
-      response.profile.forEach(item => {
+      response.data.profile.forEach(item => {
         if (profile.value.hasOwnProperty(item.key)) {
           profile.value[item.key] = item.value;
         }
       });
       
       // Show what Grace learned
-      learnedProfile.value = response.profile.filter(
+      learnedProfile.value = response.data.profile.filter(
         item => item.source && item.source.startsWith('conversation')
       );
     }
@@ -216,17 +182,17 @@ const saveField = async (key) => {
   if (!value || value.trim() === '') return;
   
   try {
-    await http.post('/api/users/profile', {
+    const response = await http.post('/api/users/profile', {
       key,
       value: value.trim(),
       confidence: 1.0,
       source: 'settings'
     });
     
-    // Trigger notification
-    window.dispatchEvent(new CustomEvent('profile-learned', {
-      detail: { key, value: value.trim() }
-    }));
+    if (response.data && response.data.success) {
+      // Reload to show saved value
+      await loadProfile();
+    }
   } catch (error) {
     console.error('Failed to save field:', error);
   }
@@ -234,12 +200,16 @@ const saveField = async (key) => {
 
 // Save all fields
 const saveAll = async () => {
+  let savedCount = 0;
   for (const [key, value] of Object.entries(profile.value)) {
     if (value && value.trim() !== '') {
       await saveField(key);
+      savedCount++;
     }
   }
-  alert('✅ Profile saved!');
+  if (savedCount > 0) {
+    alert(`✅ Profile saved! ${savedCount} fields updated.`);
+  }
 };
 
 // Format key for display
@@ -257,52 +227,9 @@ const formatSource = (source) => {
   return source;
 };
 
-// Load dev mode status
-const loadDevModeStatus = async () => {
-  try {
-    const conversationId = localStorage.getItem('current_conversation_id');
-    if (!conversationId) return;
-    
-    const response = await http.get(`/api/dev-mode/status?conversation_id=${conversationId}`);
-    if (response.success) {
-      devModeEnabled.value = response.enabled;
-    }
-  } catch (error) {
-    console.error('Failed to load dev mode status:', error);
-  }
-};
-
-// Toggle dev mode
-const toggleDevMode = async () => {
-  try {
-    const conversationId = localStorage.getItem('current_conversation_id');
-    if (!conversationId) {
-      alert('⚠️ Please start a conversation first');
-      devModeEnabled.value = false;
-      return;
-    }
-    
-    const endpoint = devModeEnabled.value ? '/api/dev-mode/enable' : '/api/dev-mode/disable';
-    const response = await http.post(endpoint, { conversation_id: conversationId });
-    
-    if (response.success) {
-      const status = devModeEnabled.value ? '🔥 Dev Mode Activated' : '🔒 Dev Mode Disabled';
-      alert(`✅ ${status}\n\n${response.message}`);
-    } else {
-      alert(`❌ Failed to toggle dev mode: ${response.message}`);
-      devModeEnabled.value = !devModeEnabled.value; // Revert
-    }
-  } catch (error) {
-    console.error('Failed to toggle dev mode:', error);
-    alert('❌ Failed to toggle dev mode');
-    devModeEnabled.value = !devModeEnabled.value; // Revert
-  }
-};
-
 onMounted(() => {
   loadProfile();
   setupProfileListener();
-  loadDevModeStatus();
 });
 </script>
 

@@ -11,6 +11,10 @@ services:
     environment:
       - DOCKER_HOST_ADDR=host.docker.internal
       - ACTUAL_HOST_WORKSPACE_PATH=${WORKSPACE_BASE:-$PWD/workspace}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - LLAMA_CLOUD_API_KEY=${LLAMA_CLOUD_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
     ports:
       - "5005:5005"
     extra_hosts:
@@ -22,13 +26,7 @@ services:
       - $PWD/data:/app/data
       - ./.backups:/app/.backups
       # Mount source code for live updates (development mode)
-      - $PWD/src:/app/src:cached
-      # Mount frontend source but exclude node_modules (platform-specific binaries)
-      - $PWD/frontend/src:/app/frontend/src:cached
-      - $PWD/frontend/public:/app/frontend/public:cached
-      - $PWD/frontend/index.html:/app/frontend/index.html:cached
-      - $PWD/frontend/vite.config.js:/app/frontend/vite.config.js:cached
-      # Local filesystem access - Mount entire home for fluid access
+            # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files
       - ${HOME}:/host/home:cached
     stdin_open: true

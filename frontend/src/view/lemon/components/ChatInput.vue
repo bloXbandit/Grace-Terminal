@@ -13,7 +13,10 @@
               <div class="button-row first-row">
                 <!-- 文件上传 -->
                 <ChatInputUpload v-model:fileList="fileList" v-model:conversation_id="conversation_id" :isPublic="isPublic" v-if="chatMode === 'task'" />
-                <ModelSelect/>
+                <!-- Model locked to GPT-5 -->
+                <div class="model-locked">
+                  <span class="model-locked-text">GPT-5</span>
+                </div>
                 <!-- 模式切换器 - 响应式 -->
                 <div class="mode-selector-dropdown">
                   <!-- 桌面端下拉框 -->
@@ -897,6 +900,25 @@ const keydown = (e) => {
 .model-name {
   font-weight: 500;
   color: #333;
+}
+
+/* Locked model display */
+.model-locked {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: #f5f5f5;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.model-locked-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+  user-select: none;
 }
 </style>
 <style>

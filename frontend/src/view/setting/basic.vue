@@ -7,97 +7,6 @@
       <langService/>
     </div>
 
-    <!-- User Profile Settings -->
-    <div class="setting-section">
-      <h3>👤 User Profile</h3>
-      <p class="section-description">Help Grace understand you better</p>
-      
-      <div class="profile-form">
-        <div class="form-group">
-          <label for="name">Preferred Name *</label>
-          <a-input
-            id="name"
-            v-model:value="profile.name"
-            placeholder="What should Grace call you?"
-            @blur="saveField('name')"
-          />
-          <span class="field-hint">This is how Grace will address you</span>
-        </div>
-
-        <div class="form-group">
-          <label for="profession">Profession *</label>
-          <a-input
-            id="profession"
-            v-model:value="profile.profession"
-            placeholder="e.g., Software Developer, Designer, Student"
-            @blur="saveField('profession')"
-          />
-          <span class="field-hint">Helps Grace tailor technical explanations</span>
-        </div>
-
-        <div class="form-group">
-          <label for="expertise_level">Expertise Level *</label>
-          <a-select
-            id="expertise_level"
-            v-model:value="profile.expertise_level"
-            placeholder="Select level..."
-            @change="saveField('expertise_level')"
-            style="width: 100%"
-          >
-            <a-select-option value="beginner">Beginner</a-select-option>
-            <a-select-option value="intermediate">Intermediate</a-select-option>
-            <a-select-option value="advanced">Advanced</a-select-option>
-            <a-select-option value="expert">Expert</a-select-option>
-          </a-select>
-          <span class="field-hint">How Grace adjusts complexity</span>
-        </div>
-
-        <div class="form-group">
-          <label for="interests">Interests & Technologies</label>
-          <a-textarea
-            id="interests"
-            v-model:value="profile.interests"
-            placeholder="e.g., React, Python, AI/ML, Web3, Mobile Development"
-            :rows="3"
-            @blur="saveField('interests')"
-          />
-          <span class="field-hint">Technologies and topics you're interested in</span>
-        </div>
-
-        <div class="form-group">
-          <label for="goals">Current Goals</label>
-          <a-textarea
-            id="goals"
-            v-model:value="profile.goals"
-            placeholder="e.g., Build a SaaS product, Learn React, Launch a startup"
-            :rows="3"
-            @blur="saveField('goals')"
-          />
-          <span class="field-hint">What you're working towards</span>
-        </div>
-
-        <div class="form-group">
-          <label for="location">Location</label>
-          <a-input
-            id="location"
-            v-model:value="profile.location"
-            placeholder="e.g., San Francisco, Remote"
-            @blur="saveField('location')"
-          />
-          <span class="field-hint">For time zone context</span>
-        </div>
-
-        <div class="form-actions">
-          <a-button type="primary" @click="saveAll" :loading="saving">
-            💾 Save All Changes
-          </a-button>
-          <a-button @click="loadProfile">
-            🔄 Refresh
-          </a-button>
-        </div>
-      </div>
-    </div>
-
     <!-- Developer Mode Settings -->
     <div class="setting-section">
       <h3>🔧 Developer Mode</h3>
@@ -135,82 +44,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRouter } from 'vue-router'
 import langService from '@/components/lang/index.vue'
 import http from '@/utils/http'
-import { useChatStore } from '@/store/chat'
 
-const router = useRouter()
-const chatStore = useChatStore()
-
-const saving = ref(false)
 const devModeEnabled = ref(false)
 const devModeLoading = ref(false)
-
-const profile = ref({
-  name: '',
-  profession: '',
-  expertise_level: '',
-  interests: '',
-  goals: '',
-  location: ''
-})
-
-// Load profile from backend
-const loadProfile = async () => {
-  try {
-    const response = await http.get('/api/users/profile')
-    
-    if (response.data && response.data.success) {
-      // Populate form fields
-      response.data.profile.forEach(item => {
-        if (profile.value.hasOwnProperty(item.key)) {
-          profile.value[item.key] = item.value
-        }
-      })
-    }
-  } catch (error) {
-    console.error('Failed to load profile:', error)
-  }
-}
-
-// Save individual field
-const saveField = async (key) => {
-  const value = profile.value[key]
-  if (!value || value.trim() === '') return
-  
-  try {
-    await http.post('/api/users/profile', {
-      key,
-      value: value.trim(),
-      confidence: 1.0,
-      source: 'settings'
-    })
-    
-    message.success(`${key} saved successfully!`)
-  } catch (error) {
-    console.error('Failed to save field:', error)
-    message.error(`Failed to save ${key}`)
-  }
-}
-
-// Save all fields
-const saveAll = async () => {
-  saving.value = true
-  try {
-    for (const [key, value] of Object.entries(profile.value)) {
-      if (value && value.trim() !== '') {
-        await saveField(key)
-      }
-    }
-    message.success('All profile settings saved successfully!')
-  } catch (error) {
-    console.error('Failed to save all:', error)
-    message.error('Failed to save some settings')
-  } finally {
-    saving.value = false
-  }
-}
 
 // Load dev mode status
 const loadDevModeStatus = async () => {
@@ -231,39 +69,11 @@ const loadDevModeStatus = async () => {
 const toggleDevMode = async () => {
   devModeLoading.value = true
   try {
-    let conversationId = localStorage.getItem('current_conversation_id')
+    const conversationId = localStorage.getItem('current_conversation_id')
     
-    // If enabling dev mode and no conversation exists, create one
-    if (devModeEnabled.value && !conversationId) {
-      message.loading('Creating Dev Mode conversation...', 0)
-      
-      // Create a new dev conversation
-      const result = await chatStore.createConversation('🔥 Dev Mode Session', 'chat')
-      conversationId = result.conversation_id
-      
-      if (!conversationId) {
-        message.destroy()
-        message.error('Failed to create dev conversation')
-        devModeEnabled.value = false
-        devModeLoading.value = false
-        return
-      }
-      
-      // Update chat store
-      chatStore.conversationId = conversationId
-      chatStore.chat = { 
-        conversation_id: conversationId, 
-        title: '🔥 Dev Mode Session',
-        is_dev_mode: true 
-      }
-      localStorage.setItem('current_conversation_id', conversationId)
-      
-      message.destroy()
-    }
-    
-    // If disabling and no conversation, just toggle off
-    if (!devModeEnabled.value && !conversationId) {
-      devModeLoading.value = false
+    if (!conversationId) {
+      message.warning('Please start a conversation first')
+      devModeEnabled.value = !devModeEnabled.value // Revert
       return
     }
     
@@ -273,11 +83,6 @@ const toggleDevMode = async () => {
     if (response.success) {
       const status = devModeEnabled.value ? '🔥 Dev Mode Activated' : '🔒 Dev Mode Disabled'
       message.success(`${status}\n\n${response.message}`)
-      
-      // If enabling, navigate to the dev conversation
-      if (devModeEnabled.value) {
-        router.push(`/grace/chat/${conversationId}`)
-      }
     } else {
       message.error(`Failed to toggle dev mode: ${response.message}`)
       devModeEnabled.value = !devModeEnabled.value // Revert
@@ -291,9 +96,7 @@ const toggleDevMode = async () => {
   }
 }
 
-// Load profile on component mount
 onMounted(() => {
-  loadProfile()
   loadDevModeStatus()
 })
 </script>

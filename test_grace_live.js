@@ -143,6 +143,44 @@ const TEST_CASES = {
       mode: 'auto',
       expectedActions: ['plan', 'write_code'],
       breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution']
+    },
+    {
+      name: 'Auto Mode - Excel Generation',
+      goal: 'Make me an excel file with 10 popular movies and their release years',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
+    },
+    {
+      name: 'Auto Mode - Word Document',
+      goal: 'Create a Word document about artificial intelligence',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
+    },
+    {
+      name: 'Auto Mode - 500 Animals Excel with Graphs',
+      goal: 'could you make me an excel spread sheet 500 random animals, their geographic location and use separate sheets in the excel to show graphs of these animals and their imaginary danger level and maybe endangered percentage.. you can make the best you can of this ask but use real world data to support your data',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run', 'finish_summery'],
+      breakPoints: ['intent_detection', 'mode_switch', 'specialist_routing', 'planning', 'execution', 'thinking', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /animal.*\.xlsx$|wildlife.*\.xlsx$/i,
+        location: '/workspace'
+      }
+    },
+    {
+      name: 'Task Mode - 500 Animals Excel with Graphs',
+      goal: 'could you make me an excel spread sheet 500 random animals, their geographic location and use separate sheets in the excel to show graphs of these animals and their imaginary danger level and maybe endangered percentage.. you can make the best you can of this ask but use real world data to support your data',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'terminal_run', 'finish_summery'],
+      breakPoints: ['intent_detection', 'mode_switch', 'specialist_routing', 'planning', 'execution', 'thinking', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /animal.*\.xlsx$|wildlife.*\.xlsx$/i,
+        location: '/workspace'
+      }
     }
   ],
   special: [

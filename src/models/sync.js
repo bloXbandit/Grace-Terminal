@@ -58,11 +58,18 @@ const dataSync = async () => {
   if (count === 0) {
     const defaultData = require('../../public/default_data/default_platform.json');
     for (const item of defaultData) {
+      // Use ENV API key if JSON has empty key
+      let apiKey = item.api_key;
+      if (!apiKey || apiKey === '') {
+        if (item.name === 'OpenAI') apiKey = process.env.OPENAI_API_KEY || '';
+        if (item.name === 'OpenRouter') apiKey = process.env.OPENROUTER_API_KEY || '';
+      }
+      
       const platformData = {
         name: item.name,
         logo_url: item.logo_url,
         source_type: 'system',
-        api_key: item.api_key,
+        api_key: apiKey,
         api_url: item.api_url,
         api_version: item.api_version,
         key_obtain_url: item.key_obtain_url,

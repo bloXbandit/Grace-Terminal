@@ -9,11 +9,36 @@ async function fixDatabase() {
   try {
     console.log('🔧 Starting database fixes...');
     
-    // 1. Get first OpenAI model (GPT-4o-mini is most common)
-    let firstModel = await Model.findOne({ where: { model_name: 'GPT-4o-mini' } });
+    // 0. Delete broken Lemon platform and its models
+    const Platform = require('./src/models/Platform');
+    const lemonPlatform = await Platform.findOne({ where: { name: 'Lemon' } });
+    if (lemonPlatform) {
+      await Model.destroy({ where: { platform_id: lemonPlatform.id } });
+      await Platform.destroy({ where: { id: lemonPlatform.id } });
+      console.log('✅ Deleted broken Lemon platform and models');
+    }
+    
+    // 1. Get GPT-5 Pro from OpenRouter (user's preferred model)
+    let firstModel = await Model.findOne({ where: { model_id: 'openai/gpt-5-pro' } });
     if (!firstModel) {
-      // Fallback to any OpenAI model
-      const Platform = require('./src/models/Platform');
+      console.log('⚠️  GPT-5 Pro not found, trying Claude Sonnet 4.5...');
+      firstModel = await Model.findOne({ where: { model_id: 'anthropic/claude-sonnet-4.5' } });
+    }
+    if (!firstModel) {
+      console.log('⚠️  Claude Sonnet 4.5 not found, trying GPT-4o-mini...');
+      firstModel = await Model.findOne({ where: { model_name: 'GPT-4o-mini' } });
+    }
+    if (!firstModel) {
+      // Fallback to any OpenRouter model
+      console.log('⚠️  GPT-4o-mini not found, trying any OpenRouter model...');
+      const openrouterPlatform = await Platform.findOne({ where: { name: 'OpenRouter' } });
+      if (openrouterPlatform) {
+        firstModel = await Model.findOne({ where: { platform_id: openrouterPlatform.id } });
+      }
+    }
+    if (!firstModel) {
+      // Final fallback to any OpenAI model
+      console.log('⚠️  No OpenRouter models found, trying any OpenAI model...');
       const openaiPlatform = await Platform.findOne({ where: { name: 'OpenAI' } });
       if (openaiPlatform) {
         firstModel = await Model.findOne({ where: { platform_id: openaiPlatform.id } });
