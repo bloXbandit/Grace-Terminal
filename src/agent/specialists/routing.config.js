@@ -279,44 +279,40 @@ The following libraries are available in the runtime (DO NOT use pip install):
 - **Web/API**: requests, beautifulsoup4, lxml
 - **Specialized**: xerparser (P6/XER files)
 
-**EXECUTION STEPS:**
-1. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin placeholder text
-2. **Use correct file format** - "Word doc" = .docx, "Excel" = .xlsx, "spreadsheet" = .xlsx
-3. **CRITICAL: Return the Python code** - Provide the complete Python script that will create the file
-4. **Use code blocks** - Return code in python code blocks that will be executed by the system
-5. **Include verification** - Add ls command to verify file was created
-6. **DO NOT just confirm** - Return actual executable code, not just a message saying you will create it
+**CRITICAL EXECUTION RULES:**
+1. **USE terminal_run, NOT write_code** - Execute Python directly to create the file
+2. **DO NOT create .py files** - User wants .xlsx/.docx/.pdf, not Python scripts
+3. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin
+4. **Return ONLY XML** - No explanations, just the <terminal_run> action
+5. **Include workspace path** - Use <cwd>{workspace_path}</cwd> in terminal_run
+
+**WRONG (creates .py file instead of Excel):**
+<write_code file_path="script.py">
+import pandas as pd
+df.to_excel('data.xlsx')
+</write_code>
+
+**CORRECT (creates Excel file directly):**
+<terminal_run>
+<command>python3</command>
+<args>-c "import pandas as pd; df = pd.DataFrame({'A': [1,2,3]}); df.to_excel('data.xlsx', index=False); print('✅ Created: data.xlsx')"</args>
+<cwd>{workspace_path}</cwd>
+</terminal_run>
 
 **Example for Word document:**
-Use terminal_run with this Python code:
-\`\`\`python
-from docx import Document
-doc = Document()
-doc.add_heading('My Document', 0)
-doc.add_paragraph('This is the content in English...')
-doc.save('random_document.docx')
-print('✅ Created: random_document.docx')
-\`\`\`
+<terminal_run>
+<command>python3</command>
+<args>-c "from docx import Document; doc = Document(); doc.add_heading('Title', 0); doc.add_paragraph('Content'); doc.save('doc.docx'); print('✅ Created: doc.docx')"</args>
+<cwd>{workspace_path}</cwd>
+</terminal_run>
 
-**Example for Excel spreadsheet:**
-Use terminal_run with this Python code:
-\`\`\`python
-import openpyxl
-from openpyxl import Workbook
-wb = Workbook()
-ws = wb.active
-ws['A1'] = 'Name'
-ws['B1'] = 'Value'
-ws['A2'] = 'Item 1'
-ws['B2'] = 100
-wb.save('data.xlsx')
-print('✅ Created: data.xlsx')
-\`\`\`
+**For complex/large files, you MAY use write_code + terminal_run:**
+1. First: <write_code file_path="script.py">...large code...</write_code>
+2. Then: <terminal_run><command>python3</command><args>script.py</args><cwd>{workspace_path}</cwd></terminal_run>
 
-**CRITICAL: ALWAYS VERIFY**
-After creating file, run: ls -lh filename.ext to verify it exists.
+But for simple files, use inline terminal_run directly.
 
-Be direct. Don't ask for confirmation on simple requests - just create what they asked for in the correct format using terminal_run.`
+Be direct. Don't ask for confirmation - just create the file using terminal_run with <cwd>{workspace_path}</cwd>.`
   },
 
   // Architecture & Design
