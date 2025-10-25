@@ -43,13 +43,31 @@ const planning_local = async (goal, options = {}) => {
   
   // CRITICAL: If specialist provided executable code, extract and execute it immediately
   if (specialistResponse && typeof specialistResponse === 'string') {
-    console.log('[Planning] Thinking...');
+    console.log('[Planning] Checking specialist response format...');
     
-    // Extract Python code blocks
+    // FORMAT 1: Check if specialist provided XML action directly (Excel/complex files)
+    const xmlMatch = specialistResponse.match(/<terminal_run>([\s\S]+?)<\/terminal_run>/);
+    if (xmlMatch) {
+      const actionXML = xmlMatch[0]; // Full XML including tags
+      console.log('[Planning] ✅ Extracted XML action (Excel format)');
+      
+      const timestamp = Date.now();
+      return [{
+        id: `${timestamp}_specialist`,
+        title: '⚡ Creating your file...',
+        description: `Execute specialist code`,
+        tool: 'terminal_run',
+        status: 'pending',
+        preGeneratedAction: actionXML,
+        requirement: actionXML
+      }];
+    }
+    
+    // FORMAT 2: Extract Python code blocks (Word/simple files)
     const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
     if (pythonCodeMatch) {
       const pythonCode = pythonCodeMatch[1];
-      console.log('[Planning] Extracted Python code:', pythonCode.substring(0, 100) + '...');
+      console.log('[Planning] ✅ Extracted Python code block (Word format)');
       
       // Create a single task to execute the specialist's code directly
       const timestamp = Date.now();
@@ -70,6 +88,8 @@ const planning_local = async (goal, options = {}) => {
         requirement: actionXML  // Also put in requirement field for execution to find
       }];
     }
+    
+    console.log('[Planning] ⚠️ No executable code found, using regular planning');
   }
   
   const prompt = await resolvePlanningPromptBP(goal, options);
