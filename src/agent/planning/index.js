@@ -73,8 +73,9 @@ const planning_local = async (goal, options = {}) => {
       
       // Smart execution: For complex/long code, use script file. For simple code, use inline -c
       const codeLength = pythonCode.length;
-      const hasMultipleLines = pythonCode.split('\n').length > 5;
-      const useScriptFile = codeLength > 500 || hasMultipleLines;
+      const lineCount = pythonCode.split('\n').length;
+      // Use inline for most cases - only use script file for very large code (>2000 chars or >50 lines)
+      const useScriptFile = codeLength > 2000 || lineCount > 50;
       
       if (useScriptFile) {
         console.log(`[Planning] Code is complex (${codeLength} chars) - using script file approach`);
