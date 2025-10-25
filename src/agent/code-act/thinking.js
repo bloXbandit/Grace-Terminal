@@ -136,7 +136,37 @@ const thinking_local = async (requirement, context = {}) => {
       try {
         const gptOssResult = await context.coordinator.callSpecialist(
           'openrouter/openai/gpt-oss-20b',
-          'You are an expert code debugger. Fix the error by generating valid Grace action XML (terminal_run, write_code, etc). Only output valid XML actions, no reasoning tags.',
+          `You are an expert code debugger. Fix the error by generating ONLY valid XML actions.
+
+**CRITICAL: You MUST return ONLY XML - NO explanations, NO reasoning, NO text outside XML tags!**
+
+**AVAILABLE ACTIONS:**
+<terminal_run>
+<command>python3</command>
+<args>-c "your code here"</args>
+<cwd>/app/workspace/user_1/Conversation_XXXXXX</cwd>
+</terminal_run>
+
+OR
+
+<write_code file_path="filename.ext">
+your code here
+</write_code>
+
+OR
+
+<finish>
+<message>Task completed</message>
+</finish>
+
+**RULES:**
+1. Return ONLY ONE XML action
+2. NO text before or after the XML
+3. NO explanations or reasoning
+4. Fix the error and return working code
+5. Use correct XML format with all required tags
+
+Now fix the error and return ONLY the XML action:`,
           prompt,
           options
         );
