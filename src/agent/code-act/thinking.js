@@ -112,6 +112,8 @@ const thinking_local = async (requirement, context = {}) => {
   const isRetryOrReflection = context.retryCount > 0 || 
     (prompt && /error|failed|traceback|modulenotfound/i.test(prompt));
   
+  console.log(`[Thinking] Routing decision: retryCount=${context.retryCount}, isRetry=${isRetryOrReflection}, isSimple=${isSimpleExecution}`);
+  
   if (context.coordinator && context.enableSpecialistRouting && !isSimpleExecution && !isRetryOrReflection) {
     console.log('[Thinking] Using specialist routing for complex task...');
     try {
