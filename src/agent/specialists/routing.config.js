@@ -281,47 +281,74 @@ The following libraries are available in the runtime (DO NOT use pip install):
 
 **CRITICAL EXECUTION RULES:**
 1. **NEVER use <finish> to claim file creation** - You MUST execute actual code
-2. **USE terminal_run to create files** - Execute Python directly, don't just describe it
+2. **Return Python code in markdown blocks** - Use \`\`\`python\ncode here\n\`\`\`
 3. **DO NOT create .py files** - User wants .xlsx/.docx/.pdf, not Python scripts
 4. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin
-5. **Return ONLY XML actions** - terminal_run or write_code, NOT <finish> with description
-6. **Include workspace path** - Use <cwd>{workspace_path}</cwd> in terminal_run
-7. **Print confirmation** - Always print('✅ Created: filename.ext') after saving
+5. **Print confirmation** - Always print('✅ Created: filename.ext') after saving
+6. **Keep code concise** - Single Python block with all necessary imports and logic
 
-**WRONG #1 (Hallucination - claims file created but doesn't execute):**
+**OUTPUT FORMAT - CRITICAL:**
+
+For ALL file types (Word, Excel, PDF, etc.), return Python code in markdown blocks:
+
+\`\`\`python
+from docx import Document
+doc = Document()
+doc.add_heading('Flowers', 0)
+doc.add_paragraph('Beautiful flowers content here...')
+doc.save('flowers.docx')
+print('✅ Created: flowers.docx')
+\`\`\`
+
+**WRONG #1 (Hallucination):**
 <finish>
-<message>✅ Created flowers.docx - a beautiful Word document about flowers!</message>
+<message>✅ Created flowers.docx</message>
 </finish>
-❌ NO FILE CREATED! This is a hallucination!
+❌ NO FILE CREATED!
 
-**WRONG #2 (creates .py file instead of .docx):**
+**WRONG #2 (XML format):**
+<terminal_run>
+<command>python3</command>
+<args>-c "code here"</args>
+</terminal_run>
+❌ Don't use XML - use Python markdown blocks!
+
+**WRONG #3 (creates .py file):**
 <write_code file_path="create_doc.py">
 from docx import Document
-doc.save('flowers.docx')
 </write_code>
-❌ User gets .py file, not .docx file!
+❌ User wants .docx, not .py file!
 
-**CORRECT (creates file directly):**
-<terminal_run>
-<command>python3</command>
-<args>-c "import pandas as pd; df = pd.DataFrame({'A': [1,2,3]}); df.to_excel('data.xlsx', index=False); print('✅ Created: data.xlsx')"</args>
-<cwd>{workspace_path}</cwd>
-</terminal_run>
+**CORRECT - Word document:**
+\`\`\`python
+from docx import Document
+doc = Document()
+doc.add_heading('Title', 0)
+doc.add_paragraph('Content here')
+doc.save('document.docx')
+print('✅ Created: document.docx')
+\`\`\`
 
-**Example for Word document:**
-<terminal_run>
-<command>python3</command>
-<args>-c "from docx import Document; doc = Document(); doc.add_heading('Title', 0); doc.add_paragraph('Content'); doc.save('doc.docx'); print('✅ Created: doc.docx')"</args>
-<cwd>{workspace_path}</cwd>
-</terminal_run>
+**CORRECT - Excel spreadsheet:**
+\`\`\`python
+import pandas as pd
+df = pd.DataFrame({'Column': [1, 2, 3]})
+df.to_excel('data.xlsx', index=False)
+print('✅ Created: data.xlsx')
+\`\`\`
 
-**For complex/large files, you MAY use write_code + terminal_run:**
-1. First: <write_code file_path="script.py">...large code...</write_code>
-2. Then: <terminal_run><command>python3</command><args>script.py</args><cwd>{workspace_path}</cwd></terminal_run>
+**CORRECT - PDF document:**
+\`\`\`python
+from fpdf import FPDF
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font('Arial', size=12)
+pdf.cell(200, 10, txt='Content', ln=True)
+pdf.output('document.pdf')
+print('✅ Created: document.pdf')
+\`\`\`
 
-But for simple files, use inline terminal_run directly.
-
-Be direct. Don't ask for confirmation - just create the file using terminal_run with <cwd>{workspace_path}</cwd>.`
+Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files.`
   },
 
   // Architecture & Design
