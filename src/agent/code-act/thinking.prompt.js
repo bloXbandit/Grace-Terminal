@@ -28,6 +28,13 @@ const resolveThinkingPrompt = async (requirement = '', context = {}) => {
   const app_ports = JSON.stringify([context.runtime.app_port_1, context.runtime.app_port_2])
   const system = await describeSystem(context);
   const knowledge = await resolveThinkingKnowledge(context);
+  
+  // Add workspace path for file operations
+  const { getDirpath } = require('@src/utils/electron');
+  const path = require('path');
+  const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
+  const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', context.user_id);
+  const workspace_path = path.join(WORKSPACE_DIR, dir_name);
 
   // Check if specialist routing is enabled (Task/Auto modes only)
   const specialistGuidance = context.enableSpecialistRouting ? `
@@ -108,7 +115,8 @@ Use specialists strategically to deliver the highest quality solutions!
     best_practices_knowledge: knowledge,
     tools: tools + '\n' + mcpToolsPrompt, // 工具列表
     user_profile: profileContext, // User profile context
-    specialist_guidance: specialistGuidance // Specialist routing guidance
+    specialist_guidance: specialistGuidance, // Specialist routing guidance
+    workspace_path: workspace_path // Workspace directory for file operations
   }
 
   // 动态评估提示词

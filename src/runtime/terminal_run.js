@@ -35,8 +35,10 @@ const runCommand = (command, args, cwd) => {
 }
 
 const terminal_run = async (action, uuid) => {
-  const { command, args = [], cwd = '.' } = action.params;
-  const executionDir = await restrictFilepath(cwd);
+  const { command, args = [], cwd } = action.params;
+  // Use provided cwd or default to current directory
+  const executionDir = cwd ? await restrictFilepath(cwd) : process.cwd();
+  console.log('[terminal_run] Executing in directory:', executionDir);
   try {
     const result = await runCommand(command, args, executionDir);
     return {
