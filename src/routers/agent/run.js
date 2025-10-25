@@ -93,6 +93,12 @@ router.post("/run", async (ctx, next) => {
   const body = request.body || {};
   let { question, conversation_id, fileIds, mcp_server_ids = [], model_id, agent_id, mode = 'auto' } = body;
 
+  // Get default model if not provided
+  if (!model_id) {
+    const DefaultModelSetting = require('@src/models/DefaultModelSetting');
+    const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+    model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+  }
 
   await Conversation.update({ model_id, status: "running" }, { where: { conversation_id } })
   if (agent_id) {
@@ -162,6 +168,7 @@ router.post("/run", async (ctx, next) => {
       status: 'running',
       modeType: 'task',
       user_id: ctx.state.user.id,
+      model_id: model_id  // Use the default model we just looked up
     });
   }
 

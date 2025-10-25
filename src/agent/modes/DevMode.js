@@ -112,9 +112,16 @@ What would you like me to improve?`
       if (!conversation) {
         // Force create conversation if it doesn't exist
         console.log(`🚨 [DevMode] Conversation not found, force creating...`);
+        
+        // Get default model
+        const DefaultModelSetting = require('@src/models/DefaultModelSetting');
+        const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+        const model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+        
         conversation = await Conversation.create({
           conversation_id: conversationId,
-          metadata: {}
+          metadata: {},
+          model_id
         });
       }
 

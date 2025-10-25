@@ -15,6 +15,12 @@ const ensureConversation = async (conversation_id, requirement, user_id, agent_i
   if (!conversation_id) {
     conversation_id = uuid.v4();
     const title = `Conversation_${conversation_id.slice(0, 6)}`;
+    
+    // Get default model
+    const DefaultModelSetting = require('@src/models/DefaultModelSetting');
+    const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+    const model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+    
     await Conversation.create({
       conversation_id,
       content: requirement,
@@ -22,7 +28,8 @@ const ensureConversation = async (conversation_id, requirement, user_id, agent_i
       status: 'running',
       modeType: 'coding',
       agent_id,
-      user_id
+      user_id,
+      model_id
     });
   } else {
     await Conversation.update(

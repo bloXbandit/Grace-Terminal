@@ -52,10 +52,17 @@ const path = require('path');
  */
 router.post("/", async ({ state, request, response }) => {
   const body = request.body || {};
-  const { content, mode_type, agent_id, model_id } = body
+  let { content, mode_type, agent_id, model_id } = body
   let modeType = mode_type || 'task'
   const conversation_id = uuid.v4();
   const title = content.slice(0, 20);
+
+  // Get default model if not provided
+  if (!model_id) {
+    const DefaultModelSetting = require('@src/models/DefaultModelSetting');
+    const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+    model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+  }
 
   // 构建要创建的对象
   const newConversationData = {
