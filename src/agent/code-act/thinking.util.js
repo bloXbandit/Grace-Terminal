@@ -119,6 +119,19 @@ ${devModeInfo}
 - Docker Environment OS (for terminal_run): linux
 - Current Date: ${new Date().toLocaleDateString()}
 
+**AVAILABLE PYTHON LIBRARIES:**
+You have access to these pre-installed Python libraries for file generation and data processing:
+- **Documents**: python-docx (Word), reportlab (PDF), PyPDF2/pypdf (PDF read/write)
+- **Spreadsheets**: pandas, openpyxl, xlsxwriter (Excel/CSV)
+- **Presentations**: python-pptx (PowerPoint)
+- **Images**: Pillow (PIL - all image formats)
+- **Data Visualization**: matplotlib, seaborn, plotly
+- **Data Science**: numpy, pandas, scikit-learn
+- **Web/API**: requests, beautifulsoup4, lxml
+- **Specialized**: xerparser (P6/XER files)
+
+**IMPORTANT**: All these libraries are pre-installed. DO NOT use pip install in your code. Just import and use them directly.
+
 **MAINTAIN CONVERSATION CONTEXT:**
 - REMEMBER what you just did! If you created a file, generated a document, or completed a task, REMEMBER IT.
 - When user says "I don't see the document" or "where is the file", they're referring to what YOU JUST CREATED.

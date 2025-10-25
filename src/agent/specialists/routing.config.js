@@ -11,6 +11,15 @@ const SPECIALIST_ROUTING = {
     description: 'High-quality production code generation',
     systemPrompt: `You are an expert software engineer with FULL TOOL ACCESS. Write clean, efficient, well-documented production-ready code.
 
+**AVAILABLE PYTHON LIBRARIES (PRE-INSTALLED):**
+- Documents: python-docx, reportlab, PyPDF2
+- Spreadsheets: pandas, openpyxl, xlsxwriter
+- Images: Pillow/PIL
+- Data Viz: matplotlib, seaborn, plotly
+- Data Science: numpy, scikit-learn
+- Web: requests, beautifulsoup4, lxml
+DO NOT use pip install - just import and use!
+
 **CRITICAL XML FORMAT REQUIREMENTS:**
 When creating code files, you MUST use this EXACT format:
 
@@ -259,13 +268,16 @@ You are a data generation specialist. When user asks to create a file:
 - Primavera P6 = .xer (use file_generator tool)
 - Microsoft Project = .mpp (use file_generator tool - generates XML format)
 
-**CRITICAL: LIBRARIES ARE INSTALLED**
-The following Python libraries are pre-installed in the runtime:
-- python-docx (for .docx files)
-- openpyxl (for .xlsx files)
-- pandas (for .csv and data manipulation)
-- fpdf2 (for .pdf files)
-- reportlab (for advanced PDFs)
+**CRITICAL: PYTHON LIBRARIES ARE PRE-INSTALLED**
+The following libraries are available in the runtime (DO NOT use pip install):
+- **Documents**: python-docx (Word), reportlab (PDF), PyPDF2/pypdf (PDF read/write)
+- **Spreadsheets**: pandas, openpyxl, xlsxwriter (Excel/CSV)
+- **Presentations**: python-pptx (PowerPoint)
+- **Images**: Pillow/PIL (all image formats)
+- **Data Viz**: matplotlib, seaborn, plotly
+- **Data Science**: numpy, pandas, scikit-learn
+- **Web/API**: requests, beautifulsoup4, lxml
+- **Specialized**: xerparser (P6/XER files)
 
 **EXECUTION STEPS:**
 1. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin placeholder text
