@@ -29,11 +29,12 @@ services:
       # HOT RELOAD: Mount source code for instant updates (no rebuild needed)
       - ./src:/app/src:cached
       - ./containers:/app/containers:cached
+      - ./Makefile:/app/Makefile:cached
       
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files
       - ${HOME}:/host/home:cached
     stdin_open: true
     tty: true
-    # Use 'make dev' for hot reload with nodemon, or 'make run' for production
-    command: make dev
+    # Source code mounted for hot reload - restart container to apply changes
+    command: make run
