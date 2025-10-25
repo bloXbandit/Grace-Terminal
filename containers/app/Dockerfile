@@ -34,7 +34,15 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     Pillow \
     matplotlib \
     numpy \
-    xerparser
+    xerparser \
+    PyPDF2 \
+    pypdf \
+    requests \
+    beautifulsoup4 \
+    lxml \
+    seaborn \
+    plotly \
+    scikit-learn
 
 # --- Layer 2: Package Manager Manifests (Infrequent Change) ---
 # Copy package.json and Makefile. If you have a lock file (package-lock.json or yarn.lock),
