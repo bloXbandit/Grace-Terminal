@@ -35,16 +35,7 @@ const summary_server = async (goal, conversation_id, tasks, generatedFiles = [],
 
 const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null) => {
   const prompt = await resolveResultPrompt(goal, tasks, generatedFiles, staticUrl);
-  
-  // CRITICAL FIX: Force Claude Sonnet 4.5 for summary to avoid GPT-5 Pro hangs
-  // Override conversation default model for this specific call
-  const summaryModelOverride = {
-    model_name: 'anthropic/claude-sonnet-4.5',
-    platform_name: 'OpenRouter',
-    api_url: 'https://openrouter.ai/api/v1/chat/completions'
-  };
-  
-  const result = await call(prompt, conversation_id, summaryModelOverride);
+  const result = await call(prompt, conversation_id);
 
   // STRATEGIC: Validate file delivery claims in task summaries
   const ResponseValidator = require('@src/utils/responseValidator');
