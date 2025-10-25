@@ -43,13 +43,13 @@ const planning_local = async (goal, options = {}) => {
   
   // CRITICAL: If specialist provided executable code, extract and execute it immediately
   if (specialistResponse && typeof specialistResponse === 'string') {
-    console.log('[Planning] Checking specialist response format...');
+    console.log('[Planning] coooking...');
     
     // FORMAT 1: Check if specialist provided XML action directly (Excel/complex files)
     const xmlMatch = specialistResponse.match(/<terminal_run>([\s\S]+?)<\/terminal_run>/);
     if (xmlMatch) {
       const actionXML = xmlMatch[0]; // Full XML including tags
-      console.log('[Planning] ✅ Extracted XML action (Excel format)');
+      console.log('[Planning] ✅ Extracted action (Excel format)');
       
       const timestamp = Date.now();
       return [{
@@ -67,26 +67,56 @@ const planning_local = async (goal, options = {}) => {
     const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
     if (pythonCodeMatch) {
       const pythonCode = pythonCodeMatch[1];
-      console.log('[Planning] ✅ Extracted Python code block (Word format)');
+      console.log('[Planning] ✅ Extracted Python code block');
       
-      // Create a single task to execute the specialist's code directly
       const timestamp = Date.now();
       
-      // Pre-generate the action XML so execution doesn't need LLM to parse it
-      // Escape quotes but keep actual newlines for Python -c
-      const escapedCode = pythonCode.replace(/"/g, '\\"');
-      const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
+      // Smart execution: For complex/long code, use script file. For simple code, use inline -c
+      const codeLength = pythonCode.length;
+      const hasMultipleLines = pythonCode.split('\n').length > 5;
+      const useScriptFile = codeLength > 500 || hasMultipleLines;
       
-      return [{
-        id: `${timestamp}_specialist`,
-        title: '⚡ Creating your file...',
-        description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
-        tool: 'terminal_run',
-        status: 'pending',
-        // Pre-generated action for direct execution
-        preGeneratedAction: actionXML,
-        requirement: actionXML  // Also put in requirement field for execution to find
-      }];
+      if (useScriptFile) {
+        console.log(`[Planning] Code is complex (${codeLength} chars) - using script file approach`);
+        
+        // Create two tasks: 1) write script, 2) execute script
+        return [
+          {
+            id: `${timestamp}_write`,
+            title: '📝 Preparing script...',
+            description: 'Write Python script to file',
+            tool: 'write_code',
+            status: 'pending',
+            preGeneratedAction: `<write_code>\n<file_path>temp_script_${timestamp}.py</file_path>\n<content>${pythonCode}</content>\n</write_code>`,
+            requirement: `Write Python script`
+          },
+          {
+            id: `${timestamp}_execute`,
+            title: '⚡ Creating your file...',
+            description: `Execute Python script`,
+            tool: 'terminal_run',
+            status: 'pending',
+            preGeneratedAction: `<terminal_run>\n<command>python3</command>\n<args>temp_script_${timestamp}.py</args>\n</terminal_run>`,
+            requirement: `Execute script`
+          }
+        ];
+      } else {
+        console.log(`[Planning] Code is simple (${codeLength} chars) - using inline execution`);
+        
+        // Inline execution for simple code
+        const escapedCode = pythonCode.replace(/"/g, '\\"');
+        const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
+        
+        return [{
+          id: `${timestamp}_specialist`,
+          title: '⚡ Creating your file...',
+          description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
+          tool: 'terminal_run',
+          status: 'pending',
+          preGeneratedAction: actionXML,
+          requirement: actionXML
+        }];
+      }
     }
     
     console.log('[Planning] ⚠️ No executable code found, using regular planning');
