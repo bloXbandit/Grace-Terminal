@@ -43,14 +43,6 @@ const auto_reply = async (goal, conversation_id, user_id = 1) => {
     
     const needsTools = requiresToolExecution.includes(taskType);
     
-    // CRITICAL FIX: If task needs tools, skip specialist in auto_reply
-    // Go directly to planning/execution to avoid hallucinated responses
-    if (needsTools) {
-      console.log(`[AutoReply] Task type ${taskType} requires tools - skipping auto_reply specialist`);
-      console.log(`[AutoReply] Continuing directly to planning and execution`);
-      return null; // Let AgenticAgent handle planning and execution
-    }
-    
     try {
       const result = await coordinator.execute(goal);
       console.log(`[AutoReply] Coordinator execute result:`, result.success ? 'SUCCESS' : 'FAILED');
