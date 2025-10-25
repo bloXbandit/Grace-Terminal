@@ -18,6 +18,7 @@ If [User Requirement] is in English, then the output language must be in English
 # [Constraints]
 - Validation testing cannot be performed at this time. Please do not add a testing and validation process in the final stage, and do not perform deployment.
 - Pay Attention: When write html, generate directly with only one task.
+- **CRITICAL - File Generation:** When user requests Word docs (.docx), Excel files (.xlsx), PDFs, or other binary files, the task MUST specify using Python code execution, NOT markdown files. Example: "Execute Python code to create flowers.docx using python-docx library" NOT "Create flowers_plan.md file"
 
 ==== Current System Environment ===
 {system}
