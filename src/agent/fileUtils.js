@@ -27,9 +27,10 @@ async function getAllFilesRecursively(directoryPath) {
 /**
  * 获取文件路径列表的元数据（文件名、大小等）。
  * @param {string[]} filepaths - 文件路径数组。
+ * @param {Date} [filterAfterTime] - 可选：只返回此时间之后修改的文件。
  * @returns {Promise<Array<{filepath: string, filename: string, filesize: number}>>} 包含文件元数据的数组，按修改时间倒序排序。
  */
-async function getFilesMetadata(filepaths) {
+async function getFilesMetadata(filepaths, filterAfterTime = null) {
   const filesMetadata = await Promise.all(
     filepaths.map(async (file) => {
       const stats = await fs.stat(file);
@@ -42,8 +43,15 @@ async function getFilesMetadata(filepaths) {
     })
   );
 
+  // Filter by modification time if specified
+  let filtered = filesMetadata;
+  if (filterAfterTime) {
+    filtered = filesMetadata.filter(file => file.mtime >= filterAfterTime);
+    console.log(`[FileUtils] Filtered ${filesMetadata.length} files to ${filtered.length} files created after ${filterAfterTime.toISOString()}`);
+  }
+
   // 按修改时间倒序排序（最新的文件在前面）
-  return filesMetadata.sort((a, b) => b.mtime - a.mtime).map(({ mtime, ...rest }) => rest);
+  return filtered.sort((a, b) => b.mtime - a.mtime).map(({ mtime, ...rest }) => rest);
 }
 
 /**

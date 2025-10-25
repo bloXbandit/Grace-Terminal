@@ -47,6 +47,8 @@ class AgenticAgent {
     context.task_manager = this.taskManager;
     // 规划模式
     this.planning_mode = context.planning_mode || 'base';
+    // Track session start time to filter files created in this session
+    this.sessionStartTime = new Date();
   }
 
   setGoal(goal) {
@@ -171,7 +173,11 @@ class AgenticAgent {
       }
     }
     const filesToProcess = Array.from(filesSet);
-    const newFiles = await getFilesMetadata(filesToProcess); // 使用外部函数
+    
+    // CRITICAL FIX: Only show files created/modified in this session
+    // This prevents old files from previous sessions showing up in the UI
+    const newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime);
+    console.log(`[AgenticAgent] Session started at ${this.sessionStartTime.toISOString()}, found ${newFiles.length} new files`);
 
     // 创建文件版本
     const state = {
