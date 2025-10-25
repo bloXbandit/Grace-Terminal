@@ -287,7 +287,9 @@ class DockerRuntime {
           try {
             const execute = tool.execute;
             params.conversation_id = context.conversation_id
-            const execute_result = await execute(params, uuid, context);
+            // CRITICAL: Pass runtime instance to tool for file generation
+            const toolContext = { ...context, runtime: this };
+            const execute_result = await execute(params, uuid, toolContext);
             console.log(`${tool.name}.call.result`, execute_result);
             // console.log('LocalRuntime.execute_action.tool.execute', execute_result);
             const { content, meta = {} } = execute_result;

@@ -48,8 +48,8 @@ class AgenticAgent {
     // 规划模式
     this.planning_mode = context.planning_mode || 'base';
     // Track session start time to filter files created in this session
-    // Subtract 5 seconds to ensure we catch files created at the start of execution
-    this.sessionStartTime = new Date(Date.now() - 5000);
+    // Use current time - files created during this session will have mtime >= this
+    this.sessionStartTime = new Date();
   }
 
   setGoal(goal) {

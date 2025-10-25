@@ -101,7 +101,9 @@ class LocalRuntime {
         if (tool) {
           console.log('LocalRuntime.execute_action.tool', tool.name, params);
           const execute = tool.execute;
-          const execute_result = await execute(params);
+          // CRITICAL: Pass runtime instance to tool for file generation
+          const toolContext = { conversation_id: context.conversation_id, runtime: this };
+          const execute_result = await execute(params, uuid, toolContext);
           // console.log('LocalRuntime.execute_action.tool.execute', execute_result);
           const { content, meta = {} } = execute_result;
           result = { uuid, status: 'success', content, memorized: tool.memorized || false, meta };
