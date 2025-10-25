@@ -7,7 +7,7 @@ const SPECIALIST_ROUTING = {
   // Code-related tasks
   code_generation: {
     primary: 'openrouter/anthropic/claude-sonnet-4.5',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'High-quality production code generation',
     systemPrompt: `You are an expert software engineer with FULL TOOL ACCESS. Write clean, efficient, well-documented production-ready code.
 
@@ -61,7 +61,7 @@ Write clean, working code quickly for prototypes and iterations. Use terminal_ru
   },
   code_refactoring: {
     primary: 'openrouter/deepseek/deepseek-coder',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Refactor and optimize existing code',
     systemPrompt: 'You are a code optimization expert. Refactor code for better performance, readability, and maintainability.'
   },
@@ -75,25 +75,25 @@ Write clean, working code quickly for prototypes and iterations. Use terminal_ru
   // Reasoning & Problem Solving
   complex_reasoning: {
     primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Deep reasoning for complex problems with tool use',
     systemPrompt: 'You are a reasoning expert with FULL TOOL ACCESS and AUTHORIZATION. Think deeply, use tools proactively (terminal_run, file_generator, local_filesystem, validate_code), and provide well-reasoned solutions. You have permission to execute code, create files, and access local filesystem. Be bold and action-oriented.'
   },
   mathematical_reasoning: {
     primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Solve mathematical problems with computational tools',
     systemPrompt: 'You are a mathematics expert with FULL TOOL ACCESS. Use terminal_run with Python for calculations, validate_code to check syntax, and file_generator to create result documents. Solve problems step-by-step with clear explanations and EXECUTE code to verify answers.'
   },
   web_research: {
     primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Research information from the web',
     systemPrompt: 'You are a research expert. Use web browsing tools to find accurate, up-to-date information.'
   },
   data_analysis: {
     primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Analyze data and generate insights',
     systemPrompt: 'You are a data analyst with FULL TOOL ACCESS and AUTHORIZATION. Use terminal_run with Python/pandas, file_generator to create visualizations/reports, local_filesystem to access data files, and validate_code to ensure correctness. Analyze data, identify patterns, and provide actionable insights with EXECUTED code and generated files.'
   },
@@ -240,7 +240,7 @@ You are the P6 expert. Use your tools confidently!`,
 
   data_generation: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5 pro',
     description: 'Generate structured data, spreadsheets, CSV, JSON, lists',
     systemPrompt: `CRITICAL: ALL content MUST be in ENGLISH ONLY. No Spanish, Latin, or other languages.
 
@@ -316,7 +316,7 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
   },
   database_design: {
     primary: 'openrouter/anthropic/claude-3-opus',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Design database schemas',
     systemPrompt: 'You are a database architect. Design normalized, efficient database schemas with proper relationships.'
   },
@@ -324,12 +324,12 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
   // Testing & Quality
   test_generation: {
     primary: 'openrouter/anthropic/claude-sonnet-4.5',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Generate comprehensive tests',
     systemPrompt: 'You are a QA engineer. Write thorough unit tests, integration tests, and edge case tests.'
   },
   security_audit: {
-    primary: 'openai/gpt-5-pro',
+    primary: 'openrouter/openai/gpt-5-pro',
     fallback: 'openrouter/anthropic/claude-3-opus',
     description: 'Security vulnerability assessment',
     systemPrompt: 'You are a security expert. Identify vulnerabilities, security risks, and provide mitigation strategies.'
@@ -344,7 +344,7 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
   },
   code_explanation: {
     primary: 'openrouter/anthropic/claude-sonnet-4.5',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Explain code in simple terms',
     systemPrompt: 'You are a teacher. Explain code clearly and simply, suitable for the user\'s expertise level.'
   },
@@ -365,14 +365,14 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
 
   // Backend & APIs
   backend_development: {
-    primary: 'openai/gpt-5-pro',
+    primary: 'openrouter/openai/gpt-5-pro',
     fallback: 'openrouter/deepseek/deepseek-coder',
     description: 'Build backend services',
     systemPrompt: 'You are a backend engineer. Build robust, scalable APIs with proper error handling and security.'
   },
   api_design: {
     primary: 'openrouter/anthropic/claude-3-opus',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Design RESTful APIs',
     systemPrompt: 'You are an API architect. Design clean, RESTful, well-documented APIs.'
   },
@@ -387,7 +387,7 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
   },
   brainstorming: {
     primary: 'openrouter/gryphe/mythomax-l2-13b',
-    fallback: 'openai/gpt-5-pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Brainstorm ideas, hypotheticals, and creative scenarios',
     systemPrompt: 'You are a creative brainstorming partner. Generate imaginative ideas, explore hypothetical scenarios, and think outside the box. Be bold and innovative.'
   },
@@ -400,7 +400,7 @@ Be direct. Don't ask for confirmation on simple requests - just create what they
 
   // General conversation (Grace's default) - ENHANCED WITH TOOL ACCESS
   general_chat: {
-    primary: 'openai/gpt-5-pro',
+    primary: 'openrouter/openai/gpt-5-pro',
     fallback: 'openrouter/anthropic/claude-sonnet-4.5',
     description: 'General conversation with full tool access for fallback scenarios',
     systemPrompt: `You are Grace, a helpful AI assistant with full capabilities. Be friendly, professional, and helpful.

@@ -72,12 +72,19 @@ async function fixDatabase() {
       console.log('✅ Default model already set');
     }
     
-    // 3. Update all conversations with null model_id
-    const result = await Conversation.update(
+    // 3. Update all conversations with null model_id OR broken model_id
+    const nullResult = await Conversation.update(
       { model_id: firstModel.id },
       { where: { model_id: null } }
     );
-    console.log(`✅ Updated ${result[0]} conversations with null model_id`);
+    console.log(`✅ Updated ${nullResult[0]} conversations with null model_id`);
+    
+    // 4. Update conversations pointing to broken Lemon model (id: 52) or direct OpenAI models
+    const brokenResult = await Conversation.update(
+      { model_id: firstModel.id },
+      { where: { model_id: [52, 20] } }  // 52 = broken Lemon, 20 = direct OpenAI gpt-4o
+    );
+    console.log(`✅ Updated ${brokenResult[0]} conversations with broken model_id (Lemon/OpenAI direct)`);
     
     // 4. Verify
     const nullCount = await Conversation.count({ where: { model_id: null } });

@@ -1,0 +1,298 @@
+{
+  "title": "Comprehensive Research on Love – Phase 1 (Draft)",
+  "scope": {
+    "definitions": true,
+    "quotes_and_literature": true,
+    "psychological_models": true,
+    "biological_perspectives": true
+  },
+  "definitions": {
+    "dictionary_like_definitions": [
+      {
+        "definition": "An intense feeling of deep affection and care for someone or something.",
+        "source": "General dictionary sense (e.g., Oxford/Merriam-Webster style)",
+        "verified": false
+      },
+      {
+        "definition": "A great interest and pleasure in something.",
+        "source": "General dictionary sense (e.g., Oxford/Merriam-Webster style)",
+        "verified": false
+      },
+      {
+        "definition": "A relational practice involving attachment, care, intimacy, responsibility, and commitment.",
+        "source": "Humanistic/psychological framing (synthesized)",
+        "verified": false
+      }
+    ],
+    "philosophical_definitions": [
+      {
+        "quote": "Love is the will to extend oneself for the purpose of nurturing one own or another spiritual growth.",
+        "author": "M. Scott Peck",
+        "work": "The Road Less Traveled (1978)",
+        "verified": false
+      },
+      {
+        "quote": "Love is not primarily a relationship to a specific person; it is an attitude, an orientation of character.",
+        "author": "Erich Fromm",
+        "work": "The Art of Loving (1956)",
+        "verified": false
+      },
+      {
+        "quote": "Love is composed of a single soul inhabiting two bodies.",
+        "author": "Attributed to Aristotle",
+        "work": "Traditional attribution",
+        "verified": false
+      },
+      {
+        "quote": "Love is a serious mental disease.",
+        "author": "Attributed to Plato",
+        "work": "Often linked to dialogues on eros",
+        "verified": false
+      }
+    ]
+  },
+  "psychological_models": {
+    "models": [
+      {
+        "name": "Triangular Theory of Love",
+        "theorist": "Robert Sternberg",
+        "components": [
+          "Intimacy",
+          "Passion",
+          "Commitment"
+        ],
+        "description": "Combinations of three components yield distinct love forms (e.g., romantic, companionate, consummate).",
+        "year": 1986,
+        "verified": false
+      },
+      {
+        "name": "Attachment Theory (Adult Romantic Attachment)",
+        "theorists": [
+          "John Bowlby",
+          "Mary Ainsworth",
+          "Cindy Hazan",
+          "Phillip Shaver"
+        ],
+        "styles": [
+          "Secure",
+          "Anxious-preoccupied",
+          "Dismissive-avoidant",
+          "Fearful-avoidant"
+        ],
+        "description": "Early attachment patterns influence adult romantic expectations and behaviors.",
+        "year_range": "1960s–1980s",
+        "verified": false
+      },
+      {
+        "name": "Love Styles (Colors of Love)",
+        "theorist": "John Alan Lee",
+        "styles": [
+          "Eros",
+          "Ludus",
+          "Storge",
+          "Pragma",
+          "Mania",
+          "Agape"
+        ],
+        "description": "Six stylistic ways individuals experience and express love.",
+        "year": 1973,
+        "verified": false
+      }
+    ],
+    "key_constructs": [
+      {
+        "term": "Intimacy",
+        "meaning": "Emotional closeness, trust, and connectedness.",
+        "verified": false
+      },
+      {
+        "term": "Passion",
+        "meaning": "Physical attraction, arousal, and desire.",
+        "verified": false
+      },
+      {
+        "term": "Commitment",
+        "meaning": "Decision to maintain love and loyalty over time.",
+        "verified": false
+      },
+      {
+        "term": "Attachment Security",
+        "meaning": "Comfort with closeness and interdependence.",
+        "verified": false
+      }
+    ]
+  },
+  "biological_perspectives": {
+    "neurochemistry": [
+      {
+        "chemical": "Dopamine",
+        "role": "Reward, motivation, and salience in early-stage romantic love.",
+        "verified": false
+      },
+      {
+        "chemical": "Oxytocin",
+        "role": "Bonding, attachment, and social trust.",
+        "verified": false
+      },
+      {
+        "chemical": "Vasopressin",
+        "role": "Pair-bonding and long-term attachment (noted in prairie vole models).",
+        "verified": false
+      },
+      {
+        "chemical": "Serotonin",
+        "role": "Mood regulation; altered levels associated with early infatuation.",
+        "verified": false
+      }
+    ],
+    "brain_regions": [
+      {
+        "region": "Ventral Tegmental Area (VTA)",
+        "role": "Dopaminergic reward circuit activation in romantic love.",
+        "verified": false
+      },
+      {
+        "region": "Caudate Nucleus",
+        "role": "Learning, reward processing, habit formation.",
+        "verified": false
+      },
+      {
+        "region": "Insula",
+        "role": "Interoceptive awareness and emotional processing.",
+        "verified": false
+      },
+      {
+        "region": "Anterior Cingulate Cortex",
+        "role": "Emotion regulation and attention.",
+        "verified": false
+      }
+    ],
+    "evolutionary_view": [
+      {
+        "concept": "Mate selection",
+        "point": "Preferences that may enhance reproductive success.",
+        "verified": false
+      },
+      {
+        "concept": "Parental investment",
+        "point": "Attachment and pair-bonding to support offspring survival.",
+        "verified": false
+      },
+      {
+        "concept": "Cooperation",
+        "point": "Altruism and bonding to strengthen group survival.",
+        "verified": false
+      }
+    ],
+    "notable_researchers": [
+      {
+        "name": "Helen Fisher",
+        "contribution": "Three systems: lust, romantic attraction, attachment.",
+        "verified": false
+      },
+      {
+        "name": "Lucy L. Brown",
+        "contribution": "Neuroimaging of romantic love and reward circuitry.",
+        "verified": false
+      },
+      {
+        "name": "Andreas Bartels & Semir Zeki",
+        "contribution": "fMRI studies on romantic and maternal love.",
+        "verified": false
+      },
+      {
+        "name": "C. Sue Carter",
+        "contribution": "Oxytocin/vasopressin in pair bonding.",
+        "verified": false
+      }
+    ]
+  },
+  "quotes_and_literature": {
+    "quotes": [
+      {
+        "text": "How do I love thee? Let me count the ways.",
+        "author": "Elizabeth Barrett Browning",
+        "work": "Sonnet 43",
+        "verified": false
+      },
+      {
+        "text": "Being deeply loved by someone gives you strength, while loving someone deeply gives you courage.",
+        "author": "Attributed to Lao Tzu",
+        "work": "Traditional attribution",
+        "verified": false
+      },
+      {
+        "text": "The very essence of romance is uncertainty.",
+        "author": "Oscar Wilde",
+        "work": "The Importance of Being Earnest",
+        "verified": false
+      },
+      {
+        "text": "We are most alive when we in love.",
+        "author": "John Updike",
+        "work": "Attributed",
+        "verified": false
+      },
+      {
+        "text": "To love and be loved is to feel the sun from both sides.",
+        "author": "David Viscott",
+        "work": "Attributed",
+        "verified": false
+      }
+    ],
+    "literary_references": [
+      {
+        "work": "Symposium",
+        "author": "Plato",
+        "note": "Dialogues exploring different speeches on the nature of love (eros).",
+        "verified": false
+      },
+      {
+        "work": "Sonnet 116",
+        "author": "William Shakespeare",
+        "note": "Meditation on steadfastness and constancy in love.",
+        "verified": false
+      },
+      {
+        "work": "Divine Comedy",
+        "author": "Dante Alighieri",
+        "note": "Love as a metaphysical and theological force guiding the soul.",
+        "verified": false
+      },
+      {
+        "work": "Masnavi",
+        "author": "Rumi",
+        "note": "Mystical Sufi poetry emphasizing love as path to the divine.",
+        "verified": false
+      },
+      {
+        "work": "Fragments",
+        "author": "Sappho",
+        "note": "Ancient lyric poetry capturing desire and longing.",
+        "verified": false
+      },
+      {
+        "work": "Pride and Prejudice",
+        "author": "Jane Austen",
+        "note": "Romantic love, choice, and social commentary.",
+        "verified": false
+      },
+      {
+        "work": "Wuthering Heights",
+        "author": "Emily Brontë",
+        "note": "Passionate, destructive, and enduring love.",
+        "verified": false
+      }
+    ]
+  },
+  "meta": {
+    "intended_reputable_sources": [
+      "Oxford Languages / Merriam-Webster (definitions)",
+      "Peer-reviewed psychology (Sternberg; Hazan & Shaver; Lee)",
+      "Neuroscience (Fisher; Bartels & Zeki; Brown; Carter)",
+      "Canonical literature (Plato; Shakespeare; Dante; Sappho; Rumi)"
+    ],
+    "verification_status": "Draft – content compiled from general knowledge; to be cross-verified once web access is restored.",
+    "generated_utc": "2025-10-21T17:50:17.549008Z"
+  }
+}

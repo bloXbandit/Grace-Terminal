@@ -122,7 +122,10 @@ const configs = [
       'anthropic/claude-3.5-sonnet',
       'anthropic/claude-sonnet-4.5',
       'openai/gpt-4o',
-      'openai/gpt-4-turbo'
+      'openai/gpt-4-turbo',
+      'openai/gpt-5-pro',
+      'openai/gpt-5o',
+      'openai/o1-preview',
     ]
   }, {
     channel: 'provider',

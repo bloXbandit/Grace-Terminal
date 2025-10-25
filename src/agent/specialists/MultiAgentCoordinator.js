@@ -543,7 +543,7 @@ class MultiAgentCoordinator {
    */
   async callSpecialist(modelPath, systemPrompt, userMessage, options = {}) {
     try {
-      // Parse model path (e.g., "openai/gpt-4o" or "openrouter/anthropic/claude-3-opus")
+      // Parse model path (e.g., "openai/gpt-5-pro" or "openrouter/anthropic/claude-3-opus")
       const parts = modelPath.split('/');
       const provider = parts[0];
       const modelName = parts.slice(1).join('/');
@@ -561,7 +561,7 @@ class MultiAgentCoordinator {
       const model_info = {
         model_name: modelName,
         platform_name: provider,
-        api_key: process.env[`${provider.toUpperCase()}_API_KEY`] || process.env.OPENROUTER_API_KEY || '',
+        api_key: process.env[`${provider.toUpperCase()}_API_KEY`] || process.env.OPENAI_API_KEY || '',
         api_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 
                  provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
                  provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' :
@@ -877,7 +877,7 @@ class MultiAgentCoordinator {
   async decomposeTask(userMessage) {
     console.log('[Coordinator] Decomposing complex task...');
     
-    // Use GPT-4o to intelligently break down the task
+    // Use GPT-5-pro to intelligently break down the task
     const decompositionPrompt = `
 You are Grace AI's task coordinator. Break down this complex request into specific subtasks for specialist models.
 
@@ -914,7 +914,7 @@ Return ONLY a JSON array of subtasks. Example:
 `;
 
     try {
-      const llm = await createLLMInstance('provider#openai#gpt-4o', () => {}, {});
+      const llm = await createLLMInstance('provider#openrouter#openai/gpt-5-pro', () => {}, {});
       const result = await llm.completion('', {
         messages: [
           { role: 'system', content: 'You are a task decomposition expert. Return only valid JSON.' },
@@ -1125,7 +1125,7 @@ Be thorough but concise. Format with clear sections.
       'openrouter/deepseek/deepseek-chat': 'DeepSeek Chat',
       'openrouter/anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
       'openrouter/anthropic/claude-3.5-sonnet': 'Claude 3.5 Sonnet',
-      'openrouter/openai/gpt-5': 'GPT-5',
+      'openrouter/openai/gpt-5-pro': 'GPT-5',
       'openrouter/openai/gpt-4o': 'GPT-4o',
       'openrouter/openai/gpt-4o-mini': 'GPT-4o Mini',
       'openrouter/google/gemini-2.0-flash-thinking-exp': 'Gemini 2.0 Flash (Thinking)',

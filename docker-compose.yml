@@ -22,8 +22,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.cache:/.cache
+      - ${WORKSPACE_BASE:-$PWD/data}:/app/data
       - ${WORKSPACE_BASE:-$PWD/workspace}:/app/workspace
-      - $PWD/data:/app/data
+
       - ./.backups:/app/.backups
       # Mount source code for live updates (development mode)
             # Local filesystem access - Mount entire home for fluid access

@@ -13,6 +13,7 @@ const { extractProfileFromMessage } = require('@src/agent/profile/extract');
 const { getProfileInquiry } = require('@src/agent/profile/inquiry');
 const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordinator');
 const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
+const DefaultModelSetting = require('@src/models/DefaultModelSetting');
 
 
 const activeChatAbortControllers = new Map(); // conversation_id -> AbortController
@@ -21,7 +22,14 @@ const activeChatAbortControllers = new Map(); // conversation_id -> AbortControl
 router.post("/chat", async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
-  let { question, conversation_id, pid, model_id = 48 } = body;
+  let { question, conversation_id, pid, model_id } = body;
+  
+  // Get default model if not provided
+  if (!model_id) {
+    const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+    model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+  }
+  
   await Conversation.update({ model_id }, { where: { conversation_id } })
 
 
@@ -33,7 +41,8 @@ router.post("/chat", async (ctx, next) => {
       conversation_id: conversation_id,
       content: question,
       title: title,
-      status: 'done'
+      status: 'done',
+      model_id: model_id  // Use the default model we just looked up
     });
   }
 
@@ -273,7 +282,13 @@ router.post("/re_chat", async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
   const user_id = ctx.state.user.id
-  let { conversation_id, pid, model_id = 48 } = body;
+  let { conversation_id, pid, model_id } = body;
+  
+  // Get default model if not provided
+  if (!model_id) {
+    const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
+    model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+  }
 
   await Conversation.update({ status: 'running', model_id }, { where: { conversation_id } })
 

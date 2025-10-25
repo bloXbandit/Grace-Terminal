@@ -39,13 +39,13 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   
   // CRITICAL: Fallback to hardcoded model if none configured
   if (!model_info) {
-    console.warn('[LLM] No default model found, using fallback: GPT-5');
+    console.warn('[LLM] No default model found, using fallback: OpenRouter GPT-5');
     model_info = {
-      model_name: 'gpt-5-search-api-2025-10-14',
-      platform_name: 'OpenAI',
-      api_key: process.env.OPENAI_API_KEY || '',
-      api_url: 'https://api.openai.com/v1/chat/completions',
-      base_url: 'https://api.openai.com/v1',
+      model_name: 'openai/gpt-5-pro',
+      platform_name: 'openrouter',
+      api_key: process.env.OPENROUTER_API_KEY || '',
+      api_url: 'https://openrouter.ai/api/v1/chat/completions',
+      base_url: 'https://openrouter.ai/api/v1',
       is_subscribe: false
     };
   }

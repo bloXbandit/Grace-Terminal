@@ -1,0 +1,91 @@
+{
+  "themes": {
+    "emotional_depth": {
+      "vulnerability": "The courage to be emotionally exposed and authentic",
+      "intimacy": "Deep emotional connection beyond surface interactions",
+      "emotional_attunement": "The ability to sense and respond to partner's emotional states",
+      "sacred_space": "Creating a protected emotional environment for growth"
+    },
+    "sensual_dimensions": {
+      "tactile_connection": "The language of touch and physical presence",
+      "sensory_awakening": "How love heightens all sensory experiences",
+      "body_consciousness": "Physical embodiment of emotional connection",
+      "intimate_rituals": "Shared sensory experiences that deepen bonds"
+    },
+    "psychological_aspects": {
+      "attachment_bonds": "The science of emotional connection and security",
+      "neurochemistry": "How love affects brain chemistry and behavior",
+      "transformation_psychology": "Love as catalyst for personal growth",
+      "mirror_effect": "How relationships reflect our deepest selves"
+    },
+    "passion_desire": {
+      "desire_devotion": "The tension between wanting and committing",
+      "erotic_intelligence": "Emotional wisdom in physical intimacy",
+      "sacred_sexuality": "Spiritual dimensions of physical connection",
+      "creative_energy": "How passion fuels creativity and life force"
+    },
+    "relationship_dynamics": {
+      "power_vulnerability": "The balance of strength and surrender",
+      "growth_conflict": "How challenges deepen connections",
+      "communication_beyond_words": "Non-verbal intimacy and understanding",
+      "evolving_partnership": "How love transforms over time"
+    }
+  },
+  "strategies": [
+    {
+      "theme": "Sensory Language",
+      "description": "Incorporate rich sensory details that evoke tactile, olfactory, and visual experiences",
+      "examples": [
+        "the warmth of breath on skin",
+        "the scent of shared moments",
+        "the weight of emotional presence"
+      ]
+    },
+    {
+      "theme": "Psychological Depth",
+      "description": "Include scientific insights about love's impact on brain chemistry and behavior",
+      "examples": [
+        "oxytocin bonding",
+        "neural synchrony",
+        "attachment security systems"
+      ]
+    },
+    {
+      "theme": "Vulnerability as Strength",
+      "description": "Explore how emotional exposure creates deeper connections",
+      "examples": [
+        "courage in intimacy",
+        "authentic self-revelation",
+        "emotional risk-taking"
+      ]
+    },
+    {
+      "theme": "Sacred Intimacy",
+      "description": "Frame physical connection as spiritual and transcendent experience",
+      "examples": [
+        "soul recognition",
+        "energy exchange",
+        "transcendent unity"
+      ]
+    },
+    {
+      "theme": "Passion as Life Force",
+      "description": "Present desire and passion as fundamental human energies",
+      "examples": [
+        "creative ignition",
+        "vitality expression",
+        "life affirming force"
+      ]
+    }
+  ],
+  "recommendations": [
+    "Weave sensory language throughout existing paragraphs",
+    "Add a section on the neuroscience of love and attraction",
+    "Include the paradox of vulnerability creating strength",
+    "Explore physical intimacy as spiritual connection",
+    "Address the tension between desire and lasting commitment",
+    "Include examples of love across different life stages",
+    "Acknowledge both the light and shadow aspects of love",
+    "Frame love as both human need and spiritual practice"
+  ]
+}

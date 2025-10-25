@@ -114,10 +114,10 @@ const availableTaskTypes = ref([
 // Available models (matching backend routing.config.js)
 const availableModels = ref([
   // OpenAI Models
-  { key: 'openai/gpt-5-pro', name: 'GPT-5 Pro (OpenAI)' },
-  { key: 'openai/gpt-4o', name: 'GPT-4o (OpenAI)' },
-  { key: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
-  { key: 'openai/o1-preview', name: 'GPT-o1 Preview (OpenAI)' },
+  { key: 'openrouter/openai/gpt-5-pro', name: 'GPT-5 Pro (OpenAI)' },
+  { key: 'openrouter/openai/gpt-4o', name: 'GPT-4o (OpenAI)' },
+  { key: 'openrouter/openai/gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+  { key: 'openrouter/openai/o1-preview', name: 'GPT-o1 Preview (OpenAI)' },
   
   // Anthropic Models
   { key: 'openrouter/anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
@@ -147,15 +147,15 @@ const availableModels = ref([
 
 // Default routing configuration (matching backend routing.config.js exactly)
 const defaultRouting = {
-  'code_generation': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-5-pro' },
+  'code_generation': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openrouter/openai/gpt-5-pro' },
   'code_review': { primary: 'openrouter/deepseek/deepseek-coder', fallback: 'openrouter/anthropic/claude-3-opus' },
   'debugging': { primary: 'openrouter/deepseek/deepseek-r1', fallback: 'openrouter/deepseek/deepseek-coder' },
-  'data_analysis': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openai/gpt-5-pro' },
+  'data_analysis': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openrouter/openai/gpt-5-pro' },
   'creative_writing': { primary: 'openrouter/gryphe/mythomax-l2-13b', fallback: 'openrouter/anthropic/claude-sonnet-4.5' },
-  'technical_writing': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openai/gpt-5-pro' },
-  'web_research': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openai/gpt-5-pro' },
-  'system_design': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openai/o1-preview' },
-  'general_chat': { primary: 'openai/gpt-5-pro', fallback: 'openrouter/anthropic/claude-sonnet-4.5' }
+  'technical_writing': { primary: 'openrouter/anthropic/claude-sonnet-4.5', fallback: 'openrouter/openai/gpt-5-pro' },
+  'web_research': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openrouter/openai/gpt-5-pro' },
+  'system_design': { primary: 'openrouter/z-ai/glm-4.6', fallback: 'openrouter/openai/o1-preview' },
+  'general_chat': { primary: 'openrouter/openai/gpt-5-pro', fallback: 'openrouter/anthropic/claude-sonnet-4.5' }
 }
 
 // Load user preferences

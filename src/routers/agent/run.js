@@ -287,19 +287,6 @@ router.post("/run", async (ctx, next) => {
   const modeNotification = `__lemon_mode__${JSON.stringify({ mode: intent })}\n\n`;
   onTokenStream(modeNotification);
 
-  // CRITICAL FIX: Synchronous profile extraction with timeout - ALL MODES
-  try {
-    await Promise.race([
-      extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
-      )
-    ]);
-    console.log('[Auto] Profile extraction completed successfully');
-  } catch (err) {
-    console.error('[Auto] Profile extraction failed (continuing anyway):', err.message);
-  }
-
   // 提取公共参数
   const commonParams = {
     conversation_id, question, newFiles, feedbackOptions,

@@ -7,60 +7,77 @@ const Platform = require('./src/models/Platform');
 
 async function setDefaultModel() {
   try {
-    console.log('🔧 Setting default model to GPT-4o...');
+    console.log('🔧 Setting default model to GPT-5 Pro via OpenRouter...');
     
-    // 1. Find OpenAI platform
-    const openaiPlatform = await Platform.findOne({ where: { name: 'OpenAI' } });
-    if (!openaiPlatform) {
-      console.error('❌ OpenAI platform not found in database!');
+    // 1. Find OpenRouter platform
+    const openrouterPlatform = await Platform.findOne({ where: { name: 'OpenRouter' } });
+    if (!openrouterPlatform) {
+      console.error('❌ OpenRouter platform not found in database!');
       console.log('Available platforms:');
       const platforms = await Platform.findAll();
       platforms.forEach(p => console.log(`  - ${p.name} (ID: ${p.id})`));
       process.exit(1);
     }
     
-    console.log(`✅ Found OpenAI platform (ID: ${openaiPlatform.id})`);
+    console.log(`✅ Found OpenRouter platform (ID: ${openrouterPlatform.id})`);
     
-    // 2. Find GPT-4o model
-    let gpt4Model = await Model.findOne({ 
+    // 2. Find or create GPT-5 Pro model
+    let [gpt5Model, created] = await Model.findOrCreate({ 
       where: { 
-        platform_id: openaiPlatform.id,
-        model_id: 'gpt-4o'
-      } 
+        platform_id: openrouterPlatform.id,
+        model_id: 'openai/gpt-5-pro'
+      },
+      defaults: {
+        model_id: 'openai/gpt-5-pro',
+        model_name: 'GPT-5 Pro',
+        group_name: 'OpenAI',
+        platform_id: openrouterPlatform.id
+      }
     });
     
-    if (!gpt4Model) {
-      console.log('⚠️  GPT-4o not found, trying gpt-4o-mini...');
-      gpt4Model = await Model.findOne({ 
+    if (created) {
+      console.log('✅ Created GPT-5 Pro model');
+    }
+    
+    // Fallback to Claude Sonnet 4.5 if GPT-5 Pro doesn't exist
+    if (!gpt5Model) {
+      console.log('⚠️  GPT-5 Pro not found, trying Claude Sonnet 4.5...');
+      [gpt5Model, created] = await Model.findOrCreate({ 
         where: { 
-          platform_id: openaiPlatform.id,
-          model_id: 'gpt-4o-mini'
-        } 
+          platform_id: openrouterPlatform.id,
+          model_id: 'anthropic/claude-sonnet-4.5'
+        },
+        defaults: {
+          model_id: 'anthropic/claude-sonnet-4.5',
+          model_name: 'Claude Sonnet 4.5',
+          group_name: 'Anthropic',
+          platform_id: openrouterPlatform.id
+        }
       });
     }
     
-    if (!gpt4Model) {
-      console.error('❌ No GPT-4 models found!');
-      console.log('Available OpenAI models:');
-      const models = await Model.findAll({ where: { platform_id: openaiPlatform.id } });
+    if (!gpt5Model) {
+      console.error('❌ No suitable models found!');
+      console.log('Available OpenRouter models:');
+      const models = await Model.findAll({ where: { platform_id: openrouterPlatform.id } });
       models.forEach(m => console.log(`  - ${m.model_id} (ID: ${m.id})`));
       process.exit(1);
     }
     
-    console.log(`✅ Found model: ${gpt4Model.model_id} (ID: ${gpt4Model.id})`);
+    console.log(`✅ Found model: ${gpt5Model.model_id} (ID: ${gpt5Model.id})`);
     
     // 3. Set or update default model setting
-    const [setting, created] = await DefaultModelSetting.findOrCreate({
+    const [setting, settingCreated] = await DefaultModelSetting.findOrCreate({
       where: { setting_type: 'assistant' },
       defaults: {
         setting_type: 'assistant',
-        model_id: gpt4Model.id,
+        model_id: gpt5Model.id,
         config: '{}'
       }
     });
     
-    if (!created) {
-      setting.model_id = gpt4Model.id;
+    if (!settingCreated) {
+      setting.model_id = gpt5Model.id;
       await setting.save();
       console.log('✅ Updated existing default model setting');
     } else {
@@ -69,8 +86,11 @@ async function setDefaultModel() {
     
     // 4. Verify
     const verify = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
-    console.log(`✅ Default model set to: ${gpt4Model.model_id}`);
-    console.log(`   Model ID: ${verify.model_id}`);
+    const verifyModel = await Model.findByPk(verify.model_id);
+    const verifyPlatform = await Platform.findByPk(verifyModel.platform_id);
+    console.log(`✅ Default model set to: ${verifyModel.model_name} (${verifyModel.model_id})`);
+    console.log(`   Platform: ${verifyPlatform.name}`);
+    console.log(`   Model DB ID: ${verify.model_id}`);
     
     console.log('🎉 Default model configuration complete!');
     process.exit(0);

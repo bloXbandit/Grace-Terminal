@@ -1,0 +1,552 @@
+[
+  {
+    "artist": "Beyonc\u00e9",
+    "grammys": 32,
+    "genre": "R&B/Pop"
+  },
+  {
+    "artist": "Stevie Wonder",
+    "grammys": 25,
+    "genre": "R&B/Soul"
+  },
+  {
+    "artist": "Jay-Z",
+    "grammys": 24,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Kanye West",
+    "grammys": 24,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "U2",
+    "grammys": 22,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Aretha Franklin",
+    "grammys": 18,
+    "genre": "Soul"
+  },
+  {
+    "artist": "Yo-Yo Ma",
+    "grammys": 18,
+    "genre": "Classical"
+  },
+  {
+    "artist": "Leonard Bernstein",
+    "grammys": 16,
+    "genre": "Classical"
+  },
+  {
+    "artist": "Alicia Keys",
+    "grammys": 15,
+    "genre": "R&B/Soul"
+  },
+  {
+    "artist": "Foo Fighters",
+    "grammys": 15,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Adele",
+    "grammys": 15,
+    "genre": "Pop/Soul"
+  },
+  {
+    "artist": "Bruno Mars",
+    "grammys": 15,
+    "genre": "Pop/R&B"
+  },
+  {
+    "artist": "Eminem",
+    "grammys": 15,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "B.B. King",
+    "grammys": 15,
+    "genre": "Blues"
+  },
+  {
+    "artist": "Itzhak Perlman",
+    "grammys": 15,
+    "genre": "Classical"
+  },
+  {
+    "artist": "Kendrick Lamar",
+    "grammys": 14,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Michael Jackson",
+    "grammys": 13,
+    "genre": "Pop"
+  },
+  {
+    "artist": "Lady Gaga",
+    "grammys": 13,
+    "genre": "Pop/Dance"
+  },
+  {
+    "artist": "Johnny Cash",
+    "grammys": 13,
+    "genre": "Country"
+  },
+  {
+    "artist": "Ella Fitzgerald",
+    "grammys": 13,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "John Legend",
+    "grammys": 12,
+    "genre": "R&B/Soul"
+  },
+  {
+    "artist": "Taylor Swift",
+    "grammys": 12,
+    "genre": "Pop/Country"
+  },
+  {
+    "artist": "Dolly Parton",
+    "grammys": 11,
+    "genre": "Country"
+  },
+  {
+    "artist": "Duke Ellington",
+    "grammys": 11,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "Willie Nelson",
+    "grammys": 10,
+    "genre": "Country"
+  },
+  {
+    "artist": "Pl\u00e1cido Domingo",
+    "grammys": 9,
+    "genre": "Opera"
+  },
+  {
+    "artist": "Metallica",
+    "grammys": 8,
+    "genre": "Metal"
+  },
+  {
+    "artist": "Carrie Underwood",
+    "grammys": 8,
+    "genre": "Country"
+  },
+  {
+    "artist": "Chris Stapleton",
+    "grammys": 8,
+    "genre": "Country"
+  },
+  {
+    "artist": "Miles Davis",
+    "grammys": 8,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "Skrillex",
+    "grammys": 8,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "The Beatles",
+    "grammys": 7,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Madonna",
+    "grammys": 7,
+    "genre": "Pop"
+  },
+  {
+    "artist": "Billie Eilish",
+    "grammys": 7,
+    "genre": "Pop"
+  },
+  {
+    "artist": "The Eagles",
+    "grammys": 6,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Red Hot Chili Peppers",
+    "grammys": 6,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Dr. Dre",
+    "grammys": 6,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "OutKast",
+    "grammys": 6,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Kacey Musgraves",
+    "grammys": 6,
+    "genre": "Country"
+  },
+  {
+    "artist": "Daft Punk",
+    "grammys": 6,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Green Day",
+    "grammys": 5,
+    "genre": "Punk Rock"
+  },
+  {
+    "artist": "Faith Hill",
+    "grammys": 5,
+    "genre": "Country"
+  },
+  {
+    "artist": "Vladimir Horowitz",
+    "grammys": 5,
+    "genre": "Classical"
+  },
+  {
+    "artist": "Andrea Bocelli",
+    "grammys": 5,
+    "genre": "Opera"
+  },
+  {
+    "artist": "C\u00e9line Dion",
+    "grammys": 5,
+    "genre": "Pop"
+  },
+  {
+    "artist": "Ang\u00e9lique Kidjo",
+    "grammys": 5,
+    "genre": "World"
+  },
+  {
+    "artist": "Ed Sheeran",
+    "grammys": 4,
+    "genre": "Pop"
+  },
+  {
+    "artist": "Drake",
+    "grammys": 4,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "The Chemical Brothers",
+    "grammys": 4,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "The Black Keys",
+    "grammys": 4,
+    "genre": "Blues Rock"
+  },
+  {
+    "artist": "Alabama Shakes",
+    "grammys": 4,
+    "genre": "Blues Rock"
+  },
+  {
+    "artist": "The Rolling Stones",
+    "grammys": 3,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Miranda Lambert",
+    "grammys": 3,
+    "genre": "Country"
+  },
+  {
+    "artist": "Tim McGraw",
+    "grammys": 3,
+    "genre": "Country"
+  },
+  {
+    "artist": "Radiohead",
+    "grammys": 3,
+    "genre": "Alternative"
+  },
+  {
+    "artist": "R.E.M.",
+    "grammys": 3,
+    "genre": "Alternative"
+  },
+  {
+    "artist": "Arcade Fire",
+    "grammys": 3,
+    "genre": "Indie"
+  },
+  {
+    "artist": "Vampire Weekend",
+    "grammys": 3,
+    "genre": "Indie"
+  },
+  {
+    "artist": "Luciano Pavarotti",
+    "grammys": 3,
+    "genre": "Opera"
+  },
+  {
+    "artist": "Queen",
+    "grammys": 2,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Linkin Park",
+    "grammys": 2,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Ariana Grande",
+    "grammys": 2,
+    "genre": "Pop"
+  },
+  {
+    "artist": "Justin Bieber",
+    "grammys": 2,
+    "genre": "Pop"
+  },
+  {
+    "artist": "John Coltrane",
+    "grammys": 2,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "Avicii",
+    "grammys": 2,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "David Guetta",
+    "grammys": 2,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Bon Iver",
+    "grammys": 2,
+    "genre": "Indie"
+  },
+  {
+    "artist": "Marvin Gaye",
+    "grammys": 2,
+    "genre": "Soul"
+  },
+  {
+    "artist": "Shaggy",
+    "grammys": 2,
+    "genre": "Reggae"
+  },
+  {
+    "artist": "Ricky Martin",
+    "grammys": 2,
+    "genre": "Latin Pop"
+  },
+  {
+    "artist": "Pink Floyd",
+    "grammys": 1,
+    "genre": "Rock"
+  },
+  {
+    "artist": "AC/DC",
+    "grammys": 1,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Nirvana",
+    "grammys": 1,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Nicki Minaj",
+    "grammys": 1,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Cardi B",
+    "grammys": 1,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Tame Impala",
+    "grammys": 1,
+    "genre": "Psychedelic"
+  },
+  {
+    "artist": "Fleetwood Mac",
+    "grammys": 1,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Buju Banton",
+    "grammys": 1,
+    "genre": "Reggae"
+  },
+  {
+    "artist": "Miriam Makeba",
+    "grammys": 1,
+    "genre": "World"
+  },
+  {
+    "artist": "Led Zeppelin",
+    "grammys": 0,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Nas",
+    "grammys": 0,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Snoop Dogg",
+    "grammys": 0,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Wu-Tang Clan",
+    "grammys": 0,
+    "genre": "Hip Hop"
+  },
+  {
+    "artist": "Blake Shelton",
+    "grammys": 0,
+    "genre": "Country"
+  },
+  {
+    "artist": "Louis Armstrong",
+    "grammys": 0,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "Billie Holiday",
+    "grammys": 0,
+    "genre": "Jazz"
+  },
+  {
+    "artist": "Muddy Waters",
+    "grammys": 0,
+    "genre": "Blues"
+  },
+  {
+    "artist": "Robert Johnson",
+    "grammys": 0,
+    "genre": "Blues"
+  },
+  {
+    "artist": "Howlin Wolf",
+    "grammys": 0,
+    "genre": "Blues"
+  },
+  {
+    "artist": "Deadmau5",
+    "grammys": 0,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Calvin Harris",
+    "grammys": 0,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Swedish House Mafia",
+    "grammys": 0,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Ti\u00ebsto",
+    "grammys": 0,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "Armin van Buuren",
+    "grammys": 0,
+    "genre": "Electronic"
+  },
+  {
+    "artist": "The Smiths",
+    "grammys": 0,
+    "genre": "Alternative"
+  },
+  {
+    "artist": "The National",
+    "grammys": 0,
+    "genre": "Indie"
+  },
+  {
+    "artist": "James Brown",
+    "grammys": 0,
+    "genre": "Soul/Funk"
+  },
+  {
+    "artist": "Smokey Robinson",
+    "grammys": 0,
+    "genre": "Soul"
+  },
+  {
+    "artist": "The Supremes",
+    "grammys": 0,
+    "genre": "Soul"
+  },
+  {
+    "artist": "Temptations",
+    "grammys": 0,
+    "genre": "Soul"
+  },
+  {
+    "artist": "Four Tops",
+    "grammys": 0,
+    "genre": "Soul"
+  },
+  {
+    "artist": "Stevie Nicks",
+    "grammys": 0,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Tom Petty",
+    "grammys": 0,
+    "genre": "Rock"
+  },
+  {
+    "artist": "Josh Groban",
+    "grammys": 0,
+    "genre": "Classical Pop"
+  },
+  {
+    "artist": "Sarah Brightman",
+    "grammys": 0,
+    "genre": "Classical"
+  },
+  {
+    "artist": "Bob Marley",
+    "grammys": 0,
+    "genre": "Reggae"
+  },
+  {
+    "artist": "Peter Tosh",
+    "grammys": 0,
+    "genre": "Reggae"
+  },
+  {
+    "artist": "Jimmy Cliff",
+    "grammys": 0,
+    "genre": "Reggae"
+  },
+  {
+    "artist": "Fela Kuti",
+    "grammys": 0,
+    "genre": "Afrobeat"
+  },
+  {
+    "artist": "Youssou N'Dour",
+    "grammys": 0,
+    "genre": "World"
+  }
+]

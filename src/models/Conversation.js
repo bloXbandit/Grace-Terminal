@@ -114,6 +114,7 @@ const fields = {
   model_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    defaultValue: 22,  // GPT-5 Pro on OpenRouter
     comment: 'model id',
   },
   docset_id: {
