@@ -21,7 +21,7 @@ async function checkLlmApiAvailability(baseUrl, apiKey='', model) {
           role: "user",
           content: "hello" // A simple request content for testing
         }],
-        max_tokens: 5 // Send a very small request to minimize resource usage and response time
+        max_tokens: 16 // Minimum required by GPT-5 Pro (was 5, but GPT-5 requires >= 16)
       }),
       signal: controller.signal
     });

@@ -11,7 +11,7 @@ class LLM {
     this.onTokenStream = onTokenStream;
     // 设置默认接口处理逻辑
     this.responseType = TYPE_ENUM.SSE;
-    this.splitter = '\n\n'
+    this.splitter = '\n'  // OpenRouter uses single newline, not double
     if (model) { this.model = model }
     this.options = options;
   }
