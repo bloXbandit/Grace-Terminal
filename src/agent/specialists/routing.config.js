@@ -280,19 +280,28 @@ The following libraries are available in the runtime (DO NOT use pip install):
 - **Specialized**: xerparser (P6/XER files)
 
 **CRITICAL EXECUTION RULES:**
-1. **USE terminal_run, NOT write_code** - Execute Python directly to create the file
-2. **DO NOT create .py files** - User wants .xlsx/.docx/.pdf, not Python scripts
-3. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin
-4. **Return ONLY XML** - No explanations, just the <terminal_run> action
-5. **Include workspace path** - Use <cwd>{workspace_path}</cwd> in terminal_run
+1. **NEVER use <finish> to claim file creation** - You MUST execute actual code
+2. **USE terminal_run to create files** - Execute Python directly, don't just describe it
+3. **DO NOT create .py files** - User wants .xlsx/.docx/.pdf, not Python scripts
+4. **Generate content in ENGLISH ONLY** - No Lorem Ipsum, no Spanish, no Latin
+5. **Return ONLY XML actions** - terminal_run or write_code, NOT <finish> with description
+6. **Include workspace path** - Use <cwd>{workspace_path}</cwd> in terminal_run
+7. **Print confirmation** - Always print('✅ Created: filename.ext') after saving
 
-**WRONG (creates .py file instead of Excel):**
-<write_code file_path="script.py">
-import pandas as pd
-df.to_excel('data.xlsx')
+**WRONG #1 (Hallucination - claims file created but doesn't execute):**
+<finish>
+<message>✅ Created flowers.docx - a beautiful Word document about flowers!</message>
+</finish>
+❌ NO FILE CREATED! This is a hallucination!
+
+**WRONG #2 (creates .py file instead of .docx):**
+<write_code file_path="create_doc.py">
+from docx import Document
+doc.save('flowers.docx')
 </write_code>
+❌ User gets .py file, not .docx file!
 
-**CORRECT (creates Excel file directly):**
+**CORRECT (creates file directly):**
 <terminal_run>
 <command>python3</command>
 <args>-c "import pandas as pd; df = pd.DataFrame({'A': [1,2,3]}); df.to_excel('data.xlsx', index=False); print('✅ Created: data.xlsx')"</args>
