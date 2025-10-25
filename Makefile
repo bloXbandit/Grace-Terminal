@@ -43,18 +43,28 @@ build-app:
 	  -f $(APP_DOCKERFILE) \
 	  --push .
 
-# Start backend service
+# Start backend service (production mode)
 start-backend:
 	npm run start
+
+# Start backend with hot reload (development mode)
+start-backend-dev:
+	npm run dev
 
 # Start frontend service
 start-frontend:
 	cd $(FRONTEND_DIR) && npm run dev
 
-# Start both frontend and backend
+# Start both frontend and backend (production)
 run:
 	@$(MAKE) -s init-tables
 	@$(MAKE) -s start-backend &
+	@$(MAKE) -s start-frontend
+
+# Start both with hot reload (development)
+dev:
+	@$(MAKE) -s init-tables
+	@$(MAKE) -s start-backend-dev &
 	@$(MAKE) -s start-frontend 
 
 # Init tables

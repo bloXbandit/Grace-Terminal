@@ -24,12 +24,16 @@ services:
       - ~/.cache:/.cache
       - ${WORKSPACE_BASE:-$PWD/data}:/app/data
       - ${WORKSPACE_BASE:-$PWD/workspace}:/app/workspace
-
       - ./.backups:/app/.backups
-      # Mount source code for live updates (development mode)
-            # Local filesystem access - Mount entire home for fluid access
+      
+      # HOT RELOAD: Mount source code for instant updates (no rebuild needed)
+      - ./src:/app/src:cached
+      - ./containers:/app/containers:cached
+      
+      # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files
       - ${HOME}:/host/home:cached
     stdin_open: true
     tty: true
-    command: make run
+    # Use 'make dev' for hot reload with nodemon, or 'make run' for production
+    command: make dev
