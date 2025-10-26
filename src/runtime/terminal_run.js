@@ -12,7 +12,7 @@ const runCommand = (command, args, cwd) => {
     // Handle nohup command
     if (command.includes('nohup')) {
       // Use shell to execute nohup command
-      const child = spawn('sh', ['-c', fullCommand], {
+      const child = spawn('/bin/bash', ['-c', fullCommand], {
         cwd,
         detached: true,
         stdio: ['ignore', 'ignore', 'ignore'] // Ignore all standard input output
@@ -23,7 +23,7 @@ const runCommand = (command, args, cwd) => {
         stderr: ''
       });
     } else {
-      exec(fullCommand, { cwd }, (error, stdout, stderr) => {
+      exec(fullCommand, { cwd, shell: '/bin/bash' }, (error, stdout, stderr) => {
         if (error) {
           reject({ error: error.message, stderr });
           return;

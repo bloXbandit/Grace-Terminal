@@ -171,11 +171,8 @@ class DockerRuntime {
     const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
     switch (type) {
       case 'write_code':
-        if (action.params.path) {
-          action.params.origin_path = action.params.path;
-          action.params.path = path.join(dir_name, action.params.path)
-        }
-        result = await this.write_code(action, uuid);
+        // Runtime sandbox handles path resolution - just pass through
+        result = await this._call_docker_action(action, uuid);
         break;
       case 'terminal_run':
         if (action.params.cwd) {
