@@ -254,26 +254,14 @@ class DockerRuntime {
         result = await this.git_commit(action, uuid);
         break;
       case 'terminal_run':
-        // Normalize path for runtime container
-        // Runtime container has workspace at /workspace, but grace-app has it at /app/workspace
-        if (action.params.origin_cwd) {
-          // LLM provided an absolute path from grace-app perspective
-          // Convert /app/workspace/... to /workspace/... for runtime container
-          if (action.params.origin_cwd.startsWith('/app/workspace/')) {
-            action.params.cwd = action.params.origin_cwd.replace('/app/workspace/', '/workspace/');
-          } else if (action.params.origin_cwd.startsWith('/workspace/')) {
-            // Already in runtime format
-            action.params.cwd = action.params.origin_cwd;
-          } else {
-            // Relative path or other format - use default logic
-            action.params.cwd = path.join(`user_${this.user_id}`, dir_name, action.params.origin_cwd);
-          }
-        } else if (action.params.cwd) {
-          // No origin_cwd, use provided cwd with user/conversation prefix
-          action.params.cwd = path.join(`user_${this.user_id}`, dir_name, action.params.cwd);
+        if (action.params.cwd) {
+          action.params.origin_cwd = action.params.cwd;
+          action.params.cwd = path.join(`user_${this.user_id}`, dir_name, action.params.cwd)
         } else {
-          // No cwd at all, use default conversation directory
-          action.params.cwd = `./user_${this.user_id}/${dir_name}`;
+          action.params.cwd = `./user_${this.user_id}/${dir_name}`
+        }
+        if (action.params.origin_cwd) {
+          action.params.cwd = action.params.origin_cwd
         }
         result = await this._call_docker_action(action, uuid);
         break;
