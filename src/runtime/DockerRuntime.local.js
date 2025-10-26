@@ -239,16 +239,11 @@ class DockerRuntime {
     const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
     switch (type) {
       case 'write_code':
-        // Prepend user_id AND conversation directory to ALL path parameters (same as terminal_run)
         if (action.params.path) {
           action.params.origin_path = action.params.path;
-          action.params.path = path.join(`user_${this.user_id}`, dir_name, action.params.path);
-        } else if (action.params.file_path) {
-          action.params.file_path = path.join(`user_${this.user_id}`, dir_name, action.params.file_path);
-        } else if (action.params['@_file_path']) {
-          action.params['@_file_path'] = path.join(`user_${this.user_id}`, dir_name, action.params['@_file_path']);
+          action.params.path = path.join(dir_name, action.params.path)
         }
-        result = await this._call_docker_action(action, uuid);
+        result = await this.write_code(action, uuid);
         break;
       case 'git_commit':
         result = await this.git_commit(action, uuid);
