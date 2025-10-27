@@ -17,8 +17,15 @@ const write_file = async (filepath, content) => {
 
 const write_code = async (action, uuid) => {
   // Handle all path parameter variants
-  let { path: filepath, file_path, '@_file_path': xmlFilePath, content } = action.params;
+  let { path: filepath, file_path, '@_file_path': xmlFilePath, content, '#text': xmlText } = action.params;
   filepath = filepath || file_path || xmlFilePath;
+  
+  // Handle XML parsing where content becomes { '#text': 'value' } or just '#text'
+  if (!content && xmlText) {
+    content = xmlText;
+  } else if (content && typeof content === 'object' && content['#text']) {
+    content = content['#text'];
+  }
   
   if (!filepath) {
     throw new Error('write_code requires a file path parameter');
