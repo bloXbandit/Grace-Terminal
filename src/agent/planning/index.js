@@ -45,16 +45,59 @@ const planning_local = async (goal, options = {}) => {
   if (specialistResponse && typeof specialistResponse === 'string') {
     console.log('[Planning] coooking...');
     
-    // FORMAT 1: Check if specialist provided XML action directly (Excel/complex files)
+    // FORMAT 1: Check if specialist provided XML action directly (DEPRECATED - should use Python blocks)
     const xmlMatch = specialistResponse.match(/<terminal_run>([\s\S]+?)<\/terminal_run>/);
     if (xmlMatch) {
       const actionXML = xmlMatch[0]; // Full XML including tags
-      console.log('[Planning] ✅ Extracted action (Excel format)');
+      console.log('[Planning] ⚠️ Extracted XML action (deprecated format)');
       
+      // Check if XML references a Python file that needs to be created first
+      const commandMatch = actionXML.match(/<command>([^<]+)<\/command>/);
+      if (commandMatch) {
+        const command = commandMatch[1];
+        const pythonFileMatch = command.match(/python3?\s+([^\s]+\.py)/);
+        
+        if (pythonFileMatch) {
+          const scriptName = pythonFileMatch[1];
+          console.log(`[Planning] ⚠️ XML references ${scriptName} but file may not exist - trying to extract Python code`);
+          
+          // Try to find Python code in the response
+          const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
+          if (pythonCodeMatch) {
+            const pythonCode = pythonCodeMatch[1];
+            console.log('[Planning] ✅ Found Python code - creating file first, then executing');
+            
+            const timestamp = Date.now();
+            return [
+              {
+                id: `${timestamp}_write`,
+                title: '📝 Creating script...',
+                description: `Write Python script to file`,
+                tool: 'write_code',
+                status: 'pending',
+                preGeneratedAction: `<write_code>\n<file_path>${scriptName}</file_path>\n<content>${pythonCode}</content>\n</write_code>`,
+                requirement: `Write Python script`
+              },
+              {
+                id: `${timestamp}_execute`,
+                title: '⚡ Executing...',
+                description: `Execute Python script`,
+                tool: 'terminal_run',
+                status: 'pending',
+                preGeneratedAction: actionXML,
+                requirement: actionXML
+              }
+            ];
+          }
+        }
+      }
+      
+      // Fallback: Execute XML directly (legacy behavior)
+      console.log('[Planning] ⚠️ No Python code found - executing XML directly (may fail if file missing)');
       const timestamp = Date.now();
       return [{
         id: `${timestamp}_specialist`,
-        title: '⚡ Creating your file...',
+        title: '⚡ Executing...',
         description: `Execute specialist code`,
         tool: 'terminal_run',
         status: 'pending',

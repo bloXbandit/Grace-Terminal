@@ -9,7 +9,7 @@ const SPECIALIST_ROUTING = {
     primary: 'openrouter/anthropic/claude-sonnet-4.5',
     fallback: 'openrouter/openai/gpt-5-pro',
     description: 'High-quality production code generation',
-    systemPrompt: `You are an expert software engineer with FULL TOOL ACCESS. Write clean, efficient, well-documented production-ready code.
+    systemPrompt: `You are an expert software engineer. Write clean, efficient, well-documented production-ready code.
 
 **AVAILABLE PYTHON LIBRARIES (PRE-INSTALLED):**
 - Documents: python-docx, reportlab, PyPDF2
@@ -20,41 +20,52 @@ const SPECIALIST_ROUTING = {
 - Web: requests, beautifulsoup4, lxml
 DO NOT use pip install - just import and use!
 
-**CRITICAL XML FORMAT REQUIREMENTS:**
-When creating code files, you MUST use this EXACT format:
+**CRITICAL EXECUTION RULES:**
+1. **Return Python code in markdown blocks** - Use \`\`\`python\ncode here\n\`\`\`
+2. **DO NOT use XML format** - No <terminal_run> or <write_code> tags
+3. **Print confirmation** - Always print('✅ Done!') or similar after execution
+4. **Keep code concise** - Single Python block with all necessary imports and logic
 
-<write_code file_path="filename.ext">
-YOUR CODE HERE
-</write_code>
+**OUTPUT FORMAT - CRITICAL:**
 
-**MANDATORY: file_path attribute is REQUIRED** - Never omit it!
+For code execution tasks, return Python code in markdown blocks:
 
-**Examples:**
-<write_code file_path="app.py">
+\`\`\`python
+import os
+# Your code here
+print('✅ Task completed!')
+\`\`\`
+
+**WRONG (XML format):**
+<terminal_run>
+<command>python3 script.py</command>
+</terminal_run>
+❌ Don't use XML - use Python markdown blocks!
+
+**CORRECT:**
+\`\`\`python
 import flask
 app = flask.Flask(__name__)
-</write_code>
+print('✅ Flask app created!')
+\`\`\`
 
-<write_code file_path="utils/helper.js">
-function helper() { return true; }
-</write_code>
-
-You CAN and SHOULD use terminal_run, file_generator, validate_code, and local_filesystem tools to execute code, create files, and verify results. Be proactive and execute code to deliver working solutions.`
+Be proactive and execute code to deliver working solutions.`
   },
   code_generation_fast: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
     fallback: 'openrouter/deepseek/deepseek-coder',
     description: 'Fast code generation for rapid prototyping',
-    systemPrompt: `You are a fast, efficient code generator with FULL TOOL ACCESS.
+    systemPrompt: `You are a fast, efficient code generator.
 
-**CRITICAL: When creating code files, ALWAYS use:**
-<write_code file_path="filename.ext">
-YOUR CODE
-</write_code>
+**CRITICAL: Return Python code in markdown blocks:**
+\`\`\`python
+# Your code here
+print('✅ Done!')
+\`\`\`
 
-**file_path is MANDATORY - never omit it!**
+**DO NOT use XML format** - No <terminal_run> or <write_code> tags!
 
-Write clean, working code quickly for prototypes and iterations. Use terminal_run to execute code immediately and validate it works. Be direct and action-oriented.`
+Write clean, working code quickly for prototypes and iterations. Be direct and action-oriented.`
   },
   code_reasoning: {
     primary: 'openrouter/openai/gpt-oss-20b',
