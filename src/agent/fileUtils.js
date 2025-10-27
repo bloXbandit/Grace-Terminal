@@ -28,30 +28,53 @@ async function getAllFilesRecursively(directoryPath) {
  * 获取文件路径列表的元数据（文件名、大小等）。
  * @param {string[]} filepaths - 文件路径数组。
  * @param {Date} [filterAfterTime] - 可选：只返回此时间之后修改的文件。
- * @returns {Promise<Array<{filepath: string, filename: string, filesize: number}>>} 包含文件元数据的数组，按修改时间倒序排序。
+ * @returns {Promise<Array<{filepath: string, filename: string, filesize: number, modified: Date, created: Date, type: string, isNew: boolean, isModified: boolean}>>} 包含文件元数据的数组，按修改时间倒序排序。
  */
 async function getFilesMetadata(filepaths, filterAfterTime = null) {
   const filesMetadata = await Promise.all(
     filepaths.map(async (file) => {
       const stats = await fs.stat(file);
+      const ext = path.extname(file).substring(1); // Remove leading dot
+      
       return {
         filepath: file,
         filename: path.basename(file), // 使用 path.basename 更安全地提取文件名
         filesize: stats.size,
-        mtime: stats.mtime, // 添加修改时间用于排序
+        modified: stats.mtime, // Modification time
+        created: stats.birthtime, // Creation time
+        type: ext || 'unknown', // File extension (e.g., "docx", "xlsx", "py")
+        mtime: stats.mtime, // Keep for sorting
+        birthtime: stats.birthtime // Keep for filtering
       };
     })
   );
 
-  // Filter by modification time if specified
+  // Filter by modification time if specified and add flags
   let filtered = filesMetadata;
   if (filterAfterTime) {
     filtered = filesMetadata.filter(file => file.mtime >= filterAfterTime);
     console.log(`[FileUtils] Filtered ${filesMetadata.length} files to ${filtered.length} files created after ${filterAfterTime.toISOString()}`);
+    
+    // Add isNew and isModified flags
+    filtered = filtered.map(file => ({
+      ...file,
+      isNew: file.birthtime >= filterAfterTime, // File created during this task
+      isModified: file.mtime >= filterAfterTime && file.birthtime < filterAfterTime // File modified during this task
+    }));
+    
+    // 按修改时间倒序排序（最新的文件在前面）
+    return filtered.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).map(({ mtime, birthtime, ...rest }) => rest);
   }
 
+  // If no filter, add default flags and sort
+  const withFlags = filesMetadata.map(file => ({
+    ...file,
+    isNew: false,
+    isModified: false
+  }));
+  
   // 按修改时间倒序排序（最新的文件在前面）
-  return filtered.sort((a, b) => b.mtime - a.mtime).map(({ mtime, ...rest }) => rest);
+  return withFlags.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).map(({ mtime, birthtime, ...rest }) => rest);
 }
 
 /**

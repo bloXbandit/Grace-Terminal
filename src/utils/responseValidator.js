@@ -9,16 +9,49 @@ const path = require('path');
 class ResponseValidator {
   
   /**
+   * Remove code blocks and technical artifacts from user-facing messages
+   * @param {string} content - Message content to clean
+   * @returns {string} - Cleaned content
+   */
+  static removeCodeBlocks(content) {
+    if (typeof content !== 'string') return content;
+    
+    // Remove markdown code blocks
+    content = content.replace(/```[\s\S]*?```/g, '');
+    
+    // Remove inline code
+    content = content.replace(/`[^`]+`/g, '');
+    
+    // Remove Python script references
+    content = content.replace(/temp_script_\d+\.py/g, '');
+    
+    // Remove file paths in output
+    content = content.replace(/\/workspace\/[^\s]+/g, '');
+    content = content.replace(/\/app\/workspace\/[^\s]+/g, '');
+    
+    // Remove XML tags that might leak through
+    content = content.replace(/<\/?[a-z_]+>/gi, '');
+    
+    return content.trim();
+  }
+
+  /**
    * Lightweight file delivery validation - passthrough layer with graceful fallback
    * @param {string} response - Grace's response text
    * @param {string} conversationId - Current conversation ID
+   * @param {object} meta - Message metadata (optional)
    * @returns {string} - Enhanced response or original if validation fails
    */
-  static validateFileDeliveryClaims(response, conversationId) {
+  static validateFileDeliveryClaims(response, conversationId, meta = {}) {
     try {
       // INTELLIGENT: Convert objects to meaningful strings
       if (typeof response !== 'string') {
         response = this.intelligentStringConversion(response);
+      }
+
+      // Clean code snippets from finish_summery messages
+      if (meta && meta.action_type === 'finish_summery') {
+        response = this.removeCodeBlocks(response);
       }
 
       // TARGETED: Only check responses that claim file creation/delivery
