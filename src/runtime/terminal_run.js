@@ -52,7 +52,16 @@ const terminal_run = async (action, uuid) => {
     };
   } catch (e) {
     console.error('Error executing command:', e);
-    return { status: 'failure', error: e.stderr || e.message, content: '' };
+    return { 
+      uuid,
+      status: 'failure', 
+      error: e.stderr || e.message, 
+      content: '',
+      stderr: e.stderr || '',
+      meta: {
+        action_type: action.type
+      }
+    };
   }
 }
 
