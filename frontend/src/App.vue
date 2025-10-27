@@ -13,6 +13,23 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
+import { useUserStore } from '@/store/modules/user.js';
+
+const userStore = useUserStore();
+
+// Initialize default user for local development if not logged in
+onMounted(() => {
+  if (!userStore.user.id) {
+    console.log('⚠️  [App] No user logged in, setting default local user');
+    userStore.setUser({
+      id: 1,
+      email: 'kmanjoll@gmail.com',
+      user_name: 'Kenny',
+      is_admin: true
+    });
+  }
+});
 </script>
 
 <style scoped>
