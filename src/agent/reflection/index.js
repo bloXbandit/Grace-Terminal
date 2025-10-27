@@ -15,19 +15,53 @@ const STATUS = {
 const reflection = async (requirement, action_result = {}, conversation_id) => {
 
   // 1. evaluate action result
-  const { status, content } = action_result;
+  const { status, content, error, stderr } = action_result;
+  
+  // Enhanced error detection: Check for execution errors in stderr
+  if (error || stderr) {
+    // Check if stderr contains actual errors (not just warnings)
+    const hasError = stderr && (
+      stderr.includes('Error') ||
+      stderr.includes('Exception') ||
+      stderr.includes('Traceback') ||
+      stderr.includes('SyntaxError') ||
+      stderr.includes('ValueError') ||
+      stderr.includes('TypeError') ||
+      stderr.includes('ImportError') ||
+      stderr.includes('FileNotFoundError')
+    );
+    
+    if (hasError || error) {
+      return {
+        status: STATUS.FAILURE,
+        comments: error || stderr,
+        should_retry: true
+      };
+    }
+  }
+  
   // If Action execute failed, return error message
-  if (status === STATUS.FAILURE && action_result.error) {
+  if (status === STATUS.FAILURE && error) {
     return {
       status: STATUS.FAILURE,
-      comments: action_result.error,
+      comments: error,
+      should_retry: true
     }
+  }
+
+  // Check if output is empty or missing (possible silent failure)
+  if (status === STATUS.SUCCESS && (!content || content.trim() === '')) {
+    return {
+      status: STATUS.FAILURE,
+      comments: 'Execution produced no output - possible silent failure',
+      should_retry: true
+    };
   }
 
   if (status === STATUS.SUCCESS) {
     return {
       status: STATUS.SUCCESS,
-      comments: action_result.content,
+      comments: content,
     }
   }
 

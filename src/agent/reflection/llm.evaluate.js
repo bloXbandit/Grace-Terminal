@@ -9,6 +9,25 @@ const resolveEvaluatePrompt = async (requirement = '', result = '') => {
 2. If the execution result cannot be directly delivered, return failure, and return feedback, missing content, and suggestions for optimization
 3. If the execution result partially meets or fails to execute the key steps, return partial, and return suggestions for补充遗漏内容
 
+**Error Analysis (CRITICAL):**
+When an execution fails:
+1. **Identify the exact error** from stderr/error message (e.g., SyntaxError, FileNotFoundError, ValueError)
+2. **Understand why it failed** - Was it syntax? Logic? Missing file? Wrong path?
+3. **Generate a DIFFERENT solution** - DO NOT repeat the same code that just failed
+4. **Verify your fix** - Explain why the new approach will work
+
+**Common Errors and Fixes:**
+- **SyntaxError**: Check language syntax (Python vs Bash) - don't mix `echo` in Python or `print()` in Bash
+- **FileNotFoundError**: Verify file exists, use correct path, check working directory
+- **ImportError**: Check if library is installed in the sandbox
+- **ValueError**: Validate input data format and types
+
+**If you've tried the same approach 2+ times:**
+- STOP and try a completely different method
+- Ask for clarification if needed
+- Break the problem into smaller steps
+- Consider using a different library or approach
+
 === Task Goal ===
 ${requirement}
 === END ===
@@ -21,7 +40,7 @@ ${result}
 <evaluation>
 <status>success/failure</status>
 <comments>
-// evaluation result
+// evaluation result - if failure, explain the error and suggest a DIFFERENT approach
 </comments>
 </evaluation>
 
