@@ -249,10 +249,6 @@ class DockerRuntime {
           action.params['@_file_path'] = path.join(`user_${this.user_id}`, dir_name, action.params['@_file_path']);
         }
         result = await this._call_docker_action(action, uuid);
-        // Convert sandbox filepath (/workspace/...) to grace-app filepath (/app/workspace/...)
-        if (result && result.meta && result.meta.filepath) {
-          result.meta.filepath = result.meta.filepath.replace('/workspace/', '/app/workspace/');
-        }
         break;
       case 'git_commit':
         result = await this.git_commit(action, uuid);
