@@ -17,7 +17,7 @@ When an execution fails:
 4. **Verify your fix** - Explain why the new approach will work
 
 **Common Errors and Fixes:**
-- **SyntaxError**: Check language syntax (Python vs Bash) - don't mix `echo` in Python or `print()` in Bash
+- **SyntaxError**: Check language syntax (Python vs Bash) - do not mix echo in Python or print() in Bash
 - **FileNotFoundError**: Verify file exists, use correct path, check working directory
 - **ImportError**: Check if library is installed in the sandbox
 - **ValueError**: Validate input data format and types
