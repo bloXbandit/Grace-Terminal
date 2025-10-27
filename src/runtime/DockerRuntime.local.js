@@ -239,11 +239,20 @@ class DockerRuntime {
     const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
     switch (type) {
       case 'write_code':
+        // Prepend user_id AND conversation directory to ALL path parameters (same as terminal_run)
         if (action.params.path) {
           action.params.origin_path = action.params.path;
-          action.params.path = path.join(dir_name, action.params.path)
+          action.params.path = path.join(`user_${this.user_id}`, dir_name, action.params.path);
+        } else if (action.params.file_path) {
+          action.params.file_path = path.join(`user_${this.user_id}`, dir_name, action.params.file_path);
+        } else if (action.params['@_file_path']) {
+          action.params['@_file_path'] = path.join(`user_${this.user_id}`, dir_name, action.params['@_file_path']);
         }
-        result = await this.write_code(action, uuid);
+        result = await this._call_docker_action(action, uuid);
+        // Convert sandbox filepath (/workspace/...) to grace-app filepath (/app/workspace/...)
+        if (result && result.meta && result.meta.filepath) {
+          result.meta.filepath = result.meta.filepath.replace('/workspace/', '/app/workspace/');
+        }
         break;
       case 'git_commit':
         result = await this.git_commit(action, uuid);
@@ -256,7 +265,12 @@ class DockerRuntime {
           action.params.cwd = `./user_${this.user_id}/${dir_name}`
         }
         if (action.params.origin_cwd) {
-          action.params.cwd = action.params.origin_cwd
+          // Convert grace-app path to runtime sandbox path
+          let cwd = action.params.origin_cwd;
+          if (cwd.startsWith('/app/workspace/')) {
+            cwd = cwd.replace('/app/workspace/', '/workspace/');
+          }
+          action.params.cwd = cwd;
         }
         result = await this._call_docker_action(action, uuid);
         break;
