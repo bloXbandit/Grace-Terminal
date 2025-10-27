@@ -82,11 +82,8 @@ class DockerRuntime {
       container = await this.init_container();
     }
 
-    let container_info = await container.inspect()
-    this.host_port = Object.keys(container_info.NetworkSettings.Ports)[0].split('/')[0]
-    this.vscode_port = Object.keys(container_info.NetworkSettings.Ports)[1].split('/')[0]
-    this.app_port_1 = Object.keys(container_info.NetworkSettings.Ports)[2].split('/')[0]
-    this.app_port_2 = Object.keys(container_info.NetworkSettings.Ports)[3].split('/')[0]
+    // Use fixed port for external runtime sandbox
+    this.host_port = 32811;
 
     // const cmdArgs = container_info.Config.Cmd;
     // // 遍历命令行参数，找到对应的端口值
@@ -249,6 +246,10 @@ class DockerRuntime {
           action.params['@_file_path'] = path.join(`user_${this.user_id}`, dir_name, action.params['@_file_path']);
         }
         result = await this._call_docker_action(action, uuid);
+        // Convert sandbox filepath (/workspace/...) to grace-app filepath (/app/workspace/...)
+        if (result && result.meta && result.meta.filepath) {
+          result.meta.filepath = result.meta.filepath.replace('/workspace/', '/app/workspace/');
+        }
         break;
       case 'git_commit':
         result = await this.git_commit(action, uuid);
