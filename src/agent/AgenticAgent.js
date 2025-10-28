@@ -68,6 +68,16 @@ class AgenticAgent {
       safeContent = ResponseValidator.intelligentStringConversion(content);
     }
     
+    // CRITICAL: Strip Python code blocks from content before publishing to UI
+    // Code blocks are for execution only, not for user display
+    if (safeContent && typeof safeContent === 'string') {
+      const originalContent = safeContent;
+      safeContent = safeContent.replace(/```python\n[\s\S]+?\n```/g, '').trim();
+      if (safeContent !== originalContent && safeContent.length < originalContent.length) {
+        console.log('[AgenticAgent] Removed Python code blocks from message before publishing to UI');
+      }
+    }
+    
     const msg = Message.format({
       uuid,
       action_type,
