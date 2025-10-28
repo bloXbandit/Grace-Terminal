@@ -67,21 +67,9 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = []) => 
           if (needsTools) {
             console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
             console.log(`[AutoReply] Specialist response content:`, result.result?.substring(0, 200) || 'EMPTY');
-            
-            // CRITICAL: Remove Python code blocks from response before returning
-            // Code will be extracted and executed by planning, but shouldn't leak to UI
-            let cleanedResponse = result.result;
-            if (typeof cleanedResponse === 'string') {
-              cleanedResponse = cleanedResponse.replace(/```python\n[\s\S]+?\n```/g, '').trim();
-              if (cleanedResponse !== result.result) {
-                console.log('[AutoReply] Removed Python code blocks from specialist response (will be executed by planning)');
-              }
-            }
-            
             return {
               needsExecution: true,
-              specialistResponse: result.result, // Keep original for planning to extract code
-              cleanedResponse: cleanedResponse,   // Cleaned version for UI
+              specialistResponse: result.result,
               specialist: result.specialist,
               taskType: taskType
             };

@@ -51,13 +51,6 @@ const planning_local = async (goal, options = {}) => {
       const pythonCode = pythonCodeMatch[1];
       console.log('[Planning] Extracted Python code block (preferred format)');
       
-      // CRITICAL: Remove Python code blocks from specialist response before it reaches UI
-      // The code will be executed, but shouldn't be shown to user
-      const cleanResponse = specialistResponse.replace(/```python\n[\s\S]+?\n```/g, '').trim();
-      if (cleanResponse) {
-        console.log('[Planning] Cleaned response (removed code blocks):', cleanResponse.substring(0, 100));
-      }
-      
       const timestamp = Date.now();
       const scriptName = `temp_script_${timestamp}.py`;
       
