@@ -385,7 +385,12 @@ class MultiAgentCoordinator {
     }
     
     // 5. Question about capabilities/help -> Route to general but with best model
+    // BUT: If files exist, "can you X" is likely an action request, not a capability question
     if (isQuestion && (message.includes('can you') || message.includes('do you') || message.includes('help'))) {
+      if (hasFiles && (message.includes('add') || message.includes('include') || message.includes('modify') || message.includes('change'))) {
+        console.log('[Coordinator] "Can you X" with files → action request, routing to data_generation');
+        return 'data_generation';
+      }
       console.log('[Coordinator] Capability question → routing to general_chat with premium model');
       return 'general_chat'; // Will use Claude Sonnet 4.5 fallback
     }

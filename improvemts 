@@ -1,0 +1,401 @@
+Grace AI - Work Efficiency & Output Quality Fixes
+
+Issues Identified:
+
+1.
+✅ File overwriting (same name as original)
+
+2.
+✅ Syntax errors in generated code (mixing bash/Python)
+
+3.
+✅ False success reports (errors not caught by reflection)
+
+4.
+✅ Code snippets showing in UI (raw Python instead of results)
+
+5.
+✅ Repetitive failures (not learning from errors)
+
+
+
+
+Issue #1: File Overwriting (Same Name)
+
+Problem: When modifying existing files, Grace saves with the SAME filename, overwriting the original.
+
+Example:
+
+•
+Original: saturn.docx (37,481 bytes)
+
+•
+Modified: saturn.docx (37,531 bytes) ← OVERWRITES ORIGINAL!
+
+Root Cause: No file versioning logic in the thinking/planning prompts.
+
+Fix #1: Update Thinking Prompt
+
+File: src/agent/code-act/thinking.prompt.js
+
+Add file versioning guidance:
+
+JavaScript
+
+
+**File Modification Rules:**
+- When modifying existing files, ALWAYS create a new version
+- Naming conventions:
+  - If original is "document.docx", create "document_updated.docx"
+  - If original is "data.xlsx", create "data_v2.xlsx"  
+  - If original is "report.pdf", create "report_revised.pdf"
+- NEVER overwrite the original file unless explicitly requested
+- Include the new filename in your response to the user
+
+
+Fix #2: Add File Existence Check
+
+File: src/agent/code-act/thinking.prompt.js
+
+Add to the action generation section:
+
+JavaScript
+
+
+**Before Writing Files:**
+1. Check if a file with the target name already exists
+2. If it exists and you're modifying it, append "_updated" or "_v2" to the filename
+3. If creating a new file, use the requested name
+
+
+
+
+
+Issue #2: Syntax Errors (Mixing Bash/Python)
+
+Problem: Line 51-52 in logs:
+
+Python
+
+
+echo 'Done'  # ← This is BASH, not Python!
+
+
+Agent mixed bash and Python syntax in the same script.
+
+Root Cause: LLM confusion about which language to use.
+
+Fix: Add Language Clarity to Thinking Prompt
+
+File: src/agent/code-act/thinking.prompt.js
+
+Add to the code generation section:
+
+JavaScript
+
+
+**Code Generation Rules:**
+- Python scripts MUST use Python syntax ONLY
+  - Use print() for output, NOT echo
+  - Use os.system() or subprocess for shell commands
+- Bash scripts MUST use Bash syntax ONLY
+- NEVER mix Python and Bash syntax in the same file
+- If you need both, create separate files or use subprocess.run()
+
+**Example (CORRECT):**
+```python
+print('Done')  # ✅ Python
+
+
+Example (WRONG):
+
+Python
+
+
+echo 'Done'  # ❌ Bash in Python file
+
+
+Plain Text
+
+
+
+---
+
+## Issue #3: False Success Reports
+
+**Problem:**
+Line 59: Grace reports "✅ Successfully modified" even though there was a SyntaxError.
+
+**Root Cause:**
+Reflection module doesn't properly validate execution results.
+
+**Fix: Enhance Reflection Validation**
+
+**File:** `src/agent/reflection/index.js`
+
+Find the reflection evaluation logic and add stricter validation:
+
+```javascript
+// Check for execution errors
+if (action_result.error || action_result.stderr) {
+  // Check if stderr contains actual errors (not just warnings)
+  const hasError = action_result.stderr && (
+    action_result.stderr.includes('Error') ||
+    action_result.stderr.includes('Exception') ||
+    action_result.stderr.includes('Traceback') ||
+    action_result.stderr.includes('SyntaxError')
+  );
+  
+  if (hasError) {
+    return {
+      status: 'failure',
+      reason: `Execution failed with error: ${action_result.error || action_result.stderr}`,
+      should_retry: true
+    };
+  }
+}
+
+// Check if output is empty or missing
+if (!action_result.content || action_result.content.trim() === '') {
+  return {
+    status: 'failure',
+    reason: 'Execution produced no output',
+    should_retry: true
+  };
+}
+
+
+
+
+
+Issue #4: Code Snippets in UI
+
+Problem: Users see raw Python code in the UI instead of clean results.
+
+Root Cause: Response validator not filtering code blocks properly.
+
+Fix: Enhance Response Validator
+
+File: src/utils/responseValidator.js
+
+Find the code block filtering logic and enhance it:
+
+JavaScript
+
+
+// Remove code blocks from final user-facing messages
+const removeCodeBlocks = (content) => {
+  if (typeof content !== 'string') return content;
+  
+  // Remove markdown code blocks
+  content = content.replace(/```[\s\S]*?```/g, '');
+  
+  // Remove inline code
+  content = content.replace(/`[^`]+`/g, '');
+  
+  // Remove Python script references
+  content = content.replace(/temp_script_\d+\.py/g, '');
+  
+  // Remove file paths in output
+  content = content.replace(/\/workspace\/[^\s]+/g, '');
+  content = content.replace(/\/app\/workspace\/[^\s]+/g, '');
+  
+  return content.trim();
+};
+
+// Apply to finish_summery messages
+if (message.meta && message.meta.action_type === 'finish_summery') {
+  message.content = removeCodeBlocks(message.content);
+}
+
+
+
+
+
+Issue #5: Repetitive Failures (Not Learning)
+
+Problem: Agent generates the same failing code multiple times without learning.
+
+Root Cause: Reflection prompt doesn't emphasize error analysis.
+
+Fix: Enhance Reflection Prompt
+
+File: src/agent/reflection/reflection.prompt.js
+
+Add error analysis section:
+
+JavaScript
+
+
+**Error Analysis (CRITICAL):**
+When an execution fails:
+1. **Identify the exact error** from stderr/error message
+2. **Understand why it failed** (syntax? logic? missing file?)
+3. **Generate a DIFFERENT solution** - DO NOT repeat the same code
+4. **Verify your fix** - Explain why the new approach will work
+
+**Common Errors and Fixes:**
+- SyntaxError: Check language syntax (Python vs Bash)
+- FileNotFoundError: Verify file exists, use correct path
+- ImportError: Check if library is installed
+- ValueError: Validate input data format
+
+**If you've tried the same approach 2+ times:**
+- STOP and try a completely different method
+- Ask for clarification if needed
+- Break the problem into smaller steps
+
+
+
+
+
+Issue #6: File Delivery to UI
+
+Problem: Updated files don't consistently appear in "View all files" UI.
+
+Root Cause: File metadata not properly returned in finish_summery.
+
+Fix: Ensure File Metadata is Complete
+
+File: src/agent/summary/index.js
+
+Find where finish_summery is generated and ensure file metadata includes:
+
+JavaScript
+
+
+const fileMetadata = generatedFiles.map(filepath => {
+  const stats = fs.statSync(filepath);
+  return {
+    filepath: filepath,
+    filename: path.basename(filepath),
+    filesize: stats.size,
+    modified: stats.mtime,
+    created: stats.birthtime,
+    type: path.extname(filepath).substring(1), // e.g., "docx", "xlsx"
+    isNew: stats.birthtime > taskStartTime,    // Flag new files
+    isModified: stats.mtime > taskStartTime && stats.birthtime < taskStartTime  // Flag modified files
+  };
+});
+
+
+
+
+
+Implementation Priority
+
+CRITICAL (Do First):
+
+1.
+✅ Fix #1: File versioning (prevents data loss)
+
+2.
+✅ Fix #2: Syntax error prevention (prevents execution failures)
+
+3.
+✅ Fix #3: Reflection validation (catches errors properly)
+
+HIGH (Do Next): 4. ✅ Fix #4: Code snippet filtering (improves UX) 5. ✅ Fix #5: Error learning (reduces repetitive failures)
+
+MEDIUM (Do Later): 6. ✅ Fix #6: File metadata (improves file delivery)
+
+
+
+
+Testing Plan
+
+Test Case 1: Document Modification
+
+Request: "Update saturn.docx to add author name Kenny Grey under the title"
+
+Expected:
+
+1.
+✅ Creates saturn_updated.docx (not overwriting original)
+
+2.
+✅ Executes without syntax errors
+
+3.
+✅ Reports success only if execution succeeded
+
+4.
+✅ No code snippets in UI message
+
+5.
+✅ File appears in "View all files"
+
+Test Case 2: Failed Execution Recovery
+
+Request: "Create a pandas DataFrame with mismatched arrays"
+
+Expected:
+
+1.
+✅ First attempt fails with ValueError
+
+2.
+✅ Reflection identifies the error
+
+3.
+✅ Second attempt uses DIFFERENT approach (trim arrays)
+
+4.
+✅ Second attempt succeeds
+
+5.
+✅ No repetition of same failing code
+
+Test Case 3: Multiple Modifications
+
+Request: "Create report.docx, then update it to add a conclusion, then add references"
+
+Expected:
+
+1.
+✅ Creates report.docx
+
+2.
+✅ Creates report_updated.docx (with conclusion)
+
+3.
+✅ Creates report_v2.docx (with references)
+
+4.
+✅ All 3 files visible in UI
+
+5.
+✅ No overwrites
+
+
+
+
+Confidence
+
+8/10 - These fixes address the root causes, but require testing to verify effectiveness.
+
+Why not 10/10:
+
+•
+Need to test with real user requests
+
+•
+May need prompt tuning based on LLM behavior
+
+•
+File versioning logic might need refinement
+
+Next Steps:
+
+1.
+Apply fixes in priority order
+
+2.
+Test with the failing conversation
+
+3.
+Monitor for new issues
+
+4.
+Iterate on prompts if needed
+

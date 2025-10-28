@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
  * Get or create a user profile entry
  */
 const upsertProfile = async (user_id, key, value, confidence = 1.0, source = 'conversation') => {
-  const { sequelize } = require('@src/models');
+  const sequelize = require('@src/models');
   
   // CRITICAL FIX: Use atomic transaction with row-level locking to prevent race conditions
   const transaction = await sequelize.transaction();

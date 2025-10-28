@@ -68,13 +68,22 @@ class AgenticAgent {
       safeContent = ResponseValidator.intelligentStringConversion(content);
     }
     
-    // CRITICAL: Strip Python code blocks from content before publishing to UI
+    // CRITICAL: Strip Python code blocks AND inline commands from content before publishing to UI
     // Code blocks are for execution only, not for user display
     if (safeContent && typeof safeContent === 'string') {
       const originalContent = safeContent;
+      
+      // Remove Python code blocks: ```python\n...\n```
       safeContent = safeContent.replace(/```python\n[\s\S]+?\n```/g, '').trim();
+      
+      // Remove inline Python commands: python3 -c "..."
+      safeContent = safeContent.replace(/python3?\s+-c\s+["'][\s\S]+?["']/g, '').trim();
+      
+      // Remove any remaining python3 command lines
+      safeContent = safeContent.replace(/^python3?\s+.+$/gm, '').trim();
+      
       if (safeContent !== originalContent && safeContent.length < originalContent.length) {
-        console.log('[AgenticAgent] Removed Python code blocks from message before publishing to UI');
+        console.log('[AgenticAgent] Removed Python code from message before publishing to UI');
       }
     }
     
@@ -97,6 +106,53 @@ class AgenticAgent {
     const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
     const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.context.user_id);
     return path.join(WORKSPACE_DIR, dir_name);
+  }
+
+  /**
+   * Make task titles user-friendly by hiding technical backend details
+   */
+  _makeTaskTitleUserFriendly(title, description) {
+    if (!title) return title;
+    
+    // For name/profile gathering tasks, use simple waiting message
+    if (title.toLowerCase().includes('information gathering') || 
+        title.toLowerCase().includes('check user profile') ||
+        description?.toLowerCase().includes('ask user') ||
+        description?.toLowerCase().includes('what\'s your name')) {
+      return '💬 Waiting for your response...';
+    }
+    
+    // For document updates, simplify
+    if (title.toLowerCase().includes('document update') || 
+        title.toLowerCase().includes('document finalization')) {
+      return '📝 Updating document...';
+    }
+    
+    // For delivery/confirmation tasks, simplify
+    if (title.toLowerCase().includes('delivery') || 
+        title.toLowerCase().includes('confirm document')) {
+      return '✅ Finishing up...';
+    }
+    
+    // Keep existing friendly titles
+    return title;
+  }
+
+  /**
+   * Make task descriptions user-friendly
+   */
+  _makeTaskDescriptionUserFriendly(description) {
+    if (!description) return description;
+    
+    // Hide technical details about profile checking, Python execution, etc.
+    if (description.toLowerCase().includes('check user profile') ||
+        description.toLowerCase().includes('execute python') ||
+        description.toLowerCase().includes('terminal_run') ||
+        description.toLowerCase().includes('write_code')) {
+      return ''; // Hide technical descriptions
+    }
+    
+    return description;
   }
 
   // 初始化设置和自动回复
@@ -358,7 +414,15 @@ class AgenticAgent {
 
       await this.taskManager.setTasks(plannedTasks);
       const tasks = this.taskManager.getTasks();
-      await this._publishMessage({ action_type: 'plan', status: 'success', content: '', json: tasks });
+      
+      // Make task titles user-friendly (hide backend technical details)
+      const userFriendlyTasks = tasks.map(task => ({
+        ...task,
+        title: this._makeTaskTitleUserFriendly(task.title, task.description),
+        description: this._makeTaskDescriptionUserFriendly(task.description)
+      }));
+      
+      await this._publishMessage({ action_type: 'plan', status: 'success', content: '', json: userFriendlyTasks });
 
       console.log('====== planning completed ======');
 
