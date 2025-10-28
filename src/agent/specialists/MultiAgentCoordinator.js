@@ -610,7 +610,21 @@ class MultiAgentCoordinator {
           const docFiles = files.filter(f => f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf'));
           
           if (docFiles.length > 0) {
-            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**IMPORTANT:** If the user asks to modify/expand/update a document, you should READ the existing file first, then modify it, rather than creating a new file. Use the same filename to overwrite.`;
+            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**CRITICAL FILE MODIFICATION RULES:**
+1. **ALWAYS load existing files** - Use \`Document('filename.docx')\` NOT \`Document()\`
+2. **NEVER create new filenames** - Modify and save with the EXACT SAME filename
+3. **NEVER append "_updated" or "_v2"** - User wants the original file modified, not duplicated
+4. **Example CORRECT approach:**
+   \`\`\`python
+   doc = Document('existing_file.docx')  # Load existing
+   # Make modifications
+   doc.save('existing_file.docx')  # Save with SAME name
+   \`\`\`
+5. **Example WRONG approach:**
+   \`\`\`python
+   doc = Document()  # ❌ Creates blank document
+   doc.save('existing_file_updated.docx')  # ❌ Creates duplicate
+   \`\`\``;
             
             // Add Word document structure guidance if .docx files exist
             const hasDocx = docFiles.some(f => f.endsWith('.docx'));
@@ -629,6 +643,21 @@ class MultiAgentCoordinator {
         } catch (e) {
           // Silently fail if directory doesn't exist yet
         }
+      }
+      
+      // Add previous implementation context for revision continuity
+      if (options.routingContext && options.routingContext.previousImplementation) {
+        existingFilesContext += `\n\n**PREVIOUS IMPLEMENTATION METHOD:**
+${options.routingContext.previousImplementation}
+
+**CRITICAL:** When making revisions, you MUST use the SAME implementation approach as before.
+- If previous revision used Pillow/PIL for images → Continue using Pillow/PIL
+- If previous revision used matplotlib → Continue using matplotlib
+- If previous revision used pandas → Continue using pandas
+- DO NOT switch from images to text, or vice versa
+- Maintain consistency across all revisions`;
+        
+        console.log('[Specialist] Adding previous implementation context:', options.routingContext.previousImplementation);
       }
       
       // Build context - use existing messages if provided, otherwise create new
@@ -746,6 +775,52 @@ class MultiAgentCoordinator {
       context.recentMessages = options.messages.slice(-3);
     }
     
+    // Get previous implementation method for revision continuity
+    if (context.isFollowUp && this.conversation_id) {
+      try {
+        const MessageTable = require('@src/models/Message');
+        const recentMessages = await MessageTable.findAll({
+          where: { conversation_id: this.conversation_id },
+          order: [['create_at', 'DESC']],
+          limit: 10
+        });
+        
+        // Look for recent code execution with implementation details
+        for (const msg of recentMessages) {
+          if (msg.meta && typeof msg.meta === 'string') {
+            try {
+              msg.meta = JSON.parse(msg.meta);
+            } catch (e) {}
+          }
+          
+          // Check if this message contains code execution
+          if (msg.memorized && typeof msg.memorized === 'string') {
+            // Detect Pillow/PIL image creation
+            if (msg.memorized.includes('PIL') || msg.memorized.includes('Image.new') || msg.memorized.includes('ImageDraw')) {
+              context.previousImplementation = 'Used Pillow/PIL to create image files';
+              console.log('[Coordinator] Previous implementation: Pillow image creation');
+              break;
+            }
+            // Detect matplotlib/seaborn visualization
+            if (msg.memorized.includes('matplotlib') || msg.memorized.includes('seaborn') || msg.memorized.includes('plt.')) {
+              context.previousImplementation = 'Used matplotlib/seaborn for data visualization';
+              console.log('[Coordinator] Previous implementation: matplotlib visualization');
+              break;
+            }
+            // Detect pandas data manipulation
+            if (msg.memorized.includes('pandas') || msg.memorized.includes('pd.DataFrame')) {
+              context.previousImplementation = 'Used pandas for data manipulation';
+              console.log('[Coordinator] Previous implementation: pandas data processing');
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        // Failed to get implementation context - continue without it
+        console.log('[Coordinator] Could not retrieve previous implementation context');
+      }
+    }
+    
     return context;
   }
 
@@ -765,12 +840,18 @@ class MultiAgentCoordinator {
     console.log(`[Coordinator] Using model: ${routing.primary}`);
     
     try {
+      // Pass routing context to specialist (includes previousImplementation)
+      const specialistOptions = {
+        ...options,
+        routingContext
+      };
+      
       // Try primary specialist
       const result = await this.callSpecialist(
         routing.primary,
         routing.systemPrompt,
         userMessage,
-        options
+        specialistOptions
       );
       
       // Check if specialist returned an error (graceful failure)
@@ -798,12 +879,18 @@ class MultiAgentCoordinator {
       console.log(`[Coordinator] Primary failed, trying fallback: ${routing.fallback}`);
       
       try {
+        // Pass routing context to fallback specialist too
+        const specialistOptions = {
+          ...options,
+          routingContext
+        };
+        
         // Try fallback specialist
         const result = await this.callSpecialist(
           routing.fallback,
           routing.systemPrompt,
           userMessage,
-          options
+          specialistOptions
         );
         
         // Check if fallback also returned error/empty
