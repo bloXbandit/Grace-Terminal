@@ -113,7 +113,25 @@ class AgenticAgent {
       console.log(`Skipping nginx setup for RUNTIME_TYPE: ${RUNTIME_TYPE}`);
     }
 
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id);
+    // Get recent conversation messages for context-aware routing (last 5 messages)
+    let recentMessages = [];
+    try {
+      const MessageTable = require('@src/models/Message');
+      const messages = await MessageTable.findAll({
+        where: { conversation_id: this.context.conversation_id },
+        order: [['create_at', 'DESC']],
+        limit: 5
+      });
+      // Convert to simple format and reverse to chronological order
+      recentMessages = messages.reverse().map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+    } catch (e) {
+      // No messages yet or error - continue without context
+    }
+
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {

@@ -43,8 +43,10 @@ class MultiAgentCoordinator {
 
   /**
    * Detect task type from user's request
+   * @param {string} userMessage - The user's message
+   * @param {object} context - Optional context (hasFiles, lastAction, isFollowUp, recentMessages)
    */
-  detectTaskType(userMessage) {
+  detectTaskType(userMessage, context = {}) {
     const message = userMessage.toLowerCase();
     
     // Context-aware creative detection (before keyword matching)
@@ -322,7 +324,7 @@ class MultiAgentCoordinator {
     }
     
     // Intelligent fallback routing - Grace makes smart decisions when uncertain
-    return this.intelligentFallbackRouting(userMessage);
+    return this.intelligentFallbackRouting(userMessage, context);
   }
 
   /**
@@ -330,7 +332,7 @@ class MultiAgentCoordinator {
    * Analyzes request characteristics and routes to the most capable specialist
    * Ensures 90%+ chance of routing to a specialist rather than general chat
    */
-  intelligentFallbackRouting(userMessage) {
+  intelligentFallbackRouting(userMessage, context = {}) {
     const message = userMessage.toLowerCase();
     
     console.log('[Coordinator] Using intelligent fallback routing for ambiguous request...');
@@ -338,12 +340,25 @@ class MultiAgentCoordinator {
     // Analyze request complexity and characteristics
     const complexity = this.analyzeComplexity(message);
     const hasCodeKeywords = /\b(code|function|class|variable|syntax|programming|development|script|algorithm)\b/i.test(message);
-    const hasCreativeKeywords = /\b(write|create|make|generate|design|build|craft)\b/i.test(message);
+    // REFINED: Removed "make" and "create" - too broad, triggers on "make it 3 stars"
+    // Only explicit creative verbs now
+    const hasCreativeKeywords = /\b(write.*story|compose|craft.*poem|imagine|envision|narrate|storytell)\b/i.test(message);
     const hasAnalysisKeywords = /\b(analyze|explain|understand|help|how|why|what|compare|review)\b/i.test(message);
     const hasDataKeywords = /\b(data|file|document|spreadsheet|list|export|save)\b/i.test(message);
     const isQuestion = /\?|how|what|why|when|where|can you|do you|will you|should/i.test(message);
     
+    // Context-aware routing: Check for files and recent actions
+    const hasFiles = context.hasFiles || false;
+    const lastAction = context.lastAction || null;
+    const isFollowUp = context.isFollowUp || false;
+    
     // Intelligent routing decision tree (90%+ specialist routing)
+    
+    // 0. Follow-up with files → Route to document editing (NEW)
+    if (isFollowUp && hasFiles && !hasCodeKeywords) {
+      console.log('[Coordinator] Follow-up request with existing files → routing to data_generation');
+      return 'data_generation'; // Qwen - handles document modifications
+    }
     
     // 1. Code-related but ambiguous -> Route to best code specialist
     if (hasCodeKeywords || message.includes('debug') || message.includes('fix')) {
@@ -351,9 +366,9 @@ class MultiAgentCoordinator {
       return 'code_generation'; // Claude Sonnet 4.5 - best for code
     }
     
-    // 2. Creative but ambiguous -> Route to creative specialist  
-    if (hasCreativeKeywords && !hasCodeKeywords) {
-      console.log('[Coordinator] Creative ambiguous request → routing to creative_writing');
+    // 2. Creative but ambiguous -> Route to creative specialist (REFINED)
+    if (hasCreativeKeywords && !hasCodeKeywords && !hasFiles) {
+      console.log('[Coordinator] Explicit creative request → routing to creative_writing');
       return 'creative_writing'; // Mythomax - specialized for creativity
     }
     
@@ -681,11 +696,68 @@ class MultiAgentCoordinator {
   }
 
   /**
+   * Build routing context from conversation state
+   * Provides file awareness, recent actions, and follow-up detection
+   */
+  async buildRoutingContext(userMessage, options = {}) {
+    const context = {
+      hasFiles: false,
+      lastAction: null,
+      isFollowUp: false,
+      recentMessages: []
+    };
+    
+    // Check for existing files in conversation
+    if (this.conversation_id) {
+      try {
+        const { getAllFilesRecursively } = require('@src/agent/fileUtils');
+        const { getDirpath } = require('@src/utils/electron');
+        const path = require('path');
+        const dir_name = 'Conversation_' + this.conversation_id.slice(0, 6);
+        const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.user_id);
+        const conversationDir = path.join(WORKSPACE_DIR, dir_name);
+        
+        const files = await getAllFilesRecursively(conversationDir);
+        const docFiles = files.filter(f => 
+          f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf') || 
+          f.endsWith('.pptx') || f.endsWith('.csv') || f.endsWith('.txt')
+        );
+        
+        context.hasFiles = docFiles.length > 0;
+        
+        if (context.hasFiles) {
+          console.log(`[Coordinator] Found ${docFiles.length} files in conversation`);
+        }
+      } catch (e) {
+        // Directory doesn't exist yet - no files
+      }
+    }
+    
+    // Detect follow-up requests (pronouns referring to previous work)
+    const followUpIndicators = /\b(it|that|this|them|those|the document|the file|the spreadsheet)\b/i;
+    context.isFollowUp = followUpIndicators.test(userMessage) && context.hasFiles;
+    
+    if (context.isFollowUp) {
+      console.log('[Coordinator] Detected follow-up request referring to existing work');
+    }
+    
+    // Get recent messages if available (last 3 for context)
+    if (options.messages && Array.isArray(options.messages)) {
+      context.recentMessages = options.messages.slice(-3);
+    }
+    
+    return context;
+  }
+
+  /**
    * Execute task with automatic specialist routing
    */
   async execute(userMessage, options = {}) {
-    // Detect task type
-    const taskType = this.detectTaskType(userMessage);
+    // Build routing context from conversation state
+    const routingContext = await this.buildRoutingContext(userMessage, options);
+    
+    // Detect task type with context
+    const taskType = this.detectTaskType(userMessage, routingContext);
     console.log(`[Coordinator] Detected task type: ${taskType}`);
     
     // Get routing config
