@@ -647,17 +647,23 @@ class MultiAgentCoordinator {
       
       // Add previous implementation context for revision continuity
       if (options.routingContext && options.routingContext.previousImplementation) {
+        const impl = options.routingContext.previousImplementation;
+        const isHighConfidence = impl.confidence === 'high';
+        const instruction = isHighConfidence ? 'SHOULD' : 'CONSIDER';
+        
         existingFilesContext += `\n\n**PREVIOUS IMPLEMENTATION METHOD:**
-${options.routingContext.previousImplementation}
+${impl.method} (Confidence: ${impl.confidence})
 
-**CRITICAL:** When making revisions, you MUST use the SAME implementation approach as before.
-- If previous revision used Pillow/PIL for images → Continue using Pillow/PIL
+**IMPORTANT:** When making revisions, you ${instruction} use the SAME implementation approach as before for consistency.
+- If previous revision used Pillow/PIL for images → Continue using Pillow/PIL (unless user explicitly requests otherwise)
 - If previous revision used matplotlib → Continue using matplotlib
 - If previous revision used pandas → Continue using pandas
-- DO NOT switch from images to text, or vice versa
-- Maintain consistency across all revisions`;
+- If previous revision used reportlab/fpdf → Continue using the same PDF library
+- If previous revision used openpyxl → Continue using openpyxl
+- Maintain consistency across revisions UNLESS user explicitly asks for a different approach
+- If user says "instead", "rather", "switch to", or "use X instead" → Honor their request and change approach`;
         
-        console.log('[Specialist] Adding previous implementation context:', options.routingContext.previousImplementation);
+        console.log('[Specialist] Adding previous implementation context:', impl.method, `(${impl.confidence} confidence)`);
       }
       
       // Build context - use existing messages if provided, otherwise create new
@@ -777,47 +783,109 @@ ${options.routingContext.previousImplementation}
     
     // Get previous implementation method for revision continuity
     if (context.isFollowUp && this.conversation_id) {
-      try {
-        const MessageTable = require('@src/models/Message');
-        const recentMessages = await MessageTable.findAll({
-          where: { conversation_id: this.conversation_id },
-          order: [['create_at', 'DESC']],
-          limit: 10
-        });
-        
-        // Look for recent code execution with implementation details
-        for (const msg of recentMessages) {
-          if (msg.meta && typeof msg.meta === 'string') {
-            try {
-              msg.meta = JSON.parse(msg.meta);
-            } catch (e) {}
-          }
+      // Check if user explicitly wants to change approach
+      const explicitOverride = /\b(instead|rather|switch to|change to|use.*instead|forget.*use|different approach|new approach|try.*different)\b/i;
+      const userWantsOverride = explicitOverride.test(userMessage);
+      
+      if (userWantsOverride) {
+        console.log('[Coordinator] User explicitly requested different approach - skipping implementation tracking');
+      } else {
+        try {
+          const MessageTable = require('@src/models/Message');
+          const recentMessages = await MessageTable.findAll({
+            where: { conversation_id: this.conversation_id },
+            order: [['create_at', 'DESC']],
+            limit: 10
+          });
           
-          // Check if this message contains code execution
-          if (msg.memorized && typeof msg.memorized === 'string') {
-            // Detect Pillow/PIL image creation
-            if (msg.memorized.includes('PIL') || msg.memorized.includes('Image.new') || msg.memorized.includes('ImageDraw')) {
-              context.previousImplementation = 'Used Pillow/PIL to create image files';
-              console.log('[Coordinator] Previous implementation: Pillow image creation');
-              break;
+          // Look for recent code execution with implementation details
+          for (const msg of recentMessages) {
+            if (msg.meta && typeof msg.meta === 'string') {
+              try {
+                msg.meta = JSON.parse(msg.meta);
+              } catch (e) {}
             }
-            // Detect matplotlib/seaborn visualization
-            if (msg.memorized.includes('matplotlib') || msg.memorized.includes('seaborn') || msg.memorized.includes('plt.')) {
-              context.previousImplementation = 'Used matplotlib/seaborn for data visualization';
-              console.log('[Coordinator] Previous implementation: matplotlib visualization');
-              break;
-            }
-            // Detect pandas data manipulation
-            if (msg.memorized.includes('pandas') || msg.memorized.includes('pd.DataFrame')) {
-              context.previousImplementation = 'Used pandas for data manipulation';
-              console.log('[Coordinator] Previous implementation: pandas data processing');
-              break;
+            
+            // Check if this message contains code execution
+            if (msg.memorized && typeof msg.memorized === 'string') {
+              const code = msg.memorized;
+              
+              // Detect Pillow/PIL image creation (strong match - multiple indicators)
+              const hasPIL = code.includes('PIL') || code.includes('from PIL');
+              const hasImageOps = code.includes('Image.new') || code.includes('ImageDraw');
+              if (hasPIL && hasImageOps) {
+                context.previousImplementation = {
+                  method: 'Used Pillow/PIL to create image files',
+                  confidence: 'high'
+                };
+                console.log('[Coordinator] Previous implementation: Pillow image creation (high confidence)');
+                break;
+              }
+              
+              // Detect matplotlib/seaborn visualization (strong match)
+              const hasMatplotlib = code.includes('matplotlib') || code.includes('import matplotlib');
+              const hasPlotOps = code.includes('plt.') || code.includes('seaborn');
+              if (hasMatplotlib || hasPlotOps) {
+                context.previousImplementation = {
+                  method: 'Used matplotlib/seaborn for data visualization',
+                  confidence: hasMatplotlib && hasPlotOps ? 'high' : 'medium'
+                };
+                console.log('[Coordinator] Previous implementation: matplotlib visualization');
+                break;
+              }
+              
+              // Detect pandas data manipulation (strong match)
+              const hasPandas = code.includes('pandas') || code.includes('import pandas');
+              const hasPandasOps = code.includes('pd.DataFrame') || code.includes('pd.read_');
+              if (hasPandas && hasPandasOps) {
+                context.previousImplementation = {
+                  method: 'Used pandas for data manipulation',
+                  confidence: 'high'
+                };
+                console.log('[Coordinator] Previous implementation: pandas data processing');
+                break;
+              }
+              
+              // Detect reportlab PDF generation
+              const hasReportlab = code.includes('reportlab') || code.includes('from reportlab');
+              const hasPDFOps = code.includes('canvas.Canvas') || code.includes('SimpleDocTemplate');
+              if (hasReportlab && hasPDFOps) {
+                context.previousImplementation = {
+                  method: 'Used reportlab for PDF generation',
+                  confidence: 'high'
+                };
+                console.log('[Coordinator] Previous implementation: reportlab PDF generation');
+                break;
+              }
+              
+              // Detect openpyxl Excel manipulation
+              const hasOpenpyxl = code.includes('openpyxl') || code.includes('from openpyxl');
+              const hasExcelOps = code.includes('Workbook()') || code.includes('load_workbook');
+              if (hasOpenpyxl && hasExcelOps) {
+                context.previousImplementation = {
+                  method: 'Used openpyxl for Excel manipulation',
+                  confidence: 'high'
+                };
+                console.log('[Coordinator] Previous implementation: openpyxl Excel manipulation');
+                break;
+              }
+              
+              // Detect fpdf PDF generation
+              const hasFPDF = code.includes('fpdf') || code.includes('from fpdf');
+              if (hasFPDF) {
+                context.previousImplementation = {
+                  method: 'Used fpdf for PDF generation',
+                  confidence: 'high'
+                };
+                console.log('[Coordinator] Previous implementation: fpdf PDF generation');
+                break;
+              }
             }
           }
+        } catch (e) {
+          // Failed to get implementation context - continue without it
+          console.log('[Coordinator] Could not retrieve previous implementation context');
         }
-      } catch (e) {
-        // Failed to get implementation context - continue without it
-        console.log('[Coordinator] Could not retrieve previous implementation context');
       }
     }
     
