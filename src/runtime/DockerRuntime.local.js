@@ -135,6 +135,11 @@ class DockerRuntime {
       Cmd: ['node', 'chataa/action_execution_server.js', '--port', `${host_port}`, '--vscode_port', `${vscode_port}`],  // 启动命令
       WorkingDir: '/chataa/code',                // 容器内工作目录
       ExposedPorts: exposedPortsMap,
+      Env: [
+        `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
+        `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}`,
+        'SKIP_LLM_API_KEY_VERIFICATION=true'
+      ],
       HostConfig: {
         Binds: [
           // 本地目录 : 容器目录 : 模式（rw 可读写 / ro 只读）

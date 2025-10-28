@@ -596,6 +596,19 @@ class MultiAgentCoordinator {
           
           if (docFiles.length > 0) {
             existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**IMPORTANT:** If the user asks to modify/expand/update a document, you should READ the existing file first, then modify it, rather than creating a new file. Use the same filename to overwrite.`;
+            
+            // Add Word document structure guidance if .docx files exist
+            const hasDocx = docFiles.some(f => f.endsWith('.docx'));
+            if (hasDocx) {
+              existingFilesContext += `\n\n**WORD DOCUMENT STRUCTURE BEST PRACTICES:**
+- Content can be in THREE locations: header, body, or footer
+- To access header: \`doc.sections[0].header.paragraphs\`
+- To access body: \`doc.paragraphs\`
+- To access footer: \`doc.sections[0].footer.paragraphs\`
+- When moving/removing content, check ALL three locations
+- Example: If moving author from header to footer, remove from header first, then add to footer`;
+            }
+            
             console.log('[Specialist] Adding file context:', docFiles.length, 'files found');
           }
         } catch (e) {

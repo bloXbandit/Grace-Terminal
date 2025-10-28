@@ -49,7 +49,18 @@ Start:`
 }
 
 const call = require("@src/utils/llm");
+const createLLMInstance = require("@src/completion/llm.one.js");
 const evaluate_model = 'assistant';
+
+// Dedicated GPT-4o-mini reflection model (OpenAI direct)
+const REFLECTION_MODEL = {
+  model_name: 'gpt-4o-mini',
+  platform_name: 'openai',
+  api_key: process.env.OPENAI_API_KEY || '',
+  api_url: 'https://api.openai.com/v1/chat/completions',
+  base_url: 'https://api.openai.com/v1',
+  is_subscribe: false
+};
 
 const evaluate = async (requirement, result, conversation_id) => {
   let model_info = await getDefaultModel(conversation_id)
@@ -76,9 +87,20 @@ const evaluate_server = async (requirement, result, conversation_id) => {
 const evaluate_local = async (requirement, result, conversation_id) => {
   const prompt = await resolveEvaluatePrompt(requirement, result);
   console.log('\n === evaluation prompt ===\n', prompt);
-  // process.exit(0);
-  const content = await call(prompt, conversation_id, evaluate_model);
-  return content;
+  
+  // Use dedicated GPT-4o-mini for reflection (fast + cheap)
+  try {
+    console.log('[Reflection] Using GPT-4o-mini via OpenAI');
+    const model = `provider#${REFLECTION_MODEL.platform_name}#${REFLECTION_MODEL.model_name}`;
+    const llm = await createLLMInstance(model, () => {}, { model_info: REFLECTION_MODEL });
+    const content = await llm.completion(prompt, { messages: [] }, { temperature: 0 });
+    return content;
+  } catch (error) {
+    console.error('[Reflection] GPT-4o-mini failed, falling back to default model:', error.message);
+    // Fallback to conversation's default model
+    const content = await call(prompt, conversation_id, evaluate_model);
+    return content;
+  }
 }
 
 module.exports = exports = evaluate;

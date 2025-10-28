@@ -70,7 +70,11 @@ const iconComponent = computed(() => {
 
 const information = computed(() => {
   if (props.action.meta.action_type == "terminal_run") {
-    return props.action.content[0];
+    // For terminal_run, content is [command, output]
+    // Show only the output (index 1), not the command (index 0)
+    return Array.isArray(props.action.content) && props.action.content.length > 1
+      ? props.action.content[1]
+      : props.action.content;
   }
   return props.action.content;
 });

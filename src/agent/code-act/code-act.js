@@ -354,8 +354,16 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         return result;
       }
       
-      const reflection_result = await reflection(requirement, action_result, context.conversation_id);
-      console.log("reflection_result", reflection_result);
+      // Skip reflection for clean success (optimization: saves ~1-2 minutes)
+      let reflection_result;
+      if (action_result.status === 'success' && !action_result.stderr && !action_result.error) {
+        console.log('[CodeAct] Clean success - skipping reflection');
+        reflection_result = { status: 'success', comments: 'Execution successful' };
+      } else {
+        console.log('[CodeAct] Running reflection for error/partial result');
+        reflection_result = await reflection(requirement, action_result, context.conversation_id);
+        console.log("reflection_result", reflection_result);
+      }
       const { status, comments } = reflection_result;
 
       // 7. Handle execution result

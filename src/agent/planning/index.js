@@ -45,6 +45,67 @@ const planning_local = async (goal, options = {}) => {
   if (specialistResponse && typeof specialistResponse === 'string') {
     console.log('[Planning] coooking...');
     
+    // PRIORITY: Check for Python code blocks FIRST (preferred format)
+    const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
+    if (pythonCodeMatch) {
+      const pythonCode = pythonCodeMatch[1];
+      console.log('[Planning] ✅ Extracted Python code block (preferred format)');
+      
+      const timestamp = Date.now();
+      
+      // Smart execution: For complex/long code, use script file. For simple code, use inline -c
+      const codeLength = pythonCode.length;
+      const lineCount = pythonCode.split('\n').length;
+      
+      // Check for Python syntax that fails in inline -c (for/while/if/def/class)
+      const hasComplexSyntax = /\b(for|while|if|def|class)\b/.test(pythonCode);
+      
+      // Use script file if: large code, many lines, OR complex syntax
+      const useScriptFile = codeLength > 2000 || lineCount > 50 || hasComplexSyntax;
+      
+      if (useScriptFile) {
+        console.log(`[Planning] Code is complex (${codeLength} chars) - using script file approach`);
+        
+        // Create two tasks: 1) write script, 2) execute script
+        return [
+          {
+            id: `${timestamp}_write`,
+            title: '📝 Preparing script...',
+            description: 'Write Python script to file',
+            tool: 'write_code',
+            status: 'pending',
+            preGeneratedAction: `<write_code>\n<file_path>temp_script_${timestamp}.py</file_path>\n<content>${pythonCode}</content>\n</write_code>`,
+            requirement: `Write Python script`
+          },
+          {
+            id: `${timestamp}_execute`,
+            title: '⚡ Creating your file...',
+            description: `Execute Python script`,
+            tool: 'terminal_run',
+            status: 'pending',
+            preGeneratedAction: `<terminal_run>\n<command>python3</command>\n<args>temp_script_${timestamp}.py</args>\n</terminal_run>`,
+            requirement: `Execute script`
+          }
+        ];
+      } else {
+        console.log(`[Planning] Code is simple (${codeLength} chars) - using inline execution`);
+        
+        // Inline execution for simple code
+        const escapedCode = pythonCode.replace(/"/g, '\\"');
+        const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
+        
+        return [{
+          id: `${timestamp}_specialist`,
+          title: '⚡ Creating your file...',
+          description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
+          tool: 'terminal_run',
+          status: 'pending',
+          preGeneratedAction: actionXML,
+          requirement: actionXML
+        }];
+      }
+    }
+    
     // FORMAT 1: Check if specialist provided XML action directly (DEPRECATED - should use Python blocks)
     const xmlMatch = specialistResponse.match(/<terminal_run>([\s\S]+?)<\/terminal_run>/);
     if (xmlMatch) {
@@ -104,63 +165,6 @@ const planning_local = async (goal, options = {}) => {
         preGeneratedAction: actionXML,
         requirement: actionXML
       }];
-    }
-    
-    // FORMAT 2: Extract Python code blocks (Word/simple files)
-    const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
-    if (pythonCodeMatch) {
-      const pythonCode = pythonCodeMatch[1];
-      console.log('[Planning] ✅ Extracted Python code block');
-      
-      const timestamp = Date.now();
-      
-      // Smart execution: For complex/long code, use script file. For simple code, use inline -c
-      const codeLength = pythonCode.length;
-      const lineCount = pythonCode.split('\n').length;
-      // Use inline for most cases - only use script file for very large code (>2000 chars or >50 lines)
-      const useScriptFile = codeLength > 2000 || lineCount > 50;
-      
-      if (useScriptFile) {
-        console.log(`[Planning] Code is complex (${codeLength} chars) - using script file approach`);
-        
-        // Create two tasks: 1) write script, 2) execute script
-        return [
-          {
-            id: `${timestamp}_write`,
-            title: '📝 Preparing script...',
-            description: 'Write Python script to file',
-            tool: 'write_code',
-            status: 'pending',
-            preGeneratedAction: `<write_code>\n<file_path>temp_script_${timestamp}.py</file_path>\n<content>${pythonCode}</content>\n</write_code>`,
-            requirement: `Write Python script`
-          },
-          {
-            id: `${timestamp}_execute`,
-            title: '⚡ Creating your file...',
-            description: `Execute Python script`,
-            tool: 'terminal_run',
-            status: 'pending',
-            preGeneratedAction: `<terminal_run>\n<command>python3</command>\n<args>temp_script_${timestamp}.py</args>\n</terminal_run>`,
-            requirement: `Execute script`
-          }
-        ];
-      } else {
-        console.log(`[Planning] Code is simple (${codeLength} chars) - using inline execution`);
-        
-        // Inline execution for simple code
-        const escapedCode = pythonCode.replace(/"/g, '\\"');
-        const actionXML = `<terminal_run>\n<command>python3</command>\n<args>-c "${escapedCode}"</args>\n</terminal_run>`;
-        
-        return [{
-          id: `${timestamp}_specialist`,
-          title: '⚡ Creating your file...',
-          description: `Execute specialist code:\n\n\`\`\`python\n${pythonCode}\n\`\`\``,
-          tool: 'terminal_run',
-          status: 'pending',
-          preGeneratedAction: actionXML,
-          requirement: actionXML
-        }];
-      }
     }
     
     console.log('[Planning] ⚠️ No executable code found, using regular planning');
