@@ -16,23 +16,31 @@ const write_file = async (filepath, content) => {
 }
 
 const write_code = async (action, uuid) => {
-  // Handle all path parameter variants
+  // Handle all path parameter variants (element-based and attribute-based XML)
   let { path: filepath, file_path, '@_file_path': xmlFilePath, content, '#text': xmlText } = action.params;
   filepath = filepath || file_path || xmlFilePath;
   
-  // Handle XML parsing where content becomes { '#text': 'value' } or just '#text'
-  if (!content && xmlText) {
-    content = xmlText;
-  } else if (content && typeof content === 'object' && content['#text']) {
-    content = content['#text'];
+  // Handle content from multiple XML formats:
+  // 1. <content>text</content> → content = "text"
+  // 2. <write_code file_path="...">text</write_code> → #text = "text"
+  // 3. <content><![CDATA[text]]></content> → content = { '#text': 'text' }
+  let fileContent = content;
+  if (!fileContent && xmlText) {
+    fileContent = xmlText;
+  } else if (fileContent && typeof fileContent === 'object' && fileContent['#text']) {
+    fileContent = fileContent['#text'];
   }
   
   if (!filepath) {
-    throw new Error('write_code requires a file path parameter');
+    throw new Error('write_code requires a file path parameter (path, file_path, or @_file_path)');
+  }
+  
+  if (!fileContent) {
+    throw new Error('write_code requires content parameter (content or #text)');
   }
   
   filepath = await restrictFilepath(filepath);
-  await write_file(filepath, content);
+  await write_file(filepath, fileContent);
   // const result = await executeCode(filepath);
   // return result;
   return {

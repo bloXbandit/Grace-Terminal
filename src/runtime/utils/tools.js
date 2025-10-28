@@ -17,15 +17,22 @@ const write_file = async (filepath, content) => {
 
 const write_code = async (action, uuid, user_id) => {
   // Handle both 'path' and 'file_path' (XML attribute becomes '@_file_path')
-  let { path: filepath, file_path, '@_file_path': xmlFilePath, content } = action.params;
+  let { path: filepath, file_path, '@_file_path': xmlFilePath, content, '#text': xmlText } = action.params;
   filepath = filepath || file_path || xmlFilePath;
+  
+  // Handle content from both element and text node
+  const fileContent = content || xmlText;
   
   if (!filepath) {
     throw new Error('write_code requires a file path parameter (path, file_path, or @_file_path)');
   }
   
+  if (!fileContent) {
+    throw new Error('write_code requires content parameter (content or #text)');
+  }
+  
   filepath = await restrictFilepath(filepath, user_id);
-  await write_file(filepath, content);
+  await write_file(filepath, fileContent);
   // const result = await executeCode(filepath);
   // return result;
   return {
