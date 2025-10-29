@@ -190,8 +190,19 @@ const saveField = async (key) => {
     });
     
     if (response.data && response.data.success) {
-      // Reload to show saved value
-      await loadProfile();
+      // FIX #2: Don't reload - trust the save and let v-model handle UI
+      // This prevents race conditions and UI flickering
+      console.log(`[Profile] Saved ${key}: ${value.trim()}`);
+      
+      // Only refresh learned profile section (not form fields)
+      const learnedResponse = await http.get('/api/users/profile');
+      if (learnedResponse.data && learnedResponse.data.success) {
+        learnedProfile.value = learnedResponse.data.profile.filter(
+          item => item.source && item.source.startsWith('conversation')
+        );
+      }
+    } else {
+      console.error('Failed to save field:', response.data?.message);
     }
   } catch (error) {
     console.error('Failed to save field:', error);
