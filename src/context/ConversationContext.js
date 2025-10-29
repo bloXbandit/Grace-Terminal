@@ -5,6 +5,11 @@ const File = require('@src/models/File');
 const Task = require('@src/models/Task');
 const Message = require('@src/models/Message');
 const { Op } = require('sequelize');
+const { 
+  autoSummarizeIfNeeded, 
+  getHierarchicalContext,
+  formatContextForPrompt 
+} = require('@src/services/conversationMemory');
 
 /**
  * Unified Conversation Context Manager
@@ -321,6 +326,44 @@ class ConversationContext {
       profile: this.cache.profile,
       conversationDir: this._getConversationDir()
     };
+  }
+
+  /**
+   * Get hierarchical context for long conversations
+   * Includes: recent messages + summaries + key memories
+   */
+  async getHierarchicalContext(currentMessage = '', limit = 20) {
+    try {
+      // Auto-summarize if needed (async, non-blocking)
+      autoSummarizeIfNeeded(this.conversationId).catch(e => {
+        console.error('[ConversationContext] Auto-summarization failed:', e.message);
+      });
+
+      // Get hierarchical context
+      const hierarchicalContext = await getHierarchicalContext(
+        this.conversationId,
+        currentMessage,
+        limit
+      );
+
+      return hierarchicalContext;
+    } catch (error) {
+      console.error('[ConversationContext] Failed to get hierarchical context:', error.message);
+      // Fallback to cached messages
+      return {
+        recentMessages: this.cache.messages?.slice(-limit) || [],
+        summaries: [],
+        keyMemories: []
+      };
+    }
+  }
+
+  /**
+   * Format hierarchical context for prompt injection
+   */
+  async getHierarchicalContextString(currentMessage = '') {
+    const hierarchicalContext = await this.getHierarchicalContext(currentMessage);
+    return formatContextForPrompt(hierarchicalContext);
   }
 
   /**
