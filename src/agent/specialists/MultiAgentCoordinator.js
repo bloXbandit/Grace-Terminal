@@ -658,7 +658,27 @@ doc.save('love_document_with_author.docx')  # Creates duplicate!
 - To access body: \`doc.paragraphs\`
 - To access footer: \`doc.sections[0].footer.paragraphs\`
 - When moving/removing content, check ALL three locations
-- Example: If moving author from header to footer, remove from header first, then add to footer`;
+- Example: If moving author from header to footer, remove from header first, then add to footer
+
+**🚨 CRITICAL: DOCUMENT POSITIONING - READ CAREFULLY:**
+When user says "add X at the top" or "underneath title":
+- ✅ CORRECT: Use \`insert_paragraph_after()\` on the title paragraph
+- ✅ CORRECT: Use \`doc.paragraphs.insert(title_idx + 1, text)\` to insert AFTER title
+- ❌ WRONG: \`insert_paragraph_before()\` - This puts content BEFORE title (opposite of request!)
+- ❌ WRONG: \`doc.add_paragraph()\` - This adds at END, not top
+
+Example for "add author underneath title":
+\`\`\`python
+# Find title (usually first paragraph or first Heading)
+title_para = doc.paragraphs[0]  # or find first Heading
+# Insert AFTER title
+author_para = title_para.insert_paragraph_after('Author Name')
+author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+\`\`\`
+
+When user says "add X at the bottom" or "at the end":
+- ✅ CORRECT: Use \`doc.add_paragraph(text)\` to append at end
+- ❌ WRONG: Inserting at index 1 (that's the top!)`;
             }
             
             console.log('[Specialist] Adding file context:', docFiles.length, 'files found');
