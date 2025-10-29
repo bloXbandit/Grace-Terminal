@@ -251,7 +251,7 @@ class AgenticAgent {
       }
     }
 
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages);
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {

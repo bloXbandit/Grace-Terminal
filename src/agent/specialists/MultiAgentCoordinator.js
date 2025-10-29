@@ -689,6 +689,13 @@ ${impl.method} (Confidence: ${impl.confidence})
         console.log('[Specialist] Adding previous implementation context:', impl.method, `(${impl.confidence} confidence)`);
       }
       
+      // CRITICAL: Get user profile context for personalization
+      let userProfileContext = '';
+      if (options.profileContext) {
+        userProfileContext = `\n\n**USER PROFILE CONTEXT:**\n${options.profileContext}`;
+        console.log('[Specialist] Adding user profile context');
+      }
+      
       // Build context - use existing messages if provided, otherwise create new
       let contextMessages;
       if (options.messages && options.messages.length > 0) {
@@ -696,14 +703,14 @@ ${impl.method} (Confidence: ${impl.confidence})
         contextMessages = [...options.messages];
         // Replace first message if it's a system message, otherwise prepend
         if (contextMessages[0]?.role === 'system') {
-          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext };
+          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext };
         } else {
-          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext });
+          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext });
         }
       } else {
         // No conversation history, create simple context
         contextMessages = [
-          { role: 'system', content: fullSystemPrompt + existingFilesContext },
+          { role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext },
           { role: 'user', content: userMessage }
         ];
       }
