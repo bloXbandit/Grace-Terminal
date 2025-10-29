@@ -39,6 +39,14 @@ async function handleFileDownload(file) {
       };
       const mimeType = mimeTypes[fileExt] || "application/octet-stream";
       const accessToken = localStorage.getItem('access_token');
+      
+      // CRITICAL FIX: Use version_id if available to fetch correct file version
+      const requestBody = { path: filePath };
+      if (file.version_id) {
+        requestBody.version_id = file.version_id;
+        console.log('[FileDownload] Using version_id:', file.version_id, 'for file:', fileName);
+      }
+      
       // 调用后端接口获取文件流
       const response = await fetch('/api/file/read', {
         method: 'POST',
@@ -46,7 +54,7 @@ async function handleFileDownload(file) {
           'Content-Type': 'application/json' , 
           'Authorization': `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ path: filePath })
+        body: JSON.stringify(requestBody)
       });
   
       if (!response.ok) {

@@ -1,5 +1,5 @@
 
-const resolveResultPrompt = (goal, tasks, generatedFiles = [], staticUrl = null) => {
+const resolveResultPrompt = async (goal, tasks, generatedFiles = [], staticUrl = null, userId = null) => {
 
   let newTasks = tasks.map((task) => {
     return {
@@ -10,13 +10,25 @@ const resolveResultPrompt = (goal, tasks, generatedFiles = [], staticUrl = null)
     }
   });
 
+  // CRITICAL FIX: Load user profile context for summary
+  let profileContext = '';
+  if (userId) {
+    try {
+      const { getProfileContext } = require('@src/services/userProfile');
+      profileContext = await getProfileContext(userId);
+      if (profileContext) {
+        console.log('[Summary] Using profile context:', profileContext.substring(0, 100));
+      }
+    } catch (error) {
+      console.error('[Summary] Failed to load profile:', error.message);
+    }
+  }
+
   // 处理生成的文件信息
   let filesInfo = '';
   if (generatedFiles && generatedFiles.length > 0) {
     // 提取文件名
     const fileNames = generatedFiles.map(file => file.filename);
-    const { getProfileContext } = require('@src/services/userProfile');
-    const { MASTER_SYSTEM_PROMPT } = require('./MASTER_SYSTEM_PROMPT');
     filesInfo = `\n3. Generated files: ${JSON.stringify(fileNames)}`;
     
     // 检查是否有HTML文件
@@ -36,7 +48,7 @@ const resolveResultPrompt = (goal, tasks, generatedFiles = [], staticUrl = null)
   const prompt = `
 CRITICAL: You are Grace AI. Respond in ENGLISH ONLY.
 
-Summarize task completion in a CONCISE, CLEAN format:
+${profileContext ? `**USER PROFILE:**\n${profileContext}\n\n` : ''}Summarize task completion in a CONCISE, CLEAN format:
 
 **FORMAT REQUIREMENTS:**
 - Keep it SHORT (1-2 sentences max with personality)
@@ -44,8 +56,10 @@ Summarize task completion in a CONCISE, CLEAN format:
 - NO Python code blocks or technical implementation details
 - NO file:// links or download instructions (files appear as icons automatically)
 - NO unnecessary details or formal language
+- NO technical processing notes (e.g., "Updated X with Y", "Loaded existing document")
 - Add personality with emojis and casual tone
 - Just state what was accomplished - files appear in UI automatically
+- Use the user's actual name from profile if available (NEVER use placeholder names)
 
 **EXAMPLES (GOOD):**
 "✅ Whipped up random_text.md with some sample content! File's ready in your workspace."
@@ -56,6 +70,9 @@ Summarize task completion in a CONCISE, CLEAN format:
 "The goal was to create a random Word document and provide it to you. Here's how it went:
 Phase 1: Document Creation was successfully completed. This involved generating random text content and creating a Word document with that content.
 Phase 2: Delivery was also completed. The document was saved to the specified location, and the deliverable was provided to you..."
+
+**EXAMPLE (BAD - TECHNICAL LEAKAGE):**
+"Updated love_document.docx with your name as the author at the top!"
 
 Goal: ${goal}
 Tasks: ${JSON.stringify(newTasks)}${filesInfo}

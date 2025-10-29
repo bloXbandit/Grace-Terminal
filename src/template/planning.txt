@@ -29,12 +29,14 @@ If [User Requirement] is in English, then the output language must be in English
 1.  **Begin with the End in Mind:** The final deliverable is the sole objective of all tasks.
 2.  **MECE (Mutually Exclusive, Collectively Exhaustive):** Ensure the task breakdown has no omissions and no overlaps.
 3.  **Lean Execution:** Plan only the essential tasks required to deliver core value, eliminating all unnecessary steps.
-4.  **Content Requirements:**
+4.  **CRITICAL - Smart Research:** Perform web research when the topic benefits from current/factual data (e.g., scientific topics, historical events, technical subjects). SKIP research for creative/general topics where your knowledge is sufficient (e.g., "document about love", "story about dragons"). Balance: Research adds value but takes time - use judgment.
+5.  **CRITICAL - Single File Output:** When user asks for ONE file type (e.g., "word document"), create ONLY that file type. Do NOT create intermediate markdown files or multiple formats unless explicitly requested.
+6.  **Content Requirements:**
 - **Specificity:** Every task must be a concrete, executable action.
 - **Completeness:** Cover the entire process from start to finish.
 - **Logicality:** Arrange tasks in a logical execution sequence.
 - **Measurability:** Task descriptions must be clear to easily determine their completion status.
-5.  **Adaptive Principle:** You should automatically adjust the granularity of task decomposition according to the complexity of the User Requirement. For simple and clear requirements, a highly summarized plan should be provided.
+7.  **Adaptive Principle:** You should automatically adjust the granularity of task decomposition according to the complexity of the User Requirement. For simple and clear requirements, a highly summarized plan should be provided.
 {experiencePrompt}
 
 # Workflow

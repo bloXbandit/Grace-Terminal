@@ -1,0 +1,91 @@
+{
+  "conversationId": "2f43bda4-9176-4428-85c3-4c59f00e3a7e",
+  "results": [
+    {
+      "step": 1,
+      "name": "Create Initial Document",
+      "success": false,
+      "duration": 8949,
+      "checks": {
+        "fileCount": false,
+        "noTechnicalLeakage": true,
+        "profileUsed": true,
+        "userName": true
+      },
+      "contextData": {
+        "profileUsed": false,
+        "filesSeen": 0,
+        "tasksSeen": 0,
+        "technicalLeakage": false,
+        "userName": null
+      },
+      "files": []
+    },
+    {
+      "step": 2,
+      "name": "Add Author Name",
+      "success": false,
+      "duration": 6225,
+      "checks": {
+        "fileCount": false,
+        "noTechnicalLeakage": true,
+        "profileUsed": false,
+        "userName": false
+      },
+      "contextData": {
+        "profileUsed": false,
+        "filesSeen": 0,
+        "tasksSeen": 0,
+        "technicalLeakage": false,
+        "userName": null
+      },
+      "files": []
+    },
+    {
+      "step": 3,
+      "name": "Add Red Star",
+      "success": false,
+      "duration": 6039,
+      "checks": {
+        "fileCount": false,
+        "noTechnicalLeakage": true,
+        "profileUsed": false,
+        "userName": true
+      },
+      "contextData": {
+        "profileUsed": false,
+        "filesSeen": 0,
+        "tasksSeen": 0,
+        "technicalLeakage": false,
+        "userName": null
+      },
+      "files": []
+    },
+    {
+      "step": 4,
+      "name": "Add Section",
+      "success": false,
+      "duration": 3349,
+      "checks": {
+        "fileCount": false,
+        "noTechnicalLeakage": true,
+        "profileUsed": false,
+        "userName": true
+      },
+      "contextData": {
+        "profileUsed": false,
+        "filesSeen": 0,
+        "tasksSeen": 0,
+        "technicalLeakage": false,
+        "userName": null
+      },
+      "files": []
+    }
+  ],
+  "fileVersions": [],
+  "contextChecks": {
+    "profileUsed": false,
+    "noTechnicalLeakage": true,
+    "fileVersioning": false
+  }
+}

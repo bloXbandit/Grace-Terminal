@@ -239,35 +239,45 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           // Check if file exists
           try {
             if (fs.existsSync(fullPath)) {
-              // File exists - enforce versioning
-              const ext = path.extname(filepath);
-              const basename = path.basename(filepath, ext);
-              const dirname = path.dirname(filepath);
+              // CRITICAL: Always create versioned files for document edits
+              // This preserves previous versions in earlier response bubbles
+              // Only skip versioning for temp scripts
+              const isTempScript = filepath.includes('temp_script_') || filepath.includes('update_') || filepath.includes('finalize_');
               
-              // Generate versioned filename
-              let newFilename;
-              if (basename.includes('_updated') || basename.match(/_v\d+$/)) {
-                // Already versioned - increment
-                const match = basename.match(/_v(\d+)$/);
-                if (match) {
-                  const version = parseInt(match[1]) + 1;
-                  newFilename = `${basename.replace(/_v\d+$/, '')}_v${version}${ext}`;
+              if (!isTempScript) {
+                // Document file - create versioned copy
+                const ext = path.extname(filepath);
+                const basename = path.basename(filepath, ext);
+                const dirname = path.dirname(filepath);
+                
+                // Generate versioned filename
+                let newFilename;
+                if (basename.includes('_updated') || basename.match(/_v\d+$/)) {
+                  // Already versioned - increment
+                  const match = basename.match(/_v(\d+)$/);
+                  if (match) {
+                    const version = parseInt(match[1]) + 1;
+                    newFilename = `${basename.replace(/_v\d+$/, '')}_v${version}${ext}`;
+                  } else {
+                    newFilename = `${basename}_v2${ext}`;
+                  }
                 } else {
-                  newFilename = `${basename}_v2${ext}`;
+                  // First version
+                  newFilename = `${basename}_updated${ext}`;
                 }
+                
+                const newPath = dirname === '.' ? newFilename : path.join(dirname, newFilename);
+                
+                // Update all path parameter variants
+                if (action.params.file_path) action.params.file_path = newPath;
+                if (action.params.path) action.params.path = newPath;
+                if (action.params['@_file_path']) action.params['@_file_path'] = newPath;
+                
+                console.log(`[FileVersioning] Creating versioned file: ${filepath} → ${newPath}`);
               } else {
-                // First version
-                newFilename = `${basename}_updated${ext}`;
+                // Temp script - allow overwrite
+                console.log(`[FileVersioning] Allowing temp script overwrite: ${filepath}`);
               }
-              
-              const newPath = dirname === '.' ? newFilename : path.join(dirname, newFilename);
-              
-              // Update all path parameter variants
-              if (action.params.file_path) action.params.file_path = newPath;
-              if (action.params.path) action.params.path = newPath;
-              if (action.params['@_file_path']) action.params['@_file_path'] = newPath;
-              
-              console.log(`[FileVersioning] Prevented overwrite: ${filepath} → ${newPath}`);
             }
           } catch (err) {
             // File doesn't exist or error checking - proceed normally

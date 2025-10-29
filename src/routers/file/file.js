@@ -59,6 +59,10 @@ router.post("/upload", async ({ state, request, response }) => {
   const uploadedFiles = [];
 
   const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', state.user.id);
+  
+  // PHASE 2: Use FileRegistry for unified file management
+  const FileRegistry = require('@src/context/FileRegistry');
+  const registry = new FileRegistry(conversation_id, state.user.id);
 
   for (const file of fileArray) {
     const uploadDir = path.join(WORKSPACE_DIR, 'upload');
@@ -69,15 +73,13 @@ router.post("/upload", async ({ state, request, response }) => {
 
     fs.copyFileSync(file.filepath, filePath);
 
-    const fileDoc = await File.create({
-      url: `upload/${file.originalFilename}`,
-      name: file.originalFilename,
-      conversation_id: conversation_id,
-    });
+    // Use FileRegistry to register the file
+    const fileDoc = await registry.register(filePath, file.originalFilename);
+    
+    // Add workspace_dir for backward compatibility
+    fileDoc.workspace_dir = WORKSPACE_DIR;
 
-    fileDoc.dataValues.workspace_dir = WORKSPACE_DIR
-
-    uploadedFiles.push(fileDoc.dataValues);
+    uploadedFiles.push(fileDoc);
   }
 
   return response.success(uploadedFiles);
@@ -264,7 +266,32 @@ router.get("/list", async ({ response }) => {
  *               format: binary
  */
 router.post('/read', async ({ request, response }) => {
-  const { path: filePath } = request.body;
+  const { path: filePath, version_id } = request.body;
+  
+  // CRITICAL FIX: If version_id provided, read from FileVersion table (specific version)
+  if (version_id) {
+    try {
+      const FileVersion = require('@src/models/FileVersion');
+      const version = await FileVersion.findOne({ where: { id: version_id } });
+      
+      if (!version) {
+        response.fail(null, 'File version not found');
+        return;
+      }
+      
+      // Return version content as buffer
+      const buffer = Buffer.from(version.content, 'utf-8');
+      const filename = path.basename(version.filepath);
+      response.file(filename, buffer);
+      return;
+    } catch (err) {
+      console.error('[FileRead] Failed to read version:', err);
+      response.fail(null, 'Failed to read file version');
+      return;
+    }
+  }
+  
+  // Original behavior: Read from filesystem
   if (!filePath) {
     response.fail(null, 'File path is required');
     return;

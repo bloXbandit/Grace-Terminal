@@ -60,9 +60,18 @@ const upsertProfile = async (user_id, key, value, confidence = 1.0, source = 'co
     
   } catch (error) {
     // Rollback on any error
-    await transaction.rollback();
-    console.error('CRITICAL: Profile upsert transaction failed:', error);
-    throw error; // Re-throw to signal failure to caller
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error('[Profile] Transaction rollback failed:', rollbackError.message);
+    }
+    
+    console.error('[Profile] Profile upsert transaction failed:', error.message);
+    
+    // CRITICAL FIX: Don't throw - profile updates are non-critical
+    // Return null to allow the conversation to continue
+    console.log('[Profile] Continuing without profile update (non-critical failure)');
+    return null;
   }
 };
 

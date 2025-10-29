@@ -14,6 +14,9 @@ const { v4: uuidv4 } = require("uuid");
 const path = require('path')
 const { getDirpath } = require('@src/utils/electron');
 
+// PHASE 2: Import unified context management
+const ConversationContext = require('@src/context/ConversationContext');
+
 const LocalRuntime = require("@src/runtime/LocalRuntime")
 const DockerRuntime = require("@src/runtime/DockerRuntime");
 const LocalDockerRuntime = require("@src/runtime/DockerRuntime.local");
@@ -50,6 +53,20 @@ class AgenticAgent {
     // Track session start time to filter files created in this session
     // Use current time - files created during this session will have mtime >= this
     this.sessionStartTime = new Date();
+    
+    // PHASE 2: Create unified conversation context manager
+    // Only create if we have required IDs (some contexts like 'continue' may not have them yet)
+    if (context.conversation_id && context.user_id) {
+      try {
+        this.conversationContext = new ConversationContext(context);
+        console.log('[AgenticAgent] Unified context manager initialized');
+      } catch (error) {
+        console.error('[AgenticAgent] Failed to initialize context manager:', error.message);
+        this.conversationContext = null;
+      }
+    } else {
+      this.conversationContext = null;
+    }
   }
 
   setGoal(goal) {
@@ -68,7 +85,7 @@ class AgenticAgent {
       safeContent = ResponseValidator.intelligentStringConversion(content);
     }
     
-    // CRITICAL: Strip Python code blocks AND inline commands from content before publishing to UI
+    // CRITICAL: Strip Python code blocks AND inline commands AND technical processing notes from content before publishing to UI
     // Code blocks are for execution only, not for user display
     if (safeContent && typeof safeContent === 'string') {
       const originalContent = safeContent;
@@ -82,8 +99,18 @@ class AgenticAgent {
       // Remove any remaining python3 command lines
       safeContent = safeContent.replace(/^python3?\s+.+$/gm, '').trim();
       
+      // CRITICAL FIX: Remove technical processing notes that leak backend details
+      // Pattern: "Updated X with Y" or "Loaded existing X"
+      safeContent = safeContent.replace(/^(Updated|Loaded|Modified|Created|Saved)\s+[\w_]+\.(docx|xlsx|pdf|txt|pptx)\s+(with|using|from|to)\s+.+?[.!]/gmi, '').trim();
+      
+      // Remove "nice! now add a section" type thinking-out-loud
+      safeContent = safeContent.replace(/^(nice!|great!|okay,?)\s+now\s+.+$/gmi, '').trim();
+      
+      // Remove multi-line thinking blocks (The user wants me to...)
+      safeContent = safeContent.replace(/The user wants me to:?\n[\s\S]+?(?=\n\n|$)/gi, '').trim();
+      
       if (safeContent !== originalContent && safeContent.length < originalContent.length) {
-        console.log('[AgenticAgent] Removed Python code from message before publishing to UI');
+        console.log('[AgenticAgent] Removed Python code and technical notes from message before publishing to UI');
       }
     }
     
@@ -157,13 +184,21 @@ class AgenticAgent {
 
   // 初始化设置和自动回复
   async _initialSetupAndAutoReply() {
-    const dockerRuntimeTypes = ['docker', 'e2b', 'local-docker'];
-    if (dockerRuntimeTypes.includes(RUNTIME_TYPE)) {
-      await this.context.runtime.connect_container()
-    }
-    // 使用外部函数确保目录存在
+    // SPEED OPTIMIZATION: Run container connection and directory setup in parallel
     const conversationDirPath = await this._getConversationDirPath();
-    await ensureDirectoryExists(conversationDirPath);
+    
+    const dockerRuntimeTypes = ['docker', 'e2b', 'local-docker'];
+    const setupPromises = [
+      ensureDirectoryExists(conversationDirPath)
+    ];
+    
+    // Only connect container if needed (skip for existing conversations)
+    if (dockerRuntimeTypes.includes(RUNTIME_TYPE) && !this.context.containerConnected) {
+      setupPromises.push(this.context.runtime.connect_container());
+      this.context.containerConnected = true;
+    }
+    
+    await Promise.all(setupPromises);
 
     // 创建nginx静态文件配置（仅在docker/e2b环境下）
     if (RUNTIME_TYPE === 'docker' || RUNTIME_TYPE === 'e2b') {
@@ -179,22 +214,41 @@ class AgenticAgent {
       console.log(`Skipping nginx setup for RUNTIME_TYPE: ${RUNTIME_TYPE}`);
     }
 
+    // PHASE 2: Build unified context once (if available)
+    // SPEED OPTIMIZATION: For initial message, only load minimal context
+    let routingContext = null;
+    if (this.conversationContext) {
+      try {
+        const requestId = `req-${Date.now()}`;
+        const startTime = Date.now();
+        await this.conversationContext.build({ requestId });
+        routingContext = this.conversationContext.getRoutingContext();
+        const duration = Date.now() - startTime;
+        console.log(`[AgenticAgent] Built unified context for routing in ${duration}ms`);
+      } catch (error) {
+        console.error('[AgenticAgent] Failed to build context:', error);
+      }
+    }
+    
     // Get recent conversation messages for context-aware routing (last 5 messages)
-    let recentMessages = [];
-    try {
-      const MessageTable = require('@src/models/Message');
-      const messages = await MessageTable.findAll({
-        where: { conversation_id: this.context.conversation_id },
-        order: [['create_at', 'DESC']],
-        limit: 5
-      });
-      // Convert to simple format and reverse to chronological order
-      recentMessages = messages.reverse().map(m => ({
-        role: m.role,
-        content: m.content
-      }));
-    } catch (e) {
-      // No messages yet or error - continue without context
+    // BACKWARD COMPATIBILITY: If no unified context, use old method
+    let recentMessages = routingContext?.recentMessages || [];
+    if (!routingContext) {
+      try {
+        const MessageTable = require('@src/models/Message');
+        const messages = await MessageTable.findAll({
+          where: { conversation_id: this.context.conversation_id },
+          order: [['create_at', 'DESC']],
+          limit: 5
+        });
+        // Convert to simple format and reverse to chronological order
+        recentMessages = messages.reverse().map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+      } catch (e) {
+        // No messages yet or error - continue without context
+      }
     }
 
     const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages);
@@ -264,17 +318,68 @@ class AgenticAgent {
     const newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime);
     console.log(`[AgenticAgent] Session started at ${this.sessionStartTime.toISOString()}, found ${newFiles.length} new files`);
 
-    // 创建文件版本
+    // 创建文件版本 - VERSION ALL FILES (not just .html)
     const state = {
       user: { id: this.context.user_id }
     }
-    await createFilesVersion(this.context.conversation_id, newFiles, '.html', state);
+    // Create versions for ALL file types (docx, xlsx, html, etc.)
+    for (const file of newFiles) {
+      try {
+        const FileVersion = require('@src/models/FileVersion');
+        const { extractRelativePath } = require('@src/utils/filePathHelper');
+        const { createVersion } = require('@src/utils/versionManager');
+        
+        const relativePath = extractRelativePath(file.filepath);
+        const fs = require('fs');
+        
+        // Only version if file exists
+        if (fs.existsSync(file.filepath)) {
+          await createVersion(file.filepath, this.context.conversation_id, { state, action: 'Agent Coding' });
+          console.log(`[AgenticAgent] Created version for: ${file.filename}`);
+        }
+      } catch (error) {
+        console.error(`[AgenticAgent] Failed to create version for ${file.filename}:`, error.message);
+      }
+    }
 
-    const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, newFiles, this.context.staticUrl);
+    // CRITICAL FIX: Attach version IDs to files so UI can fetch correct version
+    const FileVersion = require('@src/models/FileVersion');
+    const { extractRelativePath } = require('@src/utils/filePathHelper');
+    const filesWithVersions = await Promise.all(newFiles.map(async (file) => {
+      try {
+        const relativePath = extractRelativePath(file.filepath);
+        const version = await FileVersion.findOne({
+          where: { 
+            conversation_id: this.context.conversation_id,
+            filepath: relativePath,
+            active: true
+          },
+          order: [['create_at', 'DESC']]
+        });
+        
+        return {
+          ...file,
+          version_id: version ? version.id : null,
+          version_number: version ? version.version : null
+        };
+      } catch (error) {
+        console.error('[AgenticAgent] Failed to fetch version for file:', file.filename, error);
+        return file; // Return file without version if fetch fails
+      }
+    }));
+
+    const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id);
     const uuid = uuidv4();
-    await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: newFiles });
+    await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: filesWithVersions });
 
     finalResult.summary = summaryContent;
+    
+    // PHASE 2: Invalidate context after execution completes
+    if (this.conversationContext) {
+      this.conversationContext.invalidate();
+      console.log('[AgenticAgent] Context invalidated after execution');
+    }
+    
     return finalResult;
   }
 
@@ -395,11 +500,24 @@ class AgenticAgent {
 
   async plan(goal = '') {
     try {
-      const files = await File.findAll({ where: { conversation_id: this.context.conversation_id } });
+      // PHASE 2: Use unified context if available, otherwise fallback to old method
+      let files, previousResult, planningContext;
+      
+      if (this.conversationContext) {
+        // New pattern: Get planning context from unified context manager
+        planningContext = this.conversationContext.getPlanningContext();
+        files = planningContext.files;
+        previousResult = planningContext.previousResult;
+        console.log('[AgenticAgent] Using unified context for planning');
+      } else {
+        // Old pattern: Load files and previous result separately (backward compatibility)
+        files = await File.findAll({ where: { conversation_id: this.context.conversation_id } });
+        const conversationDirPath = await this._getConversationDirPath();
+        previousResult = await retrieveAndFormatPreviousSummary(this.context.conversation_id, conversationDirPath);
+        console.log('[AgenticAgent] Using legacy context loading for planning');
+      }
+      
       this.context.files = files;
-
-      const conversationDirPath = await this._getConversationDirPath();
-      const previousResult = await retrieveAndFormatPreviousSummary(this.context.conversation_id, conversationDirPath);
 
       const planning_mode = this.planning_mode;
       const options = {
@@ -409,6 +527,7 @@ class AgenticAgent {
         files,
         previousResult,
         specialistResponse: this.context.specialistResponse, // Pass specialist code to planning
+        planningContext // Pass full planning context for future use
       }
       const plannedTasks = await planning(goal, options) || [];
 

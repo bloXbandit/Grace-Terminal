@@ -9,13 +9,13 @@ const { getDefaultModel } = require('@src/utils/default_model')
 const resolveResultPrompt = require('@src/agent/prompt/generate_result.js');
 
 
-const summary = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null) => {
+const summary = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null, userId = null) => {
   let model_info = await getDefaultModel(conversation_id)
   if (model_info.is_subscribe) {
-    let replay = await summary_server(goal, conversation_id, tasks, generatedFiles, staticUrl)
+    let replay = await summary_server(goal, conversation_id, tasks, generatedFiles, staticUrl, userId)
     return replay
   }
-  let replay = await summary_local(goal, conversation_id, tasks, generatedFiles, staticUrl)
+  let replay = await summary_local(goal, conversation_id, tasks, generatedFiles, staticUrl, userId)
   return replay
 }
 
@@ -33,8 +33,8 @@ const summary_server = async (goal, conversation_id, tasks, generatedFiles = [],
   return res
 };
 
-const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null) => {
-  const prompt = await resolveResultPrompt(goal, tasks, generatedFiles, staticUrl);
+const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null, userId = null) => {
+  const prompt = await resolveResultPrompt(goal, tasks, generatedFiles, staticUrl, userId);
   const result = await call(prompt, conversation_id);
 
   // STRATEGIC: Validate file delivery claims in task summaries

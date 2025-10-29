@@ -919,8 +919,17 @@ ${impl.method} (Confidence: ${impl.confidence})
    * Execute task with automatic specialist routing
    */
   async execute(userMessage, options = {}) {
-    // Build routing context from conversation state
-    const routingContext = await this.buildRoutingContext(userMessage, options);
+    // BACKWARD COMPATIBILITY: Accept pre-built context OR build it ourselves
+    let routingContext;
+    if (options.routingContext) {
+      // New pattern: Context already built by ConversationContext
+      console.log('[Coordinator] Using pre-built routing context');
+      routingContext = options.routingContext;
+    } else {
+      // Old pattern: Build context ourselves (backward compatibility)
+      console.log('[Coordinator] Building routing context (legacy mode)');
+      routingContext = await this.buildRoutingContext(userMessage, options);
+    }
     
     // Detect task type with context
     const taskType = this.detectTaskType(userMessage, routingContext);

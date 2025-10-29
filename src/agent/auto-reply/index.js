@@ -19,6 +19,69 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = []) => 
     return modeCommandResult.message;
   }
   
+  // SPEED OPTIMIZATION: Fast-path detection for obvious task requests
+  // Skip LLM call if it's clearly a file creation/modification request
+  const obviousTaskPatterns = [
+    /create.*\b(file|document|excel|word|spreadsheet|pdf|html|code)\b/i,
+    /make.*\b(file|document|excel|word|spreadsheet|pdf|html)\b/i,
+    /generate.*\b(file|document|excel|word|spreadsheet|pdf|html|code)\b/i,
+    /write.*\b(file|document|excel|word|spreadsheet|pdf|html|code|script|function)\b/i,
+    /build.*\b(app|website|page|dashboard|api)\b/i
+  ];
+  
+  // SPEED OPTIMIZATION: Fast-path for file edits too
+  const fileEditPatterns = [
+    /add.*\b(to|in|into).*\b(document|file|excel|word|spreadsheet|doc)\b/i,
+    /add.*\b(name|author|title|section).*\b(to|in|into|at)\b/i,
+    /update.*\b(document|file|excel|word|spreadsheet|doc)\b/i,
+    /modify.*\b(document|file|excel|word|spreadsheet|doc)\b/i,
+    /change.*\b(in|the).*\b(document|file|excel|word|spreadsheet|doc)\b/i,
+    /edit.*\b(document|file|excel|word|spreadsheet|doc)\b/i,
+    /put.*\b(in|at|into).*\b(document|file|doc|top|bottom)\b/i
+  ];
+  
+  const isObviousTask = obviousTaskPatterns.some(pattern => pattern.test(goal));
+  const isFileEdit = fileEditPatterns.some(pattern => pattern.test(goal));
+  
+  // CRITICAL: For file edits, check if there are files in the conversation
+  // If no files exist, we need to ask for clarification (not fast-path)
+  if (isFileEdit) {
+    // Check if there are recent files in the conversation
+    const hasRecentFiles = messages.length > 0 && messages.some(m => 
+      m.content && (
+        m.content.includes('.docx') || 
+        m.content.includes('.xlsx') ||
+        m.content.includes('.pdf') ||
+        m.content.includes('document') ||
+        m.content.includes('file')
+      )
+    );
+    
+    if (!hasRecentFiles) {
+      console.log('[AutoReply] ⚠️ File edit requested but no files in context - routing to specialist for clarification');
+      // Don't fast-path - let specialist handle the clarification
+    } else {
+      console.log(`[AutoReply] ⚡ Fast-path: File edit with existing files detected`);
+      return {
+        needsExecution: true,
+        specialistResponse: null,
+        specialist: 'fast-path',
+        taskType: 'file_modification',
+        isFileEdit: true
+      };
+    }
+  } else if (isObviousTask) {
+    // File creation - always safe to fast-path
+    console.log(`[AutoReply] ⚡ Fast-path: Obvious task detected, skipping auto-reply LLM call`);
+    return {
+      needsExecution: true,
+      specialistResponse: null,
+      specialist: 'fast-path',
+      taskType: 'data_generation',
+      isFileEdit: false
+    };
+  }
+  
   // Check if we should route to a specialist
   console.log('[AutoReply] Initializing coordinator for goal:', goal.substring(0, 100));
   const coordinator = new MultiAgentCoordinator({
