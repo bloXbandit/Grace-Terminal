@@ -615,21 +615,39 @@ class MultiAgentCoordinator {
           const docFiles = files.filter(f => f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf'));
           
           if (docFiles.length > 0) {
-            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**CRITICAL FILE MODIFICATION RULES:**
-1. **ALWAYS load existing files** - Use \`Document('filename.docx')\` NOT \`Document()\`
-2. **NEVER create new filenames** - Modify and save with the EXACT SAME filename
-3. **NEVER append "_updated" or "_v2"** - User wants the original file modified, not duplicated
-4. **Example CORRECT approach:**
-   \`\`\`python
-   doc = Document('existing_file.docx')  # Load existing
-   # Make modifications
-   doc.save('existing_file.docx')  # Save with SAME name
-   \`\`\`
-5. **Example WRONG approach:**
-   \`\`\`python
-   doc = Document()  # ❌ Creates blank document
-   doc.save('existing_file_updated.docx')  # ❌ Creates duplicate
-   \`\`\``;
+            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**🚨 CRITICAL FILE MODIFICATION RULES - READ CAREFULLY:**
+
+**RULE 1: ALWAYS CHECK FOR EXISTING FILES FIRST**
+- Before creating ANY new file, CHECK if a similar file already exists
+- If user says "add X to the document" → They mean the EXISTING document, not a new one
+- Example: User says "add my name as author" → Load the existing document, don't create a new one
+
+**RULE 2: LOAD EXISTING FILES, DON'T CREATE NEW ONES**
+- ✅ CORRECT: \`doc = Document('love_document.docx')\` - Loads existing
+- ❌ WRONG: \`doc = Document()\` - Creates blank new document
+- If a .docx file exists, you MUST load it with Document('filename.docx')
+
+**RULE 3: SAVE WITH THE EXACT SAME FILENAME**
+- ✅ CORRECT: \`doc.save('love_document.docx')\` - Overwrites original
+- ❌ WRONG: \`doc.save('love_document_with_author.docx')\` - Creates duplicate
+- ❌ WRONG: \`doc.save('love_document_updated.docx')\` - Creates duplicate
+- NEVER append "_updated", "_v2", "_with_author", or any suffix
+
+**RULE 4: COMPLETE EXAMPLE**
+\`\`\`python
+# User says: "add my name as author"
+# Existing file: love_document.docx
+
+# ✅ CORRECT APPROACH:
+doc = Document('love_document.docx')  # Load existing
+doc.paragraphs[0].insert_paragraph_before('Author: Kenny')  # Add name
+doc.save('love_document.docx')  # Save with SAME name
+
+# ❌ WRONG APPROACH:
+doc = Document()  # Creates blank - loses all content!
+doc.add_paragraph('Author: Kenny')
+doc.save('love_document_with_author.docx')  # Creates duplicate!
+\`\`\``;
             
             // Add Word document structure guidance if .docx files exist
             const hasDocx = docFiles.some(f => f.endsWith('.docx'));
