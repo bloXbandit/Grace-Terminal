@@ -439,3 +439,264 @@ doc.save('love_document_with_author.docx')  # Creates duplicate!
 **Status:** All issues fixed and deployed ✅  
 **Last Updated:** October 29, 2025  
 **Next Steps:** Monitor user interactions for any remaining edge cases
+
+---
+
+## 🔍 High-Level Context Architecture Concerns
+
+### **Concern #1: Context Fragmentation Across Components**
+
+**Issue:** Context is built and passed differently across multiple layers without a unified strategy.
+
+**Evidence:**
+1. **AgenticAgent** builds context with:
+   - `recentMessages` (last 5 messages)
+   - `sessionStartTime` (for file filtering)
+   - `specialistResponse` (from auto-reply)
+   - `files` (from File model)
+   - `previousResult` (from conversationHistoryUtils)
+
+2. **MultiAgentCoordinator** builds separate context with:
+   - `hasFiles` (from filesystem scan)
+   - `lastAction` (not implemented)
+   - `isFollowUp` (pronoun detection)
+   - `previousImplementation` (from message scanning)
+
+3. **Thinking/Planning** builds yet another context with:
+   - `memory` (from LocalMemory)
+   - `previousResult` (from Task model)
+   - `uploadFileDescription` (from context.files)
+   - `profileContext` (from user profile)
+
+**Problem:** These contexts don't share data or build on each other - they're independent silos.
+
+**Impact:**
+- Duplicate work (scanning files 3+ times)
+- Inconsistent state (one component sees files, another doesn't)
+- Context loss between phases
+- No cumulative context growth
+
+---
+
+### **Concern #2: No Persistent Context Growth Mechanism**
+
+**Issue:** Context is rebuilt from scratch on every request instead of growing incrementally.
+
+**Evidence:**
+- `buildRoutingContext()` scans messages every time (lines 778-884)
+- `retrieveAndFormatPreviousSummary()` rebuilds conversation history from DB
+- `loadConversationMemory()` reads all tasks from DB
+- No caching or incremental updates
+
+**Problem:** As conversations grow, context building becomes exponentially slower.
+
+**Example:**
+```
+Message 1: Scan 10 messages (10ms)
+Message 10: Scan 100 messages (100ms)
+Message 100: Scan 1000 messages (1000ms)
+```
+
+**Impact:**
+- Performance degradation over long conversations
+- Repeated database queries
+- No learning from previous context builds
+
+---
+
+### **Concern #3: Context Not Passed Between Phases**
+
+**Issue:** Context built in one phase is lost in the next phase.
+
+**Evidence:**
+1. **Auto-Reply Phase:**
+   - Builds `recentMessages` (5 messages)
+   - Passes to coordinator
+   - Coordinator builds own context (ignores recentMessages)
+
+2. **Planning Phase:**
+   - Receives `specialistResponse`
+   - Doesn't receive routing context (hasFiles, previousImplementation)
+   - Rebuilds file list from scratch
+
+3. **Execution Phase:**
+   - LocalMemory stores task-level context
+   - Doesn't have access to conversation-level context
+   - No awareness of files, previous implementations, or user profile
+
+**Problem:** Each phase operates in isolation without cumulative knowledge.
+
+**Impact:**
+- Repeated work
+- Context loss
+- Inconsistent behavior
+
+---
+
+### **Concern #4: File Context Inconsistency**
+
+**Issue:** Files are tracked in 4 different places with different formats.
+
+**Evidence:**
+1. **File Model (Database):**
+   ```javascript
+   files = await File.findAll({ where: { conversation_id } })
+   ```
+
+2. **Filesystem Scan:**
+   ```javascript
+   files = await getAllFilesRecursively(conversationDir)
+   ```
+
+3. **Context.generate_files (Array):**
+   ```javascript
+   this.context.generate_files.push(result.meta.filepath)
+   ```
+
+4. **Session-based Filtering:**
+   ```javascript
+   newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime)
+   ```
+
+**Problem:** No single source of truth for "what files exist in this conversation"
+
+**Impact:**
+- Race conditions (file created but not in DB yet)
+- Stale data (DB has file but filesystem doesn't)
+- Duplicate file detection
+- Inconsistent file lists across components
+
+---
+
+### **Concern #5: Task Context Not Accessible to Specialists**
+
+**Issue:** Specialists don't have access to task history or execution context.
+
+**Evidence:**
+- `callSpecialist()` receives only:
+  - `systemPrompt`
+  - `userMessage`
+  - `options.messages` (conversation history)
+  - `options.routingContext` (hasFiles, previousImplementation)
+
+- Specialists DON'T receive:
+  - Completed tasks and their results
+  - Failed tasks and errors
+  - Task dependencies
+  - Execution memory
+
+**Problem:** Specialists can't learn from previous task outcomes.
+
+**Example:**
+```
+Task 1: Create document (SUCCESS)
+Task 2: Add author name (FAILED - file not found)
+Task 3: Add author name (retry)
+
+Specialist for Task 3 doesn't know Task 2 failed or why
+```
+
+**Impact:**
+- Repeated errors
+- No learning from failures
+- Can't adapt approach based on previous results
+
+---
+
+### **Concern #6: Memory Fragmentation**
+
+**Issue:** Multiple memory systems that don't communicate.
+
+**Evidence:**
+1. **LocalMemory (Task-level):**
+   - Stores messages per task
+   - File-based (JSON)
+   - Cleared after task completion
+
+2. **Message Table (Conversation-level):**
+   - Stores all messages
+   - Database-based
+   - Permanent
+
+3. **Task Table (Task-level):**
+   - Stores task status and results
+   - Database-based
+   - Has `memorized` field (execution details)
+
+4. **Context Object (Runtime-only):**
+   - Stores ephemeral state
+   - Lost after request completes
+
+**Problem:** No unified memory that spans task → conversation → session.
+
+**Impact:**
+- Context loss between tasks
+- Can't reference previous task details
+- No long-term learning
+
+---
+
+### **Concern #7: Profile Context Not Integrated**
+
+**Issue:** User profile exists but isn't consistently used.
+
+**Evidence:**
+- Profile extracted and saved (userProfile.js)
+- Profile loaded in thinking.prompt.js as `profileContext`
+- Profile NOT passed to:
+  - MultiAgentCoordinator
+  - Specialists
+  - Planning phase
+  - Summary phase
+
+**Problem:** User preferences and information not available where needed.
+
+**Example:**
+```
+User profile: name = "Kenny Grey"
+Specialist: Asks "What's your name?" (doesn't have profile access)
+```
+
+**Impact:**
+- Repeated questions
+- Ignoring user preferences
+- Inconsistent personalization
+
+---
+
+## 🎯 Recommended Architecture Changes
+
+### **1. Unified Context Manager**
+Create a `ConversationContext` class that:
+- Builds context once per request
+- Caches results
+- Grows incrementally
+- Shared across all components
+
+### **2. Context Inheritance**
+```
+ConversationContext (top-level)
+  ├─ RoutingContext (for coordinator)
+  ├─ PlanningContext (for planning)
+  ├─ ExecutionContext (for tasks)
+  └─ SpecialistContext (for specialists)
+```
+
+### **3. Single Source of Truth for Files**
+- File registry that syncs DB ↔ Filesystem
+- Real-time updates
+- Consistent across all components
+
+### **4. Task Memory Integration**
+- Pass task history to specialists
+- Include failure reasons
+- Enable learning from previous attempts
+
+### **5. Profile Integration**
+- Pass user profile to all components
+- Use profile for personalization
+- Update profile based on interactions
+
+---
+
+**Priority:** High - These architectural issues compound over long conversations and multi-step tasks
