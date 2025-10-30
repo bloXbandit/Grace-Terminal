@@ -729,6 +729,24 @@ ${impl.method} (Confidence: ${impl.confidence})
         console.log('[Specialist] Adding user profile context');
       }
       
+      // CRITICAL: Extract filename from task description if present
+      let filenameContext = '';
+      if (options.taskDescription) {
+        // Look for .docx, .xlsx, .pdf filenames in task description
+        const filenameMatch = options.taskDescription.match(/([a-zA-Z0-9_-]+\.(docx|xlsx|pdf|pptx))/);
+        if (filenameMatch) {
+          const plannedFilename = filenameMatch[1];
+          filenameContext = `\n\n**🚨 CRITICAL: PLANNED FILENAME**
+The planning phase specified this exact filename: **${plannedFilename}**
+You MUST use this exact filename when creating/saving the file.
+- ✅ CORRECT: \`doc.save('${plannedFilename}')\`
+- ❌ WRONG: Using a different filename creates duplicates and breaks delivery
+
+If this is a delivery task and the file already exists with this name, DO NOT copy or rename it.`;
+          console.log('[Specialist] Extracted planned filename:', plannedFilename);
+        }
+      }
+      
       // Build context - use existing messages if provided, otherwise create new
       let contextMessages;
       if (options.messages && options.messages.length > 0) {
@@ -736,14 +754,14 @@ ${impl.method} (Confidence: ${impl.confidence})
         contextMessages = [...options.messages];
         // Replace first message if it's a system message, otherwise prepend
         if (contextMessages[0]?.role === 'system') {
-          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext };
+          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext };
         } else {
-          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext });
+          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext });
         }
       } else {
-        // No conversation history, create simple context
+        // Create new context with system prompt and user message
         contextMessages = [
-          { role: 'system', content: fullSystemPrompt + existingFilesContext + userProfileContext },
+          { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext },
           { role: 'user', content: userMessage }
         ];
       }

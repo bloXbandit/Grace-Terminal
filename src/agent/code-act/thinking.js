@@ -117,8 +117,13 @@ const thinking_local = async (requirement, context = {}) => {
   if (context.coordinator && context.enableSpecialistRouting && !isSimpleExecution && !isRetryOrReflection) {
     console.log('[Thinking] Using specialist routing for complex task...');
     try {
+      // Pass task description to specialist for filename extraction
+      const specialistOptions = {
+        ...options,
+        taskDescription: context.task?.description || context.task?.requirement || ''
+      };
       // Use execute method which auto-detects task type and routes to specialist
-      const result = await context.coordinator.execute(prompt, options);
+      const result = await context.coordinator.execute(prompt, specialistOptions);
       // Extract content from specialist response
       content = result.result || result.content || result;
     } catch (error) {

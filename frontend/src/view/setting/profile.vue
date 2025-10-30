@@ -17,6 +17,7 @@
             type="text"
             placeholder="What should Grace call you?"
             @blur="saveField('name')"
+            @focus="originalValues.name = profile.name"
           />
           <span class="field-hint">This is how Grace will address you</span>
         </div>
@@ -136,6 +137,7 @@ const profile = ref({
   location: ''
 });
 
+const originalValues = ref({});
 const learnedProfile = ref([]);
 
 // Listen for real-time profile updates from chat extraction
@@ -181,6 +183,12 @@ const saveField = async (key) => {
   const value = profile.value[key];
   if (!value || value.trim() === '') return;
   
+  // CRITICAL FIX: Only save if value actually changed
+  if (originalValues.value[key] === value) {
+    console.log(`[Profile] No change detected for ${key}, skipping save`);
+    return;
+  }
+  
   try {
     const response = await http.post('/api/users/profile', {
       key,
@@ -190,13 +198,12 @@ const saveField = async (key) => {
     });
     
     if (response.data && response.data.success) {
-      // FIX #2: Don't reload - trust the save and let v-model handle UI
-      // This prevents race conditions and UI flickering
       console.log(`[Profile] Saved ${key}: ${value.trim()}`);
       
       // Only refresh learned profile section (not form fields)
       const learnedResponse = await http.get('/api/users/profile');
       if (learnedResponse.data && learnedResponse.data.success) {
+        // Only show items learned from conversations (not settings)
         learnedProfile.value = learnedResponse.data.profile.filter(
           item => item.source && item.source.startsWith('conversation')
         );
@@ -311,6 +318,8 @@ onMounted(() => {
   font-size: 14px;
   transition: border-color 0.2s;
   font-family: inherit;
+  background: #f8f9ff;
+  color: #333;
 }
 
 .form-group input:focus,

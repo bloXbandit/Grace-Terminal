@@ -101,6 +101,18 @@
                       </a-menu>
                     </template>
                   </a-dropdown>
+                  
+                  <!-- Computer Preview Button -->
+                  <a-button class="computer-button" @click="openComputerPreview">
+                    <template #icon>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                      </svg>
+                    </template>
+                    Computer
+                  </a-button>
                 </div>
               </div>
 
@@ -426,6 +438,11 @@ const updateAgent = async () => {
   }
 };
 
+// Computer Preview
+const openComputerPreview = () => {
+  emitter.emit("openComputerPreview");
+};
+
 // -------------- 函数定义 ------------------
 
 const closeModal = () => {
@@ -701,6 +718,18 @@ const keydown = (e) => {
   background-color: #e6f7ff;
   border-color: #1890ff !important;
   color: #1890ff;
+}
+
+.computer-button {
+  border-color: #0000000f;
+  border-radius: 6px;
+  margin-left: 8px;
+}
+
+.computer-button:hover {
+  background-color: #f5f5f5;
+  border-color: #667eea !important;
+  color: #667eea;
 }
 
 :deep(.ant-dropdown-menu-title-content) {

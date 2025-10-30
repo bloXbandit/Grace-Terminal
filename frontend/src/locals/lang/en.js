@@ -399,9 +399,9 @@ export default {
       saveToGoogleDrivePending: "Save to Google Drive feature is under development."
     },
     preview: {
-      title: "Lemon's computer",
+      title: "Grace's computer",
       openVsCode: "VS Code",
-      using: "Lemon is using",
+      using: "Grace is using",
       performing: "Performing",
       previousStep: "Previous step",
       nextStep: "Next step",

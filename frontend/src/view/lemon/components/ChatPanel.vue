@@ -30,6 +30,7 @@ import { useChatStore } from "@/store/modules/chat";
 import fullPreview from "@/components/preview/fullPreview.vue";
 import Down from "@/assets/svg/down.svg";
 import fileClass from "@/components/preview/fileClass.vue";
+import emitter from "@/utils/emitter";
 const chatStore = useChatStore();
 import { storeToRefs } from "pinia";
 import { useRoute } from "vue-router";
@@ -98,6 +99,15 @@ onMounted(() => {
       isShowScrollToBottom.value = true;
     } else {
       isShowScrollToBottom.value = false;
+    }
+  });
+  
+  // Listen for computer preview open event
+  emitter.on("openComputerPreview", () => {
+    // Trigger the latest action preview
+    const lastAction = messages.value?.[messages.value.length - 1];
+    if (lastAction) {
+      emitter.emit("preview", { message: lastAction });
     }
   });
 });
