@@ -682,12 +682,24 @@ author_para = title_para.insert_paragraph_after('Author: [USER NAME FROM PROFILE
 author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 \`\`\`
 
-**🚨 CRITICAL: FILE MODIFICATION - LOAD THE CORRECT FILE:**
-When modifying an existing document:
-- ✅ CORRECT: Load the MOST RECENT version: \`doc = Document('current_file.docx')\`
-- ✅ CORRECT: Save to SAME filename: \`doc.save('current_file.docx')\`
-- ❌ WRONG: Loading old version: \`doc = Document('old_file.docx')\` then saving as new name
-- ❌ WRONG: This overwrites all previous changes!
+**🚨 CRITICAL: REVISION vs CREATION:**
+
+**IF THIS IS A REVISION** (task contains "add", "update", "modify", "edit", "change", "load existing"):
+1. ✅ MUST LOAD existing file first: \`doc = Document('${docFiles[0] || 'existing_file.docx'}')\`
+2. ✅ Apply ONLY the requested changes (do not recreate content)
+3. ✅ Save to SAME filename: \`doc.save('${docFiles[0] || 'existing_file.docx'}')\`
+4. ❌ DO NOT recreate the entire document from scratch
+5. ❌ DO NOT change the filename
+6. ❌ DO NOT overwrite existing content that wasn't mentioned
+
+**IF THIS IS NEW CREATION** (task says "create", "generate", "make new"):
+1. ✅ Create new document: \`doc = Document()\`
+2. ✅ Use filename from task description
+3. ✅ Build complete content as specified
+
+**FILE MODIFICATION EXAMPLES:**
+- ✅ CORRECT: Load → Modify → Save same name
+- ❌ WRONG: Create new → Overwrites previous work
 
 When user says "add X at the bottom" or "at the end":
 - ✅ CORRECT: Use \`doc.add_paragraph(text)\` to append at end

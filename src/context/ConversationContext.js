@@ -283,6 +283,7 @@ class ConversationContext {
     return {
       hasFiles: (this.cache.files?.length || 0) > 0,
       files: this.cache.files || [],
+      mostRecentFile: this.cache.files?.[0]?.file_name || null,
       recentMessages: this.cache.messages?.slice(-10) || [],
       previousImplementation: this._detectPreviousImplementationSync(),
       profile: this.cache.profile,
