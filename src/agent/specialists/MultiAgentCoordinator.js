@@ -667,14 +667,27 @@ When user says "add X at the top" or "underneath title":
 - ❌ WRONG: \`insert_paragraph_before()\` - This puts content BEFORE title (opposite of request!)
 - ❌ WRONG: \`doc.add_paragraph()\` - This adds at END, not top
 
-Example for "add author underneath title":
+**🚨 CRITICAL: ALWAYS USE USER'S NAME FROM PROFILE:**
+When user says "add me as author" or "my name":
+- ✅ CORRECT: Extract name from USER PROFILE CONTEXT section (see below)
+- ❌ WRONG: Using "Grace AI" or "Grace" as the author name
+- ❌ WRONG: Hardcoding any name - ALWAYS use the profile name
+
+Example for "add me as author underneath title":
 \`\`\`python
 # Find title (usually first paragraph or first Heading)
 title_para = doc.paragraphs[0]  # or find first Heading
-# Insert AFTER title
-author_para = title_para.insert_paragraph_after('Author Name')
+# Insert AFTER title using USER'S NAME from profile
+author_para = title_para.insert_paragraph_after('Author: [USER NAME FROM PROFILE]')
 author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 \`\`\`
+
+**🚨 CRITICAL: FILE MODIFICATION - LOAD THE CORRECT FILE:**
+When modifying an existing document:
+- ✅ CORRECT: Load the MOST RECENT version: \`doc = Document('current_file.docx')\`
+- ✅ CORRECT: Save to SAME filename: \`doc.save('current_file.docx')\`
+- ❌ WRONG: Loading old version: \`doc = Document('old_file.docx')\` then saving as new name
+- ❌ WRONG: This overwrites all previous changes!
 
 When user says "add X at the bottom" or "at the end":
 - ✅ CORRECT: Use \`doc.add_paragraph(text)\` to append at end
