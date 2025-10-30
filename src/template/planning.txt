@@ -38,14 +38,15 @@ If [User Requirement] is in English, then the output language must be in English
 5.  **🚨 CRITICAL - Revision Detection:**
     When user requests modifications to existing work (keywords: "add", "update", "modify", "edit", "change", "revise", "insert", "put"), you MUST:
     - Reference the specific file that was previously created (check [Uploaded files] or conversation history)
-    - Instruct the specialist to LOAD the existing file first before making changes
+    - Instruct the specialist to LOAD the most recent version of the file first
     - Specify the exact changes to apply (do not recreate the entire document)
-    - Use the same filename for saving (preserve the original filename)
+    - System will automatically create versioned files (file.docx → file_updated.docx → file_updated_v2.docx)
+    - Each revision preserves previous versions so users can access all versions
     
     **Example - ✅ CORRECT Revision Task:**
-    "Load the existing saturn.docx file and add 'Author: Kenny Grey' at the top using python-docx. Save to the same filename saturn.docx."
+    "Load the most recent saturn.docx file and add 'Author: Kenny Grey' at the top using python-docx."
     
-    **Example - ❌ WRONG (creates duplicate):**
+    **Example - ❌ WRONG (recreates from scratch):**
     "Create a Word document about Saturn with author name Kenny Grey"
     
     **Revision Keywords to Detect:**

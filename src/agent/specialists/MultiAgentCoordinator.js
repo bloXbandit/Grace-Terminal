@@ -685,21 +685,25 @@ author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 **🚨 CRITICAL: REVISION vs CREATION:**
 
 **IF THIS IS A REVISION** (task contains "add", "update", "modify", "edit", "change", "load existing"):
-1. ✅ MUST LOAD existing file first: \`doc = Document('${docFiles[0] || 'existing_file.docx'}')\`
+1. ✅ MUST LOAD the most recent version: \`doc = Document('${docFiles[0] || 'existing_file.docx'}')\`
 2. ✅ Apply ONLY the requested changes (do not recreate content)
-3. ✅ Save to SAME filename: \`doc.save('${docFiles[0] || 'existing_file.docx'}')\`
+3. ✅ Save with descriptive name: \`doc.save('filename.docx')\` (system will auto-version)
 4. ❌ DO NOT recreate the entire document from scratch
-5. ❌ DO NOT change the filename
-6. ❌ DO NOT overwrite existing content that wasn't mentioned
+5. ❌ DO NOT overwrite existing content that wasn't mentioned
 
 **IF THIS IS NEW CREATION** (task says "create", "generate", "make new"):
 1. ✅ Create new document: \`doc = Document()\`
 2. ✅ Use filename from task description
 3. ✅ Build complete content as specified
 
+**VERSION HISTORY:**
+- System automatically creates versioned files: \`file.docx\` → \`file_updated.docx\` → \`file_updated_v2.docx\`
+- Each revision preserves previous versions in the task folder
+- Users can access all versions in "View All Files"
+
 **FILE MODIFICATION EXAMPLES:**
-- ✅ CORRECT: Load → Modify → Save same name
-- ❌ WRONG: Create new → Overwrites previous work
+- ✅ CORRECT: Load most recent → Modify → Save (auto-versioned)
+- ❌ WRONG: Create new from scratch → Loses previous work
 
 When user says "add X at the bottom" or "at the end":
 - ✅ CORRECT: Use \`doc.add_paragraph(text)\` to append at end
