@@ -47,11 +47,15 @@ const WebSearchTool = {
      */
     execute: async ({ query, num_results = 3, conversation_id = "" }) => {
         try {
-            // 如果设置了，默认走设置
+            // OPTIMIZATION: Cap search results to reduce token usage and API costs
+            // Default to 3 results max, even if user setting is higher
             let userSearchSetting = await UserSearchSetting.findOne()
-            num_results = userSearchSetting.dataValues.result_count || 3
+            const userPreferredCount = userSearchSetting.dataValues.result_count || 3
+            
+            // Cap at 3 results to prevent overwhelming the model with too much text
+            num_results = Math.min(userPreferredCount, 3)
 
-            console.log(`[WebSearchTool] Searching for: "${query}" (max ${num_results} results)`);
+            console.log(`[WebSearchTool] Searching for: "${query}" (max ${num_results} results, user preferred: ${userPreferredCount})`);
             if (!query || typeof query !== 'string' || query.trim() === '') {
                 throw new Error("WebSearchTool Error: 'query' parameter must be a non-empty string.");
             }

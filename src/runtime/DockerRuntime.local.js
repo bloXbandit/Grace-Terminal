@@ -341,6 +341,28 @@ class DockerRuntime {
             action.params.file_path = path.join(__dirname, '../../workspace', `user_${this.user_id}`, dir_name, action.params.file_path)
           }
           console.log('DockerRuntime.execute_action.tool', tool.name, params);
+          
+          // PROGRESS MESSAGES: Send feedback for long-running tools
+          if (tool.name === 'web_search' && context.onTokenStream) {
+            console.log('[Runtime] 🔍 Sending progress message for web search');
+            const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+            
+            const searchMessages = [
+              'Searching the web...',
+              'Looking that up...',
+              'Finding info online...',
+              'Checking the web...'
+            ];
+            const randomMessage = searchMessages[Math.floor(Math.random() * searchMessages.length)];
+            
+            await sendProgressMessage(
+              context.onTokenStream,
+              context.conversation_id,
+              randomMessage,
+              'progress'
+            );
+          }
+          
           try {
             const execute = tool.execute;
             params.conversation_id = context.conversation_id
