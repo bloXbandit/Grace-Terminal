@@ -294,12 +294,12 @@ class DockerRuntime {
           
           // Personality: Random edgy heartbeat messages
           const heartbeatMessages = [
-            '💫 Cooking up your document...',
-            '✨ Crafting this masterpiece...',
-            '🔨 Building your file right now...',
-            '🎯 Putting this together...',
+            'Cooking up your document...',
+            'Crafting this masterpiece...',
+            'Building your file right now...',
+            'Putting this together...',
             '💥 Making it happen...',
-            '🚀 Document in progress...'
+            'Document in progress...'
           ];
           const randomMessage = heartbeatMessages[Math.floor(Math.random() * heartbeatMessages.length)];
           

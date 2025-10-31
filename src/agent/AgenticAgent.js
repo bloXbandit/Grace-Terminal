@@ -467,12 +467,12 @@ class AgenticAgent {
             
             // Personality: Random edgy pre-fill messages
             const preFillMessages = [
-              '⚡ On it! Spinning up the doc generator...',
-              '🎯 Got it. Let me cook this up real quick...',
-              '⚡ Say less. Document incoming...',
+              'On it! Spinning up the doc generator...',
+              'Got it. Let me cook this up real quick...',
+              'Say less. Document incoming...',
               '🔥 Bet. Firing up the engines...',
-              '⚡ Already on it. Give me a sec...',
-              '🎨 Alright, let\'s make this happen...'
+              'Already on it. Give me a sec...',
+              'Alright, let\'s make this happen...'
             ];
             const randomMessage = preFillMessages[Math.floor(Math.random() * preFillMessages.length)];
             
