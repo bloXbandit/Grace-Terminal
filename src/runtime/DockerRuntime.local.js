@@ -291,10 +291,22 @@ class DockerRuntime {
         if (isPythonDocGeneration && context.onTokenStream) {
           console.log('[Runtime] 📄 Sending heartbeat for document generation');
           const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          
+          // Personality: Random edgy heartbeat messages
+          const heartbeatMessages = [
+            '💫 Cooking up your document...',
+            '✨ Crafting this masterpiece...',
+            '🔨 Building your file right now...',
+            '🎯 Putting this together...',
+            '💥 Making it happen...',
+            '🚀 Document in progress...'
+          ];
+          const randomMessage = heartbeatMessages[Math.floor(Math.random() * heartbeatMessages.length)];
+          
           await sendProgressMessage(
             context.onTokenStream,
             context.conversation_id,
-            '📄 Generating document...',
+            randomMessage,
             'progress'
           );
         }

@@ -464,10 +464,22 @@ class AgenticAgent {
           if (autoReplyResult.taskType === 'simple_data_generation') {
             console.log('[AgenticAgent] ⚡ Sending pre-fill message for simple doc generation');
             const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+            
+            // Personality: Random edgy pre-fill messages
+            const preFillMessages = [
+              '⚡ On it! Spinning up the doc generator...',
+              '🎯 Got it. Let me cook this up real quick...',
+              '⚡ Say less. Document incoming...',
+              '🔥 Bet. Firing up the engines...',
+              '⚡ Already on it. Give me a sec...',
+              '🎨 Alright, let\'s make this happen...'
+            ];
+            const randomMessage = preFillMessages[Math.floor(Math.random() * preFillMessages.length)];
+            
             await sendProgressMessage(
               this.onTokenStream,
               this.context.conversation_id,
-              '⚡ Preparing your document...',
+              randomMessage,
               'progress'
             );
           }
