@@ -461,22 +461,45 @@ class AgenticAgent {
         if (directCompletionTasks.includes(autoReplyResult.taskType)) {
           console.log('[AgenticAgent] Direct completion task - checking if needs pre-fill');
           
-          // SPEED OPTIMIZATION: Send pre-fill message for simple_data_generation
+          // SPEED OPTIMIZATION: Send pre-fill messages for tasks with potential wait times
           // This shows user we're working while specialist response is being processed
-          if (autoReplyResult.taskType === 'simple_data_generation') {
-            console.log('[AgenticAgent] ⚡ Sending pre-fill message for simple doc generation');
-            const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
-            
-            // Personality: Random edgy pre-fill messages
-            const preFillMessages = [
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          
+          // Task-specific pre-fill messages
+          const preFillMessagesByType = {
+            simple_data_generation: [
               'On it! Spinning up the doc generator...',
               'Got it. Let me cook this up real quick...',
               'Say less. Document incoming...',
               '🔥 Bet. Firing up the engines...',
               'Already on it. Give me a sec...',
               'Alright, let\'s make this happen...'
-            ];
-            const randomMessage = preFillMessages[Math.floor(Math.random() * preFillMessages.length)];
+            ],
+            creative_writing: [
+              'Alright, let me get creative...',
+              'On it! Crafting something good...',
+              'Say less. Let me write this up...',
+              'Got it. Time to create...',
+              'Already on it. Give me a moment...'
+            ],
+            code_review: [
+              'Reviewing the code now...',
+              'On it! Let me analyze this...',
+              'Got it. Checking the code...',
+              'Already reviewing...'
+            ],
+            brainstorming: [
+              'Let me think on this...',
+              'Alright, brainstorming mode activated...',
+              'Got it. Let me come up with some ideas...',
+              'On it! Thinking...'
+            ]
+          };
+          
+          const messages = preFillMessagesByType[autoReplyResult.taskType];
+          if (messages) {
+            console.log(`[AgenticAgent] ⚡ Sending pre-fill message for ${autoReplyResult.taskType}`);
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
             
             await sendProgressMessage(
               this.onTokenStream,
@@ -496,6 +519,58 @@ class AgenticAgent {
         // For tasks needing tools (code/data/file generation, math, research, etc.)
         // Specialist provides guidance, then we continue to planning for tool execution
         console.log('[AgenticAgent] Task requires tools - continuing to planning for execution');
+        
+        // SPEED OPTIMIZATION: Send pre-fill for tasks going to planning
+        // Show user we're working while planning happens
+        if (autoReplyResult && autoReplyResult.taskType) {
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          
+          const planningPreFillMessages = {
+            complex_reasoning: [
+              'Alright, let me think through this...',
+              'On it! Working through the logic...',
+              'Got it. Let me reason this out...',
+              'Already analyzing...'
+            ],
+            code_generation: [
+              'On it! Setting up the code...',
+              'Got it. Let me build this...',
+              'Already coding...',
+              'Alright, let me write this up...'
+            ],
+            mathematical_reasoning: [
+              'On it! Crunching the numbers...',
+              'Got it. Let me solve this...',
+              'Already calculating...',
+              'Alright, working on the math...'
+            ],
+            data_generation: [
+              'On it! Generating the data...',
+              'Got it. Let me create this...',
+              'Already building...',
+              'Alright, setting this up...'
+            ],
+            web_research: [
+              'On it! Searching for info...',
+              'Got it. Let me look this up...',
+              'Already researching...',
+              'Alright, finding what you need...'
+            ]
+          };
+          
+          const messages = planningPreFillMessages[autoReplyResult.taskType];
+          if (messages) {
+            console.log(`[AgenticAgent] ⚡ Sending planning pre-fill for ${autoReplyResult.taskType}`);
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+            
+            await sendProgressMessage(
+              this.onTokenStream,
+              this.context.conversation_id,
+              randomMessage,
+              'progress'
+            );
+          }
+        }
         
         // For other tasks, specialist provided initial response but may need follow-up
         console.log('[AgenticAgent] Specialist provided initial response, checking if follow-up needed');
