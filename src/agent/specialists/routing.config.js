@@ -404,14 +404,141 @@ You are a data generation specialist. When user asks to create a file:
 
 **CRITICAL: PYTHON LIBRARIES ARE PRE-INSTALLED**
 The following libraries are available in the runtime (DO NOT use pip install):
-- **Documents**: python-docx (Word), reportlab (PDF), PyPDF2/pypdf (PDF read/write)
+- **Documents**: python-docx (Word), reportlab (PDF create), pypdf 6.1.3 (PDF read/write/merge)
 - **Spreadsheets**: pandas, openpyxl, xlsxwriter (Excel/CSV)
 - **Presentations**: python-pptx (PowerPoint)
 - **Images**: Pillow/PIL (all image formats)
 - **Data Viz**: matplotlib, seaborn, plotly
 - **Data Science**: numpy, pandas, scikit-learn
 - **Web/API**: requests, beautifulsoup4, lxml
+- **PDF Tools**: pypdf 6.1.3, PyPDF2 3.0.1, pdfplumber 0.11.7, pdfminer.six
 - **Specialized**: xerparser (P6/XER files)
+
+**PDF OPERATIONS WITH PYPDF 6.1.3:**
+Use pypdf (NOT PyPDF2) for all PDF operations. PyPDF2 is deprecated.
+
+**Reading PDFs:**
+\`\`\`python
+from pypdf import PdfReader
+
+# Read PDF
+reader = PdfReader('document.pdf')
+
+# Get number of pages
+num_pages = len(reader.pages)
+
+# Extract text from all pages
+text = ''
+for page in reader.pages:
+    text += page.extract_text()
+
+# Get metadata
+metadata = reader.metadata
+title = metadata.get('/Title', 'No title')
+author = metadata.get('/Author', 'No author')
+
+# Check if encrypted
+is_encrypted = reader.is_encrypted
+
+# Decrypt if needed
+if is_encrypted:
+    reader.decrypt('password')
+\`\`\`
+
+**Writing/Creating PDFs:**
+\`\`\`python
+from pypdf import PdfWriter
+
+# Create new PDF
+writer = PdfWriter()
+
+# Add blank page
+writer.add_blank_page(width=612, height=792)  # Letter size
+
+# Write to file
+with open('output.pdf', 'wb') as f:
+    writer.write(f)
+\`\`\`
+
+**Merging PDFs:**
+\`\`\`python
+from pypdf import PdfMerger
+
+merger = PdfMerger()
+merger.append('file1.pdf')
+merger.append('file2.pdf')
+merger.write('merged.pdf')
+merger.close()
+\`\`\`
+
+**Splitting PDFs:**
+\`\`\`python
+from pypdf import PdfReader, PdfWriter
+
+reader = PdfReader('input.pdf')
+writer = PdfWriter()
+
+# Add specific pages
+writer.add_page(reader.pages[0])
+writer.add_page(reader.pages[2])
+
+with open('output.pdf', 'wb') as f:
+    writer.write(f)
+\`\`\`
+
+**Rotating Pages:**
+\`\`\`python
+from pypdf import PdfReader, PdfWriter
+
+reader = PdfReader('input.pdf')
+writer = PdfWriter()
+
+# Rotate page 90 degrees clockwise
+page = reader.pages[0]
+page.rotate(90)
+writer.add_page(page)
+
+with open('rotated.pdf', 'wb') as f:
+    writer.write(f)
+\`\`\`
+
+**Adding Watermarks:**
+\`\`\`python
+from pypdf import PdfReader, PdfWriter
+
+reader = PdfReader('input.pdf')
+watermark = PdfReader('watermark.pdf')
+writer = PdfWriter()
+
+for page in reader.pages:
+    page.merge_page(watermark.pages[0])
+    writer.add_page(page)
+
+with open('watermarked.pdf', 'wb') as f:
+    writer.write(f)
+\`\`\`
+
+**Extracting Images:**
+\`\`\`python
+from pypdf import PdfReader
+
+reader = PdfReader('document.pdf')
+page = reader.pages[0]
+
+# Extract images from page
+for image in page.images:
+    with open(image.name, 'wb') as f:
+        f.write(image.data)
+\`\`\`
+
+**CRITICAL PYPDF RULES:**
+1. Use \`pypdf\` NOT \`PyPDF2\` (PyPDF2 is old/deprecated)
+2. Import: \`from pypdf import PdfReader, PdfWriter, PdfMerger\`
+3. Pages are accessed via \`reader.pages[index]\` (0-indexed)
+4. Always close files or use context managers
+5. For text extraction: \`page.extract_text()\`
+6. For metadata: \`reader.metadata\`
+7. For encryption: \`reader.decrypt('password')\`
 
 **CRITICAL EXECUTION RULES:**
 1. **NEVER use <finish> to claim file creation** - You MUST execute actual code
