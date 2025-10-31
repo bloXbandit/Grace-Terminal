@@ -341,6 +341,38 @@ router.post("/run", async (ctx, next) => {
       stream.end();
     };
 
+    // INTERRUPTIBLE EXECUTION: Check if conversation already has active agent
+    const existingExecution = activeAgents.get(conversation_id);
+    if (existingExecution) {
+      console.log(`[Run] ⚠️ Conversation ${conversation_id} already has active execution ${existingExecution.executionId}`);
+      
+      // Send notification to user
+      const notificationMsg = Message.format({
+        role: 'system',
+        status: 'success',
+        content: '⚡ Hold up! I\'m still working on your previous request. Let me finish that first...',
+        action_type: 'progress',
+        task_id: conversation_id
+      });
+      onTokenStream(notificationMsg);
+      await Message.saveToDB(notificationMsg, conversation_id);
+      
+      // Queue this request (save it but don't execute yet)
+      const queuedMsg = Message.format({
+        role: 'user',
+        status: 'success',
+        content: question,
+        action_type: 'question',
+        task_id: conversation_id,
+        json: newFiles
+      });
+      await Message.saveToDB(queuedMsg, conversation_id);
+      
+      // End stream - request is queued
+      stream.end();
+      return;
+    }
+    
     // 保存用户消息 (智能体模式)
     const msg = Message.format({
       role: 'user',
@@ -353,8 +385,16 @@ router.post("/run", async (ctx, next) => {
     const message = await Message.saveToDB(msg, conversation_id);
     // await syncQuestionVectorData(message.id,question,conversation_id)
 
+    // TASK ID TAGGING: Generate unique execution ID for this agent run
+    // This allows UI to distinguish between overlapping streams
+    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[Run] Starting execution ${executionId} for conversation ${conversation_id}`);
+    
+    // Add execution ID to context so all messages from this run are tagged
+    context.executionId = executionId;
+
     const agent = new AgenticAgent(context);
-    activeAgents.set(conversation_id, agent);
+    activeAgents.set(conversation_id, { agent, executionId, startTime: Date.now() });
 
     const startTime = Date.now();
     agent.run(question).then(async (content) => {
@@ -363,6 +403,7 @@ router.post("/run", async (ctx, next) => {
       // SEAL: Log successful task execution
       try {
         const conversation = await Conversation.findOne({ where: { conversation_id } });
+        const execution = activeAgents.get(conversation_id);
         await TaskLogger.logTask({
           user_id: ctx.state.user?.id || 1,
           conversation_id,
@@ -371,10 +412,10 @@ router.post("/run", async (ctx, next) => {
           input_data: { question, mode, files: newFiles },
           output_data: { content },
           model_used: conversation?.model_id || 'default',
-          execution_time_ms: Date.now() - startTime,
+          execution_time_ms: execution ? Date.now() - execution.startTime : Date.now() - startTime,
           success: true,
           tools_used: agent.toolsUsed || [],
-          metadata: { agent_id, mode }
+          metadata: { agent_id, mode, executionId: execution?.executionId }
         });
       } catch (logError) {
         console.error('SEAL logging error:', logError);
@@ -402,7 +443,7 @@ router.post("/run", async (ctx, next) => {
           success: false,
           error_message: error.message,
           tools_used: [],
-          metadata: { agent_id, mode }
+          metadata: { agent_id, mode, executionId }
         });
       } catch (logError) {
         console.error('SEAL logging error:', logError);
@@ -545,7 +586,9 @@ async function getFinalFile(dir_path) {
 router.post("/stop", async ({ state, request, response }) => {
   const { conversation_id } = request.body || {};
 
-  const agent = activeAgents.get(conversation_id);
+  // INTERRUPTIBLE EXECUTION: Get execution object (contains agent, executionId, startTime)
+  const execution = activeAgents.get(conversation_id);
+  const agent = execution?.agent;
 
   await Conversation.update({ status: 'stop' }, { where: { conversation_id: conversation_id } });
   await closeContainer(state.user.id)
@@ -556,6 +599,8 @@ router.post("/stop", async ({ state, request, response }) => {
 
   if (agent) {
     try {
+      console.log(`[Stop] Stopping execution ${execution.executionId} for conversation ${conversation_id}`);
+      
       if (typeof agent.stop === 'function') {
         await agent.stop();
         activeAgents.delete(conversation_id);
@@ -565,7 +610,7 @@ router.post("/stop", async ({ state, request, response }) => {
           await updateAgentRecommend(conversation_id, agent_id);
         }
 
-        response.success('Agent is stopped')
+        response.success(`Agent execution ${execution.executionId} stopped`)
       } else {
         response.fail('Agent has no stop method')
       }
@@ -573,7 +618,7 @@ router.post("/stop", async ({ state, request, response }) => {
       response.fail(`Error stopping Agent ${conversation_id}: ${error.message}`)
     }
   } else {
-    response.fail(`Agent with conversation_id ${conversation_id} not found`)
+    response.fail(`No active agent found for conversation ${conversation_id}`)
   }
 });
 
