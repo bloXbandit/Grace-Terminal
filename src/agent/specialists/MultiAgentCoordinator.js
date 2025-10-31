@@ -652,34 +652,68 @@ doc.save('love_document_with_author.docx')  # Creates duplicate!
             // Add Word document structure guidance if .docx files exist
             const hasDocx = docFiles.some(f => f.endsWith('.docx'));
             if (hasDocx) {
-              existingFilesContext += `\n\n**WORD DOCUMENT STRUCTURE BEST PRACTICES:**
-- Content can be in THREE locations: header, body, or footer
-- To access header: \`doc.sections[0].header.paragraphs\`
-- To access body: \`doc.paragraphs\`
-- To access footer: \`doc.sections[0].footer.paragraphs\`
-- When moving/removing content, check ALL three locations
-- Example: If moving author from header to footer, remove from header first, then add to footer
+              existingFilesContext += `\n\n**PYTHON-DOCX COMPLETE REFERENCE:**
 
-**🚨 CRITICAL: DOCUMENT POSITIONING - READ CAREFULLY:**
-When user says "add X at the top" or "underneath title":
-- ✅ CORRECT: Use \`insert_paragraph_after()\` on the title paragraph
-- ✅ CORRECT: Use \`doc.paragraphs.insert(title_idx + 1, text)\` to insert AFTER title
-- ❌ WRONG: \`insert_paragraph_before()\` - This puts content BEFORE title (opposite of request!)
-- ❌ WRONG: \`doc.add_paragraph()\` - This adds at END, not top
-
-**🚨 CRITICAL: ALWAYS USE USER'S NAME FROM PROFILE:**
-When user says "add me as author" or "my name":
-- ✅ CORRECT: Extract name from USER PROFILE CONTEXT section (see below)
-- ❌ WRONG: Using "Grace AI" or "Grace" as the author name
-- ❌ WRONG: Hardcoding any name - ALWAYS use the profile name
-
-Example for "add me as author underneath title":
+**1. OPENING/CREATING:**
 \`\`\`python
-# Find title (usually first paragraph or first Heading)
-title_para = doc.paragraphs[0]  # or find first Heading
-# Insert AFTER title using USER'S NAME from profile
-author_para = title_para.insert_paragraph_after('Author: [USER NAME FROM PROFILE]')
-author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+from docx import Document
+doc = Document()  # New blank
+doc = Document('file.docx')  # Open existing
+\`\`\`
+
+**2. ADDING CONTENT:**
+\`\`\`python
+doc.add_paragraph('Text')  # Add at end
+doc.add_paragraph('Bullet', style='ListBullet')  # With style
+para.insert_paragraph_before('Above')  # Insert before
+doc.add_heading('Title', level=1)  # Heading (0=Title, 1-9=levels)
+doc.add_page_break()  # Page break
+\`\`\`
+
+**3. TEXT FORMATTING:**
+\`\`\`python
+para = doc.add_paragraph('Normal ')
+para.add_run('bold').bold = True
+para.add_run(' and ')
+para.add_run('italic').italic = True
+\`\`\`
+
+**4. TABLES:**
+\`\`\`python
+table = doc.add_table(rows=2, cols=3)
+cell = table.cell(0, 1)  # Access cell
+cell.text = 'Content'
+row = table.rows[1]  # Access row
+row.cells[0].text = 'Data'
+table.add_row()  # Add row
+table.style = 'LightShading-Accent1'  # Apply style
+\`\`\`
+
+**5. IMAGES:**
+\`\`\`python
+doc.add_picture('image.png')
+from docx.shared import Inches
+doc.add_picture('img.png', width=Inches(2.0))
+\`\`\`
+
+**6. ALIGNMENT:**
+\`\`\`python
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+para.alignment = WD_ALIGN_PARAGRAPH.CENTER  # or LEFT, RIGHT, JUSTIFY
+\`\`\`
+
+**7. COMMON REVISION PATTERNS:**
+\`\`\`python
+# Add author after title
+title = doc.paragraphs[0]
+author = title.insert_paragraph_after('Author: Name')
+author.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+# Add at end
+doc.add_paragraph('Conclusion')
+
+# Insert in middle
+doc.paragraphs[5].insert_paragraph_before('New content')
 \`\`\`
 
 **🚨 CRITICAL: REVISION vs CREATION:**
