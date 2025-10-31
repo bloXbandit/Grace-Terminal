@@ -27,6 +27,9 @@ if (RUNTIME_TYPE && RUNTIME_TYPE === 'local-docker') {
 }
 
 const activeAgents = new Map();
+// JOB QUEUE: Store pending tasks per conversation
+// Map<conversation_id, Array<{ question, files, context, mode, agent_id, queuedAt }>>
+const taskQueues = new Map();
 const MessageTable = require('@src/models/Message');
 
 const handle_feedback = require("@src/knowledge/feedback");
@@ -346,18 +349,39 @@ router.post("/run", async (ctx, next) => {
     if (existingExecution) {
       console.log(`[Run] ⚠️ Conversation ${conversation_id} already has active execution ${existingExecution.executionId}`);
       
+      // JOB QUEUE: Add task to queue for auto-retry after current execution completes
+      if (!taskQueues.has(conversation_id)) {
+        taskQueues.set(conversation_id, []);
+      }
+      
+      const queuedTask = {
+        question,
+        files: newFiles,
+        context: { ...context }, // Clone context
+        mode,
+        agent_id,
+        queuedAt: Date.now(),
+        stream, // Keep stream reference for response
+        onTokenStream
+      };
+      
+      taskQueues.get(conversation_id).push(queuedTask);
+      const queuePosition = taskQueues.get(conversation_id).length;
+      
+      console.log(`[Queue] Task queued for ${conversation_id}, position: ${queuePosition}`);
+      
       // Send notification to user
       const notificationMsg = Message.format({
         role: 'system',
         status: 'success',
-        content: '⚡ Hold up! I\'m still working on your previous request. Let me finish that first...',
+        content: `⚡ Hold up! I'm still working on your previous request. I'll start this one right after... (Queue position: ${queuePosition})`,
         action_type: 'progress',
         task_id: conversation_id
       });
       onTokenStream(notificationMsg);
       await Message.saveToDB(notificationMsg, conversation_id);
       
-      // Queue this request (save it but don't execute yet)
+      // Save queued message to DB
       const queuedMsg = Message.format({
         role: 'user',
         status: 'success',
@@ -368,8 +392,7 @@ router.post("/run", async (ctx, next) => {
       });
       await Message.saveToDB(queuedMsg, conversation_id);
       
-      // End stream - request is queued
-      stream.end();
+      // Don't end stream yet - will be used when task executes
       return;
     }
     
@@ -423,6 +446,9 @@ router.post("/run", async (ctx, next) => {
       
       onCompleted();
       activeAgents.delete(conversation_id);
+      
+      // AUTO-RETRY: Process next queued task if any
+      await processNextQueuedTask(conversation_id);
     }).catch(async (error) => {
       const msg = Message.format({ status: 'success', action_type: 'error', content: error.message });
       onTokenStream(msg);
@@ -451,17 +477,129 @@ router.post("/run", async (ctx, next) => {
       
       onCompleted();
       activeAgents.delete(conversation_id);
+      
+      // AUTO-RETRY: Process next queued task if any
+      await processNextQueuedTask(conversation_id);
     });
   }
 
-
-  // completeCodeAct(task, context).then(async content => {
-  //   console.log('content', content);
-  //   onCompleted();
-  // });
   ctx.body = stream;
   ctx.status = 200;
 });
+
+/**
+ * AUTO-RETRY: Process next queued task for a conversation
+ */
+async function processNextQueuedTask(conversation_id) {
+  const queue = taskQueues.get(conversation_id);
+  
+  if (!queue || queue.length === 0) {
+    console.log(`[Queue] No pending tasks for ${conversation_id}`);
+    taskQueues.delete(conversation_id);
+    return;
+  }
+  
+  // Get next task from queue
+  const nextTask = queue.shift();
+  console.log(`[Queue] Processing next task for ${conversation_id}, ${queue.length} remaining`);
+  
+  // Send notification
+  const startMsg = Message.format({
+    role: 'system',
+    status: 'success',
+    content: `🚀 Starting your queued request now...`,
+    action_type: 'progress',
+    task_id: conversation_id
+  });
+  nextTask.onTokenStream(startMsg);
+  await Message.saveToDB(startMsg, conversation_id);
+  
+  // Execute the queued task
+  try {
+    // Generate new execution ID
+    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[Queue] Starting execution ${executionId} for queued task`);
+    
+    nextTask.context.executionId = executionId;
+    
+    const agent = new AgenticAgent(nextTask.context);
+    activeAgents.set(conversation_id, { agent, executionId, startTime: Date.now() });
+    
+    const startTime = Date.now();
+    agent.run(nextTask.question).then(async (content) => {
+      console.log('[Queue] Queued task completed successfully');
+      
+      // Log task execution
+      try {
+        const conversation = await Conversation.findOne({ where: { conversation_id } });
+        const execution = activeAgents.get(conversation_id);
+        await TaskLogger.logTask({
+          user_id: nextTask.context.user_id || 1,
+          conversation_id,
+          task_type: nextTask.mode === 'agent' ? 'agent_task' : 'chat',
+          task_description: nextTask.question,
+          input_data: { question: nextTask.question, mode: nextTask.mode, files: nextTask.files },
+          output_data: { content },
+          model_used: conversation?.model_id || 'default',
+          execution_time_ms: execution ? Date.now() - execution.startTime : Date.now() - startTime,
+          success: true,
+          tools_used: agent.toolsUsed || [],
+          metadata: { agent_id: nextTask.agent_id, mode: nextTask.mode, executionId: execution?.executionId, queued: true }
+        });
+      } catch (logError) {
+        console.error('[Queue] SEAL logging error:', logError);
+      }
+      
+      nextTask.stream.end();
+      activeAgents.delete(conversation_id);
+      
+      // Process next task if any
+      await processNextQueuedTask(conversation_id);
+    }).catch(async (error) => {
+      console.error('[Queue] Queued task failed:', error);
+      
+      const errorMsg = Message.format({ 
+        status: 'success', 
+        action_type: 'error', 
+        content: error.message 
+      });
+      nextTask.onTokenStream(errorMsg);
+      await Message.saveToDB(errorMsg, conversation_id);
+      
+      // Log failed task
+      try {
+        await TaskLogger.logTask({
+          user_id: nextTask.context.user_id || 1,
+          conversation_id,
+          task_type: nextTask.mode === 'agent' ? 'agent_task' : 'chat',
+          task_description: nextTask.question,
+          input_data: { question: nextTask.question, mode: nextTask.mode, files: nextTask.files },
+          output_data: { error: error.message },
+          model_used: 'default',
+          execution_time_ms: Date.now() - startTime,
+          success: false,
+          error_message: error.message,
+          tools_used: [],
+          metadata: { agent_id: nextTask.agent_id, mode: nextTask.mode, executionId, queued: true }
+        });
+      } catch (logError) {
+        console.error('[Queue] SEAL logging error:', logError);
+      }
+      
+      nextTask.stream.end();
+      activeAgents.delete(conversation_id);
+      
+      // Process next task if any
+      await processNextQueuedTask(conversation_id);
+    });
+  } catch (error) {
+    console.error('[Queue] Error starting queued task:', error);
+    nextTask.stream.end();
+    
+    // Try next task
+    await processNextQueuedTask(conversation_id);
+  }
+}
 
 // 检查任务是否正常完成并更新 agent recommend 字段
 async function updateAgentRecommend(conversation_id, agent_id) {
