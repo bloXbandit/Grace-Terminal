@@ -251,7 +251,9 @@ class AgenticAgent {
       }
     }
 
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext);
+    // CRITICAL: Pass onTokenStream to auto_reply so specialist calls can stream tokens
+    // This eliminates the wait gap during specialist LLM calls
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {

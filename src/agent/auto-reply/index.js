@@ -11,7 +11,7 @@ const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
 const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordinator');
 const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
 
-const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '') => {
+const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null) => {
   // Check for mode commands (/dev, /normal, /dev status)
   const modeCommandResult = await modeCommandHandler.handleCommand(goal, conversation_id);
   if (modeCommandResult) {
@@ -114,8 +114,9 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const needsTools = requiresToolExecution.includes(taskType);
     
     try {
-      // Pass conversation messages and profile context for context-aware routing
-      const result = await coordinator.execute(goal, { messages, profileContext });
+      // Pass conversation messages, profile context, AND onTokenStream for streaming
+      // This enables real-time token streaming during specialist LLM calls
+      const result = await coordinator.execute(goal, { messages, profileContext, onTokenStream });
       console.log(`[AutoReply] Coordinator execute result:`, result.success ? 'SUCCESS' : 'FAILED');
       
       // Check if specialist failed (both primary and fallback)
