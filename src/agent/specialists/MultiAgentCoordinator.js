@@ -139,9 +139,38 @@ class MultiAgentCoordinator {
       }
     }
     
-    // If 2+ data indicators, route to data_generation
+    // If 2+ data indicators, check if it's simple or complex
     if (dataGenScore >= 2) {
       console.log(`[Coordinator] Data generation context detected (score: ${dataGenScore})`);
+      
+      // Detect simple document generation (can skip planning for speed)
+      const simpleDocPatterns = [
+        /create.*(?:word|docx|excel|xlsx|pdf|ppt|pptx).*(?:document|file|spreadsheet)/i,
+        /make.*(?:1|2|3|one|two|three).*page/i,
+        /generate.*(?:simple|basic|quick).*(?:document|file|spreadsheet)/i,
+        /create.*(?:list|table).*in.*(?:word|excel)/i
+      ];
+      
+      const complexDocPatterns = [
+        /\d{2,}.*pages?/i,  // 10+ pages
+        /analyze.*data/i,
+        /research.*and/i,
+        /based.*on.*file/i,
+        /import.*from/i,
+        /comprehensive|detailed|extensive|thorough/i,
+        /calculate|compute|analyze/i
+      ];
+      
+      const hasSimplePattern = simpleDocPatterns.some(p => p.test(message));
+      const hasComplexPattern = complexDocPatterns.some(p => p.test(message));
+      
+      // Simple doc = has simple pattern AND no complex patterns
+      if (hasSimplePattern && !hasComplexPattern) {
+        console.log('[Coordinator] Simple document generation - direct completion (skip planning)');
+        return 'simple_data_generation';
+      }
+      
+      console.log('[Coordinator] Complex data generation - needs planning');
       return 'data_generation';
     }
     

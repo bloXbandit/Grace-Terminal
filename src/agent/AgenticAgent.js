@@ -452,7 +452,8 @@ class AgenticAgent {
           'roleplay',            // Character dialogue - just text
           'system_design',       // Architecture diagrams - just text/description
           'database_design',     // Schema design - just text/description
-          'api_design'           // API spec - just text/description
+          'api_design',          // API spec - just text/description
+          'simple_data_generation'  // Simple docs - single-step execution (skip planning)
         ];
         
         if (directCompletionTasks.includes(autoReplyResult.taskType)) {
