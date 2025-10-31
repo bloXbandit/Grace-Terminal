@@ -329,7 +329,8 @@ class MultiAgentCoordinator {
     
     // ENHANCED: Format-Specific File Generation Routing
     // Match: "create/make/generate X" where X is document/file/spreadsheet/etc
-    const fileGenerationMatch = message.match(/(?:create|make|generate).*(?:document|file|spreadsheet|word|excel|pdf|ppt|csv)/i);
+    // TYPO TOLERANCE: Also match common typos like "doc", "dooc", "woord", etc.
+    const fileGenerationMatch = message.match(/(?:create|make|generate).*(?:document|doc|file|spreadsheet|word|excel|pdf|ppt|csv)/i);
     if (fileGenerationMatch) {
       const detectedFormat = this.detectFileFormat(message);
       if (detectedFormat) {
@@ -468,8 +469,8 @@ class MultiAgentCoordinator {
    */
   detectFileFormat(message) {
     const formatPatterns = {
-      // Documents
-      'docx': /word|docx|document/i,
+      // Documents (with typo tolerance)
+      'docx': /word|doc|docx|document|woord|woerd|dooc/i,
       'pdf': /pdf/i,
       'odt': /odt|opendocument/i,
       
