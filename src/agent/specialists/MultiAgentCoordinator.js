@@ -328,7 +328,8 @@ class MultiAgentCoordinator {
     }
     
     // ENHANCED: Format-Specific File Generation Routing
-    const fileGenerationMatch = message.match(/create.*(\w+)|generate.*(\w+)|make.*(\w+).*file/i);
+    // Match: "create/make/generate X" where X is document/file/spreadsheet/etc
+    const fileGenerationMatch = message.match(/(?:create|make|generate).*(?:document|file|spreadsheet|word|excel|pdf|ppt|csv)/i);
     if (fileGenerationMatch) {
       const detectedFormat = this.detectFileFormat(message);
       if (detectedFormat) {
