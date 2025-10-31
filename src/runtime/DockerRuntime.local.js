@@ -274,7 +274,36 @@ class DockerRuntime {
           }
           action.params.cwd = cwd;
         }
+        
+        // HEARTBEAT: Send progress message for Python document generation
+        // Detects python3 commands creating documents (docx, xlsx, pdf, etc.)
+        const isPythonDocGeneration = action.params.command === 'python3' && 
+          action.params.args && (
+            action.params.args.includes('docx') ||
+            action.params.args.includes('xlsx') ||
+            action.params.args.includes('pdf') ||
+            action.params.args.includes('pptx') ||
+            action.params.args.includes('Document()') ||
+            action.params.args.includes('Workbook()') ||
+            action.params.args.includes('FPDF()')
+          );
+        
+        if (isPythonDocGeneration && context.onTokenStream) {
+          console.log('[Runtime] 📄 Sending heartbeat for document generation');
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          await sendProgressMessage(
+            context.onTokenStream,
+            context.conversation_id,
+            '📄 Generating document...',
+            'progress'
+          );
+        }
+        
         result = await this._call_docker_action(action, uuid);
+        
+        // NOTE: Do NOT send "Document created successfully" here
+        // The file delivery message will be sent by code-act after file is detected
+        // This ensures proper message ordering: progress → file delivery → completion
         break;
       case 'read_file':
         if (action.params.path) {

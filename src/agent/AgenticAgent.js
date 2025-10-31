@@ -457,7 +457,22 @@ class AgenticAgent {
         ];
         
         if (directCompletionTasks.includes(autoReplyResult.taskType)) {
-          console.log('[AgenticAgent] Direct completion task (text-only) - marking as done');
+          console.log('[AgenticAgent] Direct completion task - checking if needs pre-fill');
+          
+          // SPEED OPTIMIZATION: Send pre-fill message for simple_data_generation
+          // This shows user we're working while specialist response is being processed
+          if (autoReplyResult.taskType === 'simple_data_generation') {
+            console.log('[AgenticAgent] ⚡ Sending pre-fill message for simple doc generation');
+            const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+            await sendProgressMessage(
+              this.onTokenStream,
+              this.context.conversation_id,
+              '⚡ Preparing your document...',
+              'progress'
+            );
+          }
+          
+          console.log('[AgenticAgent] Direct completion task - marking as done');
           await Conversation.update({ status: 'done' }, { where: { conversation_id: this.context.conversation_id } });
           // Send completion signal to stop UI spinner
           await this._publishMessage({ action_type: 'finish_summery', status: 'success', content: '' });

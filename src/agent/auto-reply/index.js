@@ -95,6 +95,13 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   if (taskType !== 'general_chat') {
     console.log(`[AutoReply] Routing to specialist: ${taskType}`);
     
+    // SPEED OPTIMIZATION: Send pre-fill message for simple_data_generation
+    // This reassures user while specialist spins up (reduces perceived latency)
+    if (taskType === 'simple_data_generation') {
+      console.log('[AutoReply] ⚡ Simple doc generation - will send pre-fill message');
+      // Note: Pre-fill message will be sent by AgenticAgent after specialist returns
+    }
+    
     // CRITICAL: Tasks that require tool execution should NOT be marked as "handled"
     // These task types need AgenticAgent to continue to planning and tool execution
     const requiresToolExecution = [
