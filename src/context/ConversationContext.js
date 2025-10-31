@@ -158,26 +158,77 @@ class ConversationContext {
   }
 
   /**
-   * Load recent messages from database
+   * Load recent messages from database with smart context management
+   * - Short conversations (<100 msgs): Load all
+   * - Long conversations (100+ msgs): Load recent 30 + important context
    */
   async _loadMessages() {
-    const messages = await Message.findAll({
+    // Get total message count
+    const totalCount = await Message.count({
       where: {
         conversation_id: this.conversationId,
-        role: { [Op.in]: ['user', 'assistant'] },
+        role: { [Op.ne]: 'system' },
         status: 'success'
-      },
-      order: [['create_at', 'ASC']],
-      limit: 50 // Last 50 messages
+      }
     });
     
-    return messages.map(m => ({
-      role: m.role,
-      content: m.content,
-      meta: m.meta ? JSON.parse(m.meta) : {},
-      memorized: m.memorized,
-      created_at: m.create_at
-    }));
+    console.log(`[ConversationContext] Total messages: ${totalCount}`);
+    
+    // Strategy based on conversation length
+    if (totalCount <= 100) {
+      // Short conversation: Load all messages
+      console.log('[ConversationContext] Loading all messages (≤100)');
+      const messages = await Message.findAll({
+        where: {
+          conversation_id: this.conversationId,
+          role: { [Op.ne]: 'system' },
+          status: 'success'
+        },
+        order: [['create_at', 'ASC']]
+      });
+      
+      return messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        meta: m.meta ? JSON.parse(m.meta) : {},
+        memorized: m.memorized,
+        created_at: m.create_at
+      }));
+    } else {
+      // Long conversation: Load recent 30 + important context
+      console.log('[ConversationContext] Loading recent 30 messages + important context (>100)');
+      const recentMessages = await Message.findAll({
+        where: {
+          conversation_id: this.conversationId,
+          role: { [Op.ne]: 'system' },
+          status: 'success'
+        },
+        order: [['create_at', 'DESC']],
+        limit: 30
+      });
+      
+      // Load important context (e.g., summaries, key memories)
+      const importantContext = await Message.findAll({
+        where: {
+          conversation_id: this.conversationId,
+          role: { [Op.ne]: 'system' },
+          status: 'success',
+          memorized: true
+        },
+        order: [['create_at', 'ASC']]
+      });
+      
+      // Combine recent and important messages
+      const messages = [...recentMessages, ...importantContext];
+      
+      return messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        meta: m.meta ? JSON.parse(m.meta) : {},
+        memorized: m.memorized,
+        created_at: m.create_at
+      }));
+    }
   }
 
   /**
@@ -466,6 +517,57 @@ class ConversationContext {
       conversationDir: this._getConversationDir(),
       cached: !!this.cache.requestId
     };
+  }
+
+  /**
+   * Search old messages on-demand (for "remember when..." queries)
+   * Uses simple keyword matching - no embeddings needed
+   * @param {string} query - Search query
+   * @returns {Promise<Array>} Relevant old messages
+   */
+  async searchOldMessages(query) {
+    try {
+      console.log(`[ConversationContext] Searching old messages for: "${query}"`);
+      
+      // Extract keywords (words longer than 3 chars)
+      const keywords = query.toLowerCase()
+        .split(/\s+/)
+        .filter(w => w.length > 3 && !['that', 'this', 'when', 'what', 'where', 'remember'].includes(w));
+      
+      if (keywords.length === 0) {
+        console.log('[ConversationContext] No valid keywords found');
+        return [];
+      }
+      
+      console.log('[ConversationContext] Keywords:', keywords);
+      
+      // Search for messages containing any of the keywords
+      const relevantMessages = await Message.findAll({
+        where: {
+          conversation_id: this.conversationId,
+          role: { [Op.ne]: 'system' },
+          status: 'success',
+          [Op.or]: keywords.map(keyword => ({
+            content: { [Op.like]: `%${keyword}%` }
+          }))
+        },
+        order: [['create_at', 'DESC']],
+        limit: 10
+      });
+      
+      console.log(`[ConversationContext] Found ${relevantMessages.length} relevant messages`);
+      
+      return relevantMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+        meta: m.meta ? JSON.parse(m.meta) : {},
+        memorized: m.memorized,
+        created_at: m.create_at
+      }));
+    } catch (error) {
+      console.error('[ConversationContext] Search error:', error);
+      return [];
+    }
   }
 
   /**
