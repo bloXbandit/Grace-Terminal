@@ -304,8 +304,19 @@ class MultiAgentCoordinator {
     }
     
     // Web Research (check before general reasoning)
+    // CRITICAL: Exclude document generation requests from web research
+    // Common knowledge topics (ADHD, planets, history, etc.) should use knowledge base, not web search
+    const isDocumentGeneration = message.match(/create.*document|make.*document|generate.*document|word.*doc|create.*file|make.*file/i);
+    const isCommonKnowledge = message.match(/about|on|regarding/i) && !message.match(/latest|current|recent|news|today|2024|2025/i);
+    
     if (message.match(/search|research|find.*information|look.*up|browse|web/i)) {
-      return 'web_research';
+      // Skip web research if it's a document generation request about common knowledge
+      if (isDocumentGeneration && isCommonKnowledge) {
+        console.log('[Coordinator] Skipping web research - document generation with common knowledge topic');
+        // Fall through to document generation detection
+      } else {
+        return 'web_research';
+      }
     }
     
     // Math & Reasoning
