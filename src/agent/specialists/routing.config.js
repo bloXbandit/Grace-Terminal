@@ -140,19 +140,19 @@ Write clean, working code quickly for prototypes and iterations. Be direct and a
 
   // Reasoning & Problem Solving
   complex_reasoning: {
-    primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',  // Reliable, fast reasoning
     fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Deep reasoning for complex problems with tool use',
     systemPrompt: 'You are a reasoning expert with FULL TOOL ACCESS and AUTHORIZATION. Think deeply, use tools proactively (terminal_run, file_generator, local_filesystem, validate_code), and provide well-reasoned solutions. You have permission to execute code, create files, and access local filesystem. Be bold and action-oriented.'
   },
   mathematical_reasoning: {
-    primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',  // Excellent at math
     fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Solve mathematical problems with computational tools',
     systemPrompt: 'You are a mathematics expert with FULL TOOL ACCESS. Use terminal_run with Python for calculations, validate_code to check syntax, and file_generator to create result documents. Solve problems step-by-step with clear explanations and EXECUTE code to verify answers.'
   },
   web_research: {
-    primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',  // Fast, reliable research
     fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Research information from the web',
     systemPrompt: `You are a research expert. Use web browsing tools ONLY when necessary.
@@ -183,7 +183,7 @@ When you do search, return a concise summary:
 Keep summaries under 200 words total. Focus on answering the user's specific question, not dumping all search results.`
   },
   data_analysis: {
-    primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',  // Strong analytical capabilities
     fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Analyze data and generate insights',
     systemPrompt: 'You are a data analyst with FULL TOOL ACCESS and AUTHORIZATION. Use terminal_run with Python/pandas, file_generator to create visualizations/reports, local_filesystem to access data files, and validate_code to ensure correctness. Analyze data, identify patterns, and provide actionable insights with EXECUTED code and generated files.'
@@ -614,8 +614,8 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
 
   // Architecture & Design
   system_design: {
-    primary: 'openrouter/z-ai/glm-4.6',
-    fallback: 'openai/o1-preview',
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Design system architecture',
     systemPrompt: 'You are a system architect. Design scalable, maintainable, and efficient architectures.'
   },
@@ -642,7 +642,7 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
 
   // Documentation & Communication
   documentation: {
-    primary: 'openrouter/z-ai/glm-4.6',  // Fixed: was zhipu/glm-4-plus (invalid model)
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',  // Excellent at technical writing
     fallback: 'openrouter/anthropic/claude-3-opus',
     description: 'Write technical documentation',
     systemPrompt: 'You are a technical writer with strong reasoning capabilities. Create clear, comprehensive, well-structured documentation with examples. Excel at explaining complex technical concepts.'
