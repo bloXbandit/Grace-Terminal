@@ -252,13 +252,23 @@ class LLM {
       console.log('[LLM handleSSE] Non-streaming JSON response detected');
       const choices = response.data.choices || [];
       const choice = choices[0] || {};
-      if (choice.message && choice.message.content) {
-        const content = choice.message.content;
+      
+      // CRITICAL: Handle reasoning models (GLM-4.6, o1, etc.)
+      // These models return reasoning in a separate field when content is empty
+      let content = choice.message?.content || '';
+      
+      // If content is empty/whitespace but reasoning exists, use reasoning
+      if ((!content || content.trim() === '') && choice.message?.reasoning) {
+        content = choice.message.reasoning;
+        console.log('[LLM handleSSE] Using reasoning field (content was empty):', content.substring(0, 100));
+      }
+      
+      if (content) {
         console.log('[LLM handleSSE] Extracted content:', content.substring(0, 100));
         this.onTokenStream(content);
         return content;
       }
-      console.error('[LLM handleSSE] No content in non-streaming response');
+      console.error('[LLM handleSSE] No content or reasoning in non-streaming response');
       return "";
     }
 
@@ -290,8 +300,16 @@ class LLM {
             const jsonResponse = JSON.parse(content);
             const choices = jsonResponse.choices || [];
             const choice = choices[0] || {};
-            if (choice.message && choice.message.content) {
-              fullContent = choice.message.content;
+            
+            // CRITICAL: Handle reasoning models
+            let extractedContent = choice.message?.content || '';
+            if ((!extractedContent || extractedContent.trim() === '') && choice.message?.reasoning) {
+              extractedContent = choice.message.reasoning;
+              console.log('[LLM Stream] Using reasoning field (content was empty)');
+            }
+            
+            if (extractedContent) {
+              fullContent = extractedContent;
               console.log('[LLM Stream] Non-streaming content extracted:', fullContent.substring(0, 100));
               this.onTokenStream(fullContent);
             }
