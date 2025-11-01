@@ -1,0 +1,1 @@
+import{h as t}from"./http-D7M9oJmQ.js";const r={async getModels(){return await t.get("/api/model/enabled")||{}},async getModelBySetting(){return await t.get("/api/default_model_setting")||{}},async updateModel(e){return(await t.put("/api/default_model_setting",e)).data||{}},async checkModel(){return await t.get("/api/default_model_setting/check")||{}}};export{r as s};
