@@ -615,7 +615,7 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
   // Architecture & Design
   system_design: {
     primary: 'openrouter/z-ai/glm-4.6',
-    fallback: 'openai/o1-preview',
+    fallback: 'provider#openai#gpt-4-turbo',
     description: 'Design system architecture',
     systemPrompt: 'You are a system architect. Design scalable, maintainable, and efficient architectures.'
   },

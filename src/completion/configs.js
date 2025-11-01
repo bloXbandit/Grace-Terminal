@@ -93,6 +93,15 @@ const configs = [
     models: ['qwen-plus']
   }, {
     channel: 'provider',
+    service: 'openai',
+    name: 'OpenAI',
+    host: 'https://api.openai.com/v1/chat/completions',
+    config: {
+      API_KEY: env.OPENAI_API_KEY,
+    },
+    models: ['gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-pro']
+  }, {
+    channel: 'provider',
     service: 'azure',
     name: '微软云',
     config: {
