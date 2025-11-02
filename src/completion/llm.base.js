@@ -379,6 +379,12 @@ class LLM {
    */
   messageToValue(message) {
     // console.log('message', message);
+    
+    // Skip SSE comments (lines starting with :) - OpenRouter uses these for status
+    if (message.trim().startsWith(':')) {
+      return { type: "text", text: "" };
+    }
+    
     if (message == "data: [DONE]" || message.startsWith("data: [DONE]")) {
       return { type: "done" };
     }
