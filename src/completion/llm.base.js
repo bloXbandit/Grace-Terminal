@@ -286,8 +286,12 @@ class LLM {
         if (fullContent === "" && content.length > 0) {
           console.log('[LLM Stream] First chunk received:', content.substring(0, 200));
           
+          // Skip SSE comments (lines starting with :) - OpenRouter uses these for status
+          const trimmedContent = content.trim();
+          
           // Detect non-streaming response (single JSON object without "data: " prefix)
-          if (!content.startsWith('data:') && content.trim().startsWith('{')) {
+          // BUT ignore SSE comments like ": OPENROUTER PROCESSING"
+          if (!trimmedContent.startsWith(':') && !trimmedContent.startsWith('data:') && trimmedContent.startsWith('{')) {
             isNonStreaming = true;
             console.log('[LLM Stream] Non-streaming response detected');
           }
