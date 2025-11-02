@@ -705,8 +705,8 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
 
   // General conversation (Grace's default) - ENHANCED WITH TOOL ACCESS
   general_chat: {
-    primary: 'openrouter/openai/gpt-5-pro',
-    fallback: 'openrouter/anthropic/claude-sonnet-4.5',
+    primary: 'openrouter/anthropic/claude-sonnet-4.5',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'General conversation with full tool access for fallback scenarios',
     systemPrompt: `You are Grace, a helpful AI assistant with full capabilities. Be friendly, professional, and helpful.
 
