@@ -252,23 +252,13 @@ class LLM {
       console.log('[LLM handleSSE] Non-streaming JSON response detected');
       const choices = response.data.choices || [];
       const choice = choices[0] || {};
-      
-      // CRITICAL: Handle reasoning models (GLM-4.6, o1, etc.)
-      // These models return reasoning in a separate field when content is empty
-      let content = choice.message?.content || '';
-      
-      // If content is empty/whitespace but reasoning exists, use reasoning
-      if ((!content || content.trim() === '') && choice.message?.reasoning) {
-        content = choice.message.reasoning;
-        console.log('[LLM handleSSE] Using reasoning field (content was empty):', content.substring(0, 100));
-      }
-      
-      if (content) {
+      if (choice.message && choice.message.content) {
+        const content = choice.message.content;
         console.log('[LLM handleSSE] Extracted content:', content.substring(0, 100));
         this.onTokenStream(content);
         return content;
       }
-      console.error('[LLM handleSSE] No content or reasoning in non-streaming response');
+      console.error('[LLM handleSSE] No content in non-streaming response');
       return "";
     }
 
@@ -282,15 +272,14 @@ class LLM {
       response.data.on("data", (chunk) => {
         content += chunk;
         
-        // Detect non-streaming response on first chunk only
-        if (fullContent === "" && content.length > 0 && !isNonStreaming) {
-          // Skip SSE comments (lines starting with :) - OpenRouter uses these for status
-          const trimmedContent = content.trim();
+        // Debug: Log first chunk to see format
+        if (fullContent === "" && content.length > 0) {
+          console.log('[LLM Stream] First chunk received:', content.substring(0, 200));
           
           // Detect non-streaming response (single JSON object without "data: " prefix)
-          // BUT ignore SSE comments like ": OPENROUTER PROCESSING"
-          if (!trimmedContent.startsWith(':') && !trimmedContent.startsWith('data:') && trimmedContent.startsWith('{')) {
+          if (!content.startsWith('data:') && content.trim().startsWith('{')) {
             isNonStreaming = true;
+            console.log('[LLM Stream] Non-streaming response detected');
           }
         }
         
@@ -301,16 +290,8 @@ class LLM {
             const jsonResponse = JSON.parse(content);
             const choices = jsonResponse.choices || [];
             const choice = choices[0] || {};
-            
-            // CRITICAL: Handle reasoning models
-            let extractedContent = choice.message?.content || '';
-            if ((!extractedContent || extractedContent.trim() === '') && choice.message?.reasoning) {
-              extractedContent = choice.message.reasoning;
-              console.log('[LLM Stream] Using reasoning field (content was empty)');
-            }
-            
-            if (extractedContent) {
-              fullContent = extractedContent;
+            if (choice.message && choice.message.content) {
+              fullContent = choice.message.content;
               console.log('[LLM Stream] Non-streaming content extracted:', fullContent.substring(0, 100));
               this.onTokenStream(fullContent);
             }
@@ -377,7 +358,7 @@ class LLM {
   messageToValue(message) {
     // console.log('message', message);
     
-    // Skip SSE comments (lines starting with :) - OpenRouter uses these for status
+    // Skip SSE comments (lines starting with :) - used by OpenRouter for status updates
     if (message.trim().startsWith(':')) {
       return { type: "text", text: "" };
     }
@@ -429,9 +410,14 @@ class LLM {
       return { type: "text", text: choice.delta.content };
     }
     
-    // Handle non-streaming response (message.content) - CRITICAL FIX
+    // Handle non-streaming response (message.content)
     if (choice.message && choice.message.content) {
       return { type: "text", text: choice.message.content };
+    }
+    
+    // FIX 2: Handle reasoning models (GLM-4.6) that return reasoning instead of content
+    if (choice.message && choice.message.reasoning) {
+      return { type: "text", text: choice.message.reasoning };
     }
     
     return {};

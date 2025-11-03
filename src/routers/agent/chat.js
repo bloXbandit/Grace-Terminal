@@ -72,7 +72,13 @@ router.post("/chat", async (ctx, next) => {
     return;
   }
 
-  // 新增：为本次会话创建 AbortController
+  // 新增：为本次会话创建 AbortController（并中断上一次未完成的请求）
+  const existingController = activeChatAbortControllers.get(conversation_id);
+  if (existingController) {
+    console.log(`[Chat] Aborting active execution for conversation ${conversation_id}`);
+    existingController.abort();
+    activeChatAbortControllers.delete(conversation_id);
+  }
   const abortController = new AbortController();
   activeChatAbortControllers.set(conversation_id, abortController);
 
@@ -186,7 +192,8 @@ ${profileContext}
     responsePromise = coordinator.execute(question, { 
       messages: messagesContext, 
       temperature: 0.7,
-      onTokenStream 
+      onTokenStream,
+      signal: abortController.signal
     }).then(result => {
       if (result.success) {
         console.log(`[Chat] Specialist ${result.specialist} (${taskType}) completed the request`);

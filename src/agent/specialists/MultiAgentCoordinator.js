@@ -654,10 +654,20 @@ class MultiAgentCoordinator {
           const conversationDir = path.join(WORKSPACE_DIR, dir_name);
           
           const files = await getAllFilesRecursively(conversationDir);
-          const docFiles = files.filter(f => f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf'));
-          
-          if (docFiles.length > 0) {
-            existingFilesContext = `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${docFiles.map(f => `- ${path.basename(f)}`).join('\n')}\n\n**🚨 CRITICAL FILE MODIFICATION RULES - READ CAREFULLY:**
+          const TRACKED_EXTENSIONS = ['.docx', '.docm', '.dotx', '.dotm', '.pdf', '.xlsx', '.xlsm', '.csv', '.pptx', '.txt', '.md'];
+          const docFiles = files.filter(f => TRACKED_EXTENSIONS.some(ext => f.toLowerCase().endsWith(ext)));
+          const formattedDocFiles = docFiles.map(f => `- ${path.basename(f)}`).join('\n');
+
+          const fileListingSection = docFiles.length > 0
+            ? `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n${formattedDocFiles}`
+            : `\n\n**EXISTING FILES IN THIS CONVERSATION:**\n- (none found)`;
+
+          const noFileWarning = docFiles.length === 0
+            ? `\n\n**🚨 CRITICAL:** No matching documents were detected. Do NOT invent filenames (e.g., "saturn.docx"). If the user requests changes to a file that does not exist, ask them to provide or create it instead of assuming a name.`
+            : '';
+
+          if (docFiles.length > 0 || noFileWarning) {
+            existingFilesContext = `${fileListingSection}${noFileWarning}\n\n**🚨 CRITICAL FILE MODIFICATION RULES - READ CAREFULLY:**
 
 **RULE 1: ALWAYS CHECK FOR EXISTING FILES FIRST**
 - Before creating ANY new file, CHECK if a similar file already exists
@@ -861,11 +871,17 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       const context = { messages: contextMessages };
       
       // Call the model with streaming
-      const result = await llm.completion('', context, {
+      const llmOptions = {
         temperature: options.temperature || 0.7,
         max_tokens: options.max_tokens || 4000,
         stream: !!options.onTokenStream // Enable streaming if callback provided
-      });
+      };
+
+      if (options.signal) {
+        llmOptions.signal = options.signal;
+      }
+
+      const result = await llm.completion('', context, llmOptions);
       
       console.log(`[Specialist] ${modelPath} returned:`, {
         type: typeof result,

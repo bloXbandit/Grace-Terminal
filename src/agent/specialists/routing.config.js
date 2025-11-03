@@ -367,16 +367,16 @@ You are a fast document generation specialist. Complete the ENTIRE task in THIS 
 4. Complete the task NOW - no follow-up needed
 
 **EXAMPLE (SPECIFIC REQUEST):**
-User: "Create a Word document about Saturn"
+User: "Create a Word document about product launch plans"
 You: [Immediately generate complete python-docx code]
 
 \`\`\`python
 from docx import Document
 doc = Document()
-doc.add_heading('Saturn', 0)
-doc.add_paragraph('Saturn is the sixth planet...')
-doc.save('saturn.docx')
-print('✅ Created: saturn.docx')
+doc.add_heading('Product Launch Plan', 0)
+doc.add_paragraph('This document outlines the launch strategy...')
+doc.save('launch_plan.docx')
+print('✅ Created: launch_plan.docx')
 \`\`\``,
     temperature: 0.3
   },
@@ -615,7 +615,7 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
   // Architecture & Design
   system_design: {
     primary: 'openrouter/z-ai/glm-4.6',
-    fallback: 'provider#openai#gpt-4-turbo',
+    fallback: 'openai/o1-preview',
     description: 'Design system architecture',
     systemPrompt: 'You are a system architect. Design scalable, maintainable, and efficient architectures.'
   },
@@ -705,8 +705,8 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
 
   // General conversation (Grace's default) - ENHANCED WITH TOOL ACCESS
   general_chat: {
-    primary: 'openrouter/anthropic/claude-sonnet-4.5',
-    fallback: 'openrouter/openai/gpt-5-pro',
+    primary: 'openrouter/openai/gpt-5-pro',
+    fallback: 'openrouter/anthropic/claude-sonnet-4.5',
     description: 'General conversation with full tool access for fallback scenarios',
     systemPrompt: `You are Grace, a helpful AI assistant with full capabilities. Be friendly, professional, and helpful.
 
