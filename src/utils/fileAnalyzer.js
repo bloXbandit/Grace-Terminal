@@ -235,7 +235,11 @@ function generateContextSummary(analyses) {
   if (!analyses || analyses.length === 0) return '';
   
   let summary = `\n## 📎 Uploaded Files (${analyses.length}):\n`;
-  summary += `**IMPORTANT: Use this pre-analyzed file data directly. DO NOT create Python scripts to re-analyze files.**\n\n`;
+  summary += `**CRITICAL INSTRUCTIONS:**\n`;
+  summary += `- Use this pre-analyzed file data directly. DO NOT create Python scripts to re-analyze files.\n`;
+  summary += `- ONLY report facts from the analysis below. DO NOT invent, hallucinate, or guess details.\n`;
+  summary += `- If asked about file content, reference the specific data provided below.\n`;
+  summary += `- Keep responses focused and concise. No unnecessary file creation.\n\n`;
   
   for (const analysis of analyses) {
     summary += `\n### ${analysis.filename} (${analysis.sizeFormatted})\n`;
