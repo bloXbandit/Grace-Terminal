@@ -41,8 +41,13 @@ const describeUploadFiles = files => {
   
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    const filename = file.filename || file.name;
+    const filename = file.filename || file.name || 'unnamed file';
     const filepath = file.filepath || file.url || 'unknown path';
+    
+    // Warn if filename is undefined/null to help debugging
+    if (!file.filename && !file.name) {
+      console.warn('[describeUploadFiles] File missing name:', { file: JSON.stringify(file).substring(0, 200) });
+    }
     
     content += `${i + 1}. 📎 ${filename}\n`;
     

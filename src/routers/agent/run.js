@@ -184,7 +184,7 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
       order: [['create_at', 'DESC']] // Newest first
     });
     console.log('[Agent Router] Total conversation files loaded:', files.length);
-    console.log('[Agent Router] Files:', files.map(f => f.name).join(', '));
+    console.log('[Agent Router] Files:', files.map(f => ({ id: f.id, name: f.name, url: f.url })));
   } else {
     files = [];
     console.log('[Agent Router] No conversation_id yet, no files loaded');
@@ -237,11 +237,23 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
 
   const newFiles = files.map(file => {
     let obj = file.dataValues
-    obj.filename = obj.name
+    // CRITICAL: Ensure name/filename is set
+    // Priority: obj.name from DB > extract from url > 'unknown'
+    const dbName = obj.name;
+    const urlFilename = obj.url ? path.basename(obj.url) : null;
+    const finalName = dbName || urlFilename || 'unknown';
+    
+    obj.filename = finalName;
+    obj.name = finalName; // Set both for compatibility
+    
     // CRITICAL: url may be absolute or relative, extract just filename
-    const filename = path.basename(obj.url);
+    const filename = path.basename(obj.url || finalName);
     obj.filepath = path.join(dir_path, 'upload', filename)
+    
     console.log('[Agent Router] File path constructed:', { 
+      dbName,
+      urlFilename,
+      finalName,
       url: obj.url, 
       filename, 
       dir_path: dir_path.substring(0, 50), 
