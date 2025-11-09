@@ -276,34 +276,40 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   // 根据mode参数确定处理方式
   let intent;
   if (mode === 'auto') {
-    // 自动选择：使用意图识别
-    console.log('自动模式：开始意图识别...');
-    try {
-      // 获取上下文消息用于意图识别
-      const contextMessages = await MessageTable.findAll({
-        where: {
-          conversation_id: conversation_id
-        },
-        order: [['create_at', 'ASC']]
-      })
+    // CRITICAL: If files are uploaded, automatically use agent mode
+    if (files && files.length > 0) {
+      console.log(`[AUTO Mode] 📎 File upload detected (${files.length} file(s)) - forcing agent mode`);
+      intent = 'agent';
+    } else {
+      // 自动选择：使用意图识别
+      console.log('自动模式：开始意图识别...');
+      try {
+        // 获取上下文消息用于意图识别
+        const contextMessages = await MessageTable.findAll({
+          where: {
+            conversation_id: conversation_id
+          },
+          order: [['create_at', 'ASC']]
+        })
 
-      // 构建上下文格式
-      const messagesContext = contextMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+        // 构建上下文格式
+        const messagesContext = contextMessages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
 
-      intent = await detect_intent(question, conversation_id, messagesContext);
-      console.log('意图识别结果:', intent);
-      // 将结果标准化为小写
-      intent = intent.toLowerCase().trim();
-      if (intent !== 'chat' && intent !== 'agent') {
-        console.log('意图识别结果异常，默认使用agent模式');
+        intent = await detect_intent(question, conversation_id, messagesContext);
+        console.log('意图识别结果:', intent);
+        // 将结果标准化为小写
+        intent = intent.toLowerCase().trim();
+        if (intent !== 'chat' && intent !== 'agent') {
+          console.log('意图识别结果异常，默认使用agent模式');
+          intent = 'agent';
+        }
+      } catch (error) {
+        console.error('意图识别失败，默认使用agent模式:', error);
         intent = 'agent';
       }
-    } catch (error) {
-      console.error('意图识别失败，默认使用agent模式:', error);
-      intent = 'agent';
     }
   } else {
     // 用户指定模式
@@ -911,11 +917,32 @@ async function runChatPhase(params, isTwinsMode) {
 
   // CRITICAL FIX: Use MASTER_SYSTEM_PROMPT + profileContext for consistent capabilities across all modes
   const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+  
+  // Add quick file analysis for chat mode
+  let fileContext = '';
+  if (newFiles && newFiles.length > 0) {
+    console.log(`[Chat Mode] 📎 Analyzing ${newFiles.length} uploaded file(s) for context`);
+    try {
+      const { analyzeFiles, generateContextSummary } = require('@src/utils/fileAnalyzer');
+      // Quick analysis for chat mode (don't block if it fails)
+      const analyses = await Promise.race([
+        analyzeFiles(newFiles.map(f => ({ filename: f.name, filepath: f.filepath }))),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('File analysis timeout')), 5000))
+      ]);
+      if (analyses && analyses.length > 0) {
+        fileContext = '\n\n' + generateContextSummary(analyses);
+        console.log(`[Chat Mode] ✅ File analysis complete - added context for ${analyses.length} file(s)`);
+      }
+    } catch (err) {
+      console.log('[Chat Mode] ⚠️ File analysis skipped:', err.message);
+    }
+  }
+  
   let sysPromptMessage = {
     role: 'system',
     content: `${MASTER_SYSTEM_PROMPT}
 
-${profileContext || ''}`
+${profileContext || ''}${fileContext}`
   }
   messagesContext.unshift(sysPromptMessage)
 
