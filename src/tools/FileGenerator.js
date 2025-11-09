@@ -5,6 +5,8 @@
  * Data (json, xml, yaml, toml), Images (png, jpg, svg, qr), Archives (zip), and more
  */
 
+const path = require('path');
+const fs = require('fs');
 const file_generator = {
   name: "file_generator",
   description: "Generate files in 27+ formats: Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PDF, images (.png, .jpg, .svg, QR codes), data files (JSON, XML, YAML, TOML, CSV), archives (.zip), calendars (.ics), contacts (.vcf), project files (.xer Primavera P6, .mpp Microsoft Project), HTML, Markdown, and OpenDocument formats (.odt, .odp). Validates libraries and creates files correctly.",
@@ -50,14 +52,19 @@ const file_generator = {
     required: ["format", "filename", "content"]
   },
 
-  async execute(params, context = {}) {
+  async execute(params, requestId = null, context = {}) {
     const { format, filename, content } = params;
-    const { conversation_id, runtime } = context;
+    const conversation_id = params.conversation_id || context.conversation_id;
+    const runtime = params.runtime || context.runtime;
 
     try {
       console.log(`[FileGenerator] Generating ${format}: ${filename}`);
 
-      const fullFilename = `${filename}.${format}`;
+      const sanitizedBase = filename.endsWith(`.${format}`)
+        ? filename.slice(0, -(format.length + 1))
+        : filename;
+
+      const fullFilename = `${sanitizedBase}.${format}`;
       const pythonScript = this.generateScript(format, fullFilename, content);
 
       if (!pythonScript) {
@@ -65,7 +72,7 @@ const file_generator = {
       }
 
       if (!runtime) {
-        return { success: false, error: "Runtime not available" };
+        return { success: false, error: "Runtime not available", content: '❌ Runtime not available' };
       }
 
       // RELIABILITY FIX: Retry mechanism with exponential backoff
@@ -99,56 +106,97 @@ const file_generator = {
       }
       
       // All retries failed
+      const errorMessage = `File generation failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`;
       return {
         success: false,
-        error: `File generation failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`,
+        error: errorMessage,
+        content: `❌ ${errorMessage}`,
         retries: maxRetries
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, content: `❌ ${error.message}` };
     }
   },
 
   /**
    * Execute file generation with proper error handling
    */
-  async executeFileGeneration(runtime, pythonScript, fullFilename, conversation_id) {
-    const scriptPath = `/tmp/gen_${Date.now()}.py`;
-    await runtime.writeFile(scriptPath, pythonScript);
-    const result = await runtime.executeCommand(`python3 ${scriptPath}`);
-    await runtime.executeCommand(`rm ${scriptPath}`);
-
-    if (result.exit_code !== 0) {
-      return {
-        success: false,
-        error: `Generation failed: ${result.stderr}`,
-        details: result
-      };
+  /**
+   * Execute file generation with proper error handling and cleanup
+   */
+  async executeFileGeneration(runtime, pythonScript, fullFilename, conversation_id, user_id = 'system') {
+    // Generate a unique directory name based on conversation ID
+    const dir_name = 'Conversation_' + (conversation_id || 'temp').slice(0, 6);
+    const WORKSPACE_DIR = require('@src/utils/electron').getDirpath(
+      process.env.WORKSPACE_DIR || 'workspace', 
+      user_id || 'system'
+    );
+    
+    const outputDir = path.join(WORKSPACE_DIR, dir_name, 'generated');
+    
+    // Ensure the output directory exists
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
     }
-
-    // CRITICAL SECURITY FIX: Prevent command injection with proper escaping
-    // Sanitize filename - only allow alphanumeric, dots, hyphens, underscores
+    
+    // Sanitize filename
     const sanitizedFilename = fullFilename.replace(/[^a-zA-Z0-9._-]/g, '');
     if (sanitizedFilename !== fullFilename) {
       console.warn(`[FileGenerator] Filename sanitized: ${fullFilename} → ${sanitizedFilename}`);
     }
     
-    const verifyResult = await runtime.executeCommand(`ls -lh "${sanitizedFilename}"`);
-    if (verifyResult.exit_code !== 0) {
+    const outputPath = path.join(outputDir, sanitizedFilename);
+    const scriptName = `gen_${Date.now()}.py`;
+    const scriptPath = path.join(outputDir, scriptName);
+    
+    try {
+      // Write the Python script to the workspace directory
+      await runtime.writeFile(scriptPath, pythonScript);
+      
+      // Execute the Python script in the correct directory
+      const execResult = await runtime.executeCommand('python3', [scriptName], { 
+        cwd: outputDir 
+      });
+      
+      // Check execution result
+      if (execResult.exit_code !== 0) {
+        throw new Error(`Generation failed: ${execResult.stderr || 'Unknown error'}`);
+      }
+      
+      // Verify the output file was created
+      try {
+        fs.accessSync(outputPath, fs.constants.F_OK);
+        // Continue to final verification below
+      } catch (err) {
+        throw new Error(`Output file was not created: ${outputPath}`);
+      }
+      
+    } catch (error) {
       return {
         success: false,
-        error: `File not created: ${fullFilename}`
+        error: error.message,
+        content: `❌ ${error.message}`,
+        details: error.details || error
       };
+    } finally {
+      // Always clean up the script file
+      if (fs.existsSync(scriptPath)) {
+        try {
+          fs.unlinkSync(scriptPath);
+        } catch (e) {
+          console.warn(`[FileGenerator] Failed to clean up script file: ${e.message}`);
+        }
+      }
     }
 
+    // File verification is handled in the main function
+    // The workspace path is constructed based on the conversation ID
+    // CRITICAL FIX: Match the actual output directory structure (includes user_id and /generated/)
     const workspacePath = conversation_id 
-      ? `./workspace/Conversation_${conversation_id}/${fullFilename}`
-      : `./workspace/${fullFilename}`;
+      ? `./workspace/user_${user_id}/Conversation_${conversation_id.slice(0, 6)}/generated/${sanitizedFilename}`
+      : `./workspace/${sanitizedFilename}`;
 
     // CRITICAL FIX: Verify file actually exists at the claimed path
-    const fs = require('fs');
-    const path = require('path');
-    
     // Check if file exists in the expected location
     const absolutePath = path.resolve(workspacePath);
     let fileExists = false;
@@ -165,12 +213,18 @@ const file_generator = {
 
     return {
       success: true,
+      content: `✅ Created: ${sanitizedFilename}${fileExists ? ` (${actualSize} bytes)` : ''}`,
       message: `✅ Created file${fileExists ? ` (${actualSize} bytes)` : ' (verification pending)'}`,
-      filename: fullFilename,
-      path: workspacePath,
-      verified: fileExists,
-      size: actualSize,
-      absolutePath: absolutePath
+      meta: {
+        action_type: 'file_generator',
+        filename: sanitizedFilename,
+        filepath: outputPath,
+        workspacePath,
+        verified: fileExists,
+        size: actualSize,
+        absolutePath,
+        conversation_id
+      }
     };
   },
 

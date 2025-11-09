@@ -34,7 +34,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     Pillow \
     matplotlib \
     numpy \
-    xerparser \
+    PyP6XER \
     PyPDF2 \
     pypdf \
     requests \

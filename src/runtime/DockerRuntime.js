@@ -204,9 +204,9 @@ class DockerRuntime {
         if (tool) {
           console.log('DockerRuntime.execute_action.tool', tool.name, params);
           try {
-            const execute = tool.execute;
             params.conversation_id = context.conversation_id
-            const execute_result = await execute(params, uuid, context);
+            // CRITICAL FIX: Call execute with tool as 'this' context to preserve method bindings
+            const execute_result = await tool.execute.call(tool, params, uuid, context);
             console.log(`${tool.name}.call.result`, execute_result);
             // console.log('LocalRuntime.execute_action.tool.execute', execute_result);
             const { content, meta = {} } = execute_result;

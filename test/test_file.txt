@@ -1,0 +1,9 @@
+This is a test file for Grace AI file upload functionality.
+It contains sample text to verify that file uploads are working correctly.
+
+Test content:
+- Line 1
+- Line 2
+- Line 3
+
+End of test file.

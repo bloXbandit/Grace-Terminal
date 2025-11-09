@@ -65,12 +65,8 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         chat.status = 'running';
     }
     chatStore.handleInitMessage(question, files);
+    // HARDCODED: Always use relative URL to ensure proper proxy routing
     let baseURL = ""
-    if (import.meta.env.DEV) {
-        baseURL = ""
-    } else {
-        baseURL = import.meta.env.VITE_SERVICE_URL || 'http://localhost:3000';
-    }
     let uri = `${baseURL}/api/agent/run`;
     // if (mode.value === 'chat') {
     //     uri = `${baseURL}/api/agent/chat`;

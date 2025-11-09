@@ -10,13 +10,40 @@ const conversation_token_usage = require('@src/utils/get_sub_server_token_usage'
 const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
 const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordinator');
 const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
+const { analyzeFiles, generateContextSummary } = require('@src/utils/fileAnalyzer');
 
-const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null) => {
+const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = []) => {
+  console.log('[AutoReply] Called with files:', files ? files.length : 0);
+  console.log('[AutoReply] Files array:', JSON.stringify(files.map(f => ({ name: f.name || f.filename, filepath: f.filepath })), null, 2));
+  
   // Check for mode commands (/dev, /normal, /dev status)
   const modeCommandResult = await modeCommandHandler.handleCommand(goal, conversation_id);
   if (modeCommandResult) {
     // This was a mode command, return the result directly
     return modeCommandResult.message;
+  }
+  
+  // FILE UPLOAD DETECTION: Analyze uploaded files if present
+  if (files && files.length > 0) {
+    console.log(`[AutoReply] 📎 Detected ${files.length} uploaded file(s), analyzing...`);
+    try {
+      const analyses = await analyzeFiles(files);
+      
+      // CRITICAL: Store analysis in files array for specialist access
+      // This enriches each file object with analysis data
+      for (let i = 0; i < files.length && i < analyses.length; i++) {
+        files[i]._analysis = analyses[i];
+      }
+      
+      console.log('[AutoReply] ✅ File analysis complete - routing to specialist with context');
+      
+      // Return null to let specialist handle with file context
+      // File analysis is now stored in files[i]._analysis
+      return null;
+    } catch (error) {
+      console.error('[AutoReply] ⚠️ File analysis failed:', error);
+      // Continue with normal flow even if analysis fails
+    }
   }
   
   // SPEED OPTIMIZATION: Fast-path detection for obvious task requests
@@ -162,6 +189,18 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     console.log('[AutoReply] Task type is general_chat, using default model');
   }
   
+  // GREETING DETECTION: Check if this is a simple greeting that doesn't need planning
+  const greetingPatterns = [
+    /^(hi|hello|hey|good\s+(morning|afternoon|evening)|greetings?)[\s!.]*$/i,
+    /^(what('s|\s+is)\s+up|wassup|sup)[\s!.?]*$/i,
+    /^(how\s+(are|r)\s+you|how's\s+it\s+going)[\s!.?]*$/i,
+    /^(yo|hiya|howdy)[\s!.]*$/i,
+    /^thanks?(\s+you)?[\s!.]*$/i,
+    /^(ok|okay|got\s+it|understood)[\s!.]*$/i
+  ];
+  
+  const isSimpleGreeting = greetingPatterns.some(pattern => pattern.test(goal.trim()));
+  
   let model_info = await getDefaultModel(conversation_id)
   
   // Null check to prevent crashes
@@ -172,9 +211,29 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   
   if (model_info.is_subscribe) {
     let replay = await auto_reply_server(goal, conversation_id)
+    // If simple greeting, mark as fully handled to skip planning
+    if (isSimpleGreeting) {
+      console.log('[AutoReply] ✅ Simple greeting detected - skipping planning phase');
+      return {
+        handledBySpecialist: true,
+        result: replay,
+        specialist: 'auto_reply_greeting',
+        taskType: 'general_chat'
+      };
+    }
     return replay
   }
   let replay = await auto_reply_local(goal, conversation_id)
+  // If simple greeting, mark as fully handled to skip planning
+  if (isSimpleGreeting) {
+    console.log('[AutoReply] ✅ Simple greeting detected - skipping planning phase');
+    return {
+      handledBySpecialist: true,
+      result: replay,
+      specialist: 'auto_reply_greeting',
+      taskType: 'general_chat'
+    };
+  }
   return replay
 }
 

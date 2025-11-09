@@ -87,6 +87,7 @@ class FileRegistry {
       console.log(`[FileRegistry] Synced ${syncedFiles.length} files`);
       
       return syncedFiles.map(f => ({
+        id: f.id,
         file_name: f.name,
         file_path: f.url,
         file_type: path.extname(f.name),
@@ -117,25 +118,32 @@ class FileRegistry {
       
       if (existing) {
         console.log('[FileRegistry] File already registered:', fileName);
-        return existing;
+        const updates = {};
+        if (existing.url !== filePath) {
+          updates.url = filePath;
+        }
+        if (!existing.user_id && this.userId) {
+          updates.user_id = this.userId;
+        }
+        if (Object.keys(updates).length > 0) {
+          await existing.update(updates);
+        }
+        return existing.get({ plain: true });
       }
-      
+
       // Register in database
       const fileRecord = await File.create({
         conversation_id: this.conversationId,
+        user_id: this.userId,
         name: fileName,
         url: filePath,
-        create_at: new Date()
+        create_at: new Date(),
+        update_at: new Date()
       });
-      
+
       console.log('[FileRegistry] Registered new file:', fileName);
-      
-      return {
-        file_name: fileRecord.name,
-        file_path: fileRecord.url,
-        file_type: path.extname(fileRecord.name),
-        created_at: fileRecord.create_at
-      };
+
+      return fileRecord.get({ plain: true });
       
     } catch (error) {
       console.error('[FileRegistry] Register failed:', error);
@@ -196,13 +204,14 @@ class FileRegistry {
       
       if (file) {
         return {
+          id: file.id,
           file_name: file.name,
           file_path: file.url,
           file_type: path.extname(file.name),
           created_at: file.create_at
         };
       }
-      
+
       // Not in DB - check filesystem and register if found
       const filePath = path.join(this.conversationDir, fileName);
       try {

@@ -263,23 +263,11 @@ const onDropdownVisibleChange = (visible) => {
 // 初始化模型列表
 const initModel = async () => {
   console.log('membership.value', membership.value) 
-  // Step 1: 读取本地缓存
+  // Step 1: 立即显示缓存数据（如果有）
   const cachedData = localStorage.getItem('modelList')
   if (cachedData) {
     try {
       modelList.value = JSON.parse(cachedData)
-
-      // ALWAYS set to GPT-5 (locked)
-      if (modelList.value.length > 0) {
-        // Try to find GPT-5 first
-        const gpt5Model = modelList.value.find(m => 
-          m.model_name?.toLowerCase().includes('gpt-5') || 
-          m.model_name?.toLowerCase().includes('gpt5')
-        )
-        const defaultId = (gpt5Model?.id || modelList.value[0].id) * 1
-        model_id.value = defaultId
-        selectedModelValue.value = defaultId
-      }
     } catch (e) {
       console.error('Failed to parse cached modelList', e)
     }
@@ -292,20 +280,36 @@ const initModel = async () => {
     if (Array.isArray(res)) {
       modelList.value = res
       localStorage.setItem('modelList', JSON.stringify(res))
-
-      if (res.length > 0) {
-        // ALWAYS lock to GPT-5
-        const gpt5Model = res.find(m => 
-          m.model_name?.toLowerCase().includes('gpt-5') || 
-          m.model_name?.toLowerCase().includes('gpt5')
-        )
-        const defaultId = (gpt5Model?.id || res[0].id) * 1
-        model_id.value = defaultId
-        selectedModelValue.value = defaultId
-      }
     }
   } catch (e) {
     console.error('Failed to fetch models from API', e)
+  }
+
+  // Step 3: 获取后端默认模型设置
+  try {
+    const defaultSettingsResponse = await http.get('/api/default_model_setting')
+    const assistantSetting = defaultSettingsResponse.find(s => s.setting_type === 'assistant')
+    
+    if (assistantSetting && assistantSetting.model_id) {
+      const defaultId = assistantSetting.model_id * 1
+      model_id.value = defaultId
+      selectedModelValue.value = defaultId
+      console.log('[ModelSelect] Using backend default model:', defaultId)
+    } else if (modelList.value.length > 0) {
+      // Fallback to first model if no default setting exists
+      const defaultId = modelList.value[0].id * 1
+      model_id.value = defaultId
+      selectedModelValue.value = defaultId
+      console.log('[ModelSelect] No backend default found, using first model:', defaultId)
+    }
+  } catch (e) {
+    console.error('Failed to fetch default model setting, using first available model', e)
+    // Fallback to first model on error
+    if (modelList.value.length > 0) {
+      const defaultId = modelList.value[0].id * 1
+      model_id.value = defaultId
+      selectedModelValue.value = defaultId
+    }
   }
 }
 

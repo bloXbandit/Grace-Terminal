@@ -37,6 +37,7 @@ const resolvePlanningPromptBP = require("@src/agent/prompt/plan");
 const { resolveMarkdown } = require("@src/utils/markdown");
 const resolveThinking = require("@src/utils/thinking");
 const retryWithFormatFix = require("./retry_with_format_fix");
+const { resolveActions } = require('@src/utils/resolve');
 
 const planning_local = async (goal, options = {}) => {
   const { conversation_id, specialistResponse } = options;
@@ -44,7 +45,32 @@ const planning_local = async (goal, options = {}) => {
   // CRITICAL: If specialist provided executable code, extract and execute it immediately
   if (specialistResponse && typeof specialistResponse === 'string') {
     console.log('[Planning] coooking...');
-    
+
+    // Highest priority: direct file generation actions
+    const fileGeneratorMatch = specialistResponse.match(/<file_generator[\s\S]*?<\/file_generator>/);
+    if (fileGeneratorMatch) {
+      const actionXML = fileGeneratorMatch[0];
+      const [fileAction] = resolveActions(actionXML).filter(action => action.type === 'file_generator');
+
+      if (fileAction) {
+        const timestamp = Date.now();
+        const format = (fileAction.params?.format || 'file').toString().toLowerCase();
+        const filename = (fileAction.params?.filename || `generated_${timestamp}`).toString();
+
+        console.log(`[Planning] ✅ Detected <file_generator> action for ${filename}.${format}`);
+
+        return [{
+          id: `${timestamp}_file_generator`,
+          title: '📄 Generating document... ',
+          description: `Generate ${format.toUpperCase()} file: ${filename}`,
+          tool: 'file_generator',
+          status: 'pending',
+          preGeneratedAction: actionXML,
+          requirement: actionXML
+        }];
+      }
+    }
+
     // PRIORITY: Check for Python code blocks FIRST (preferred format)
     const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
     if (pythonCodeMatch) {

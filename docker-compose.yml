@@ -30,6 +30,7 @@ services:
       - ./src:/app/src:cached
       - ./containers:/app/containers:cached
       - ./Makefile:/app/Makefile:cached
+      - ./public:/app/public:cached  # Mount frontend build for instant updates
       
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files

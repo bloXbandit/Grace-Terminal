@@ -253,7 +253,10 @@ class AgenticAgent {
 
     // CRITICAL: Pass onTokenStream to auto_reply so specialist calls can stream tokens
     // This eliminates the wait gap during specialist LLM calls
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream);
+    // CRITICAL: Pass files for upload detection and analysis
+    console.log('[AgenticAgent] context.files:', this.context.files ? this.context.files.length : 0);
+    console.log('[AgenticAgent] Passing files to auto_reply:', this.context.files || []);
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream, this.context.files || []);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {
@@ -429,6 +432,10 @@ class AgenticAgent {
       
       const autoReplyResult = await this._initialSetupAndAutoReply();
       
+      // DEBUG: Log what auto_reply returned
+      console.log('[AgenticAgent] DEBUG autoReplyResult:', JSON.stringify(autoReplyResult));
+      console.log('[AgenticAgent] DEBUG autoReplyResult type:', typeof autoReplyResult);
+      
       // If specialist needs execution, store response for planning to use
       if (autoReplyResult && autoReplyResult.needsExecution) {
         console.log(`[AgenticAgent] Specialist provided code/actions - storing for execution`);
@@ -440,7 +447,7 @@ class AgenticAgent {
       
       // If specialist handled it completely, stop here
       else if (autoReplyResult && autoReplyResult.handledBySpecialist) {
-        console.log(`[AgenticAgent] Task handled by ${autoReplyResult.specialist} specialist`);
+        console.log(`[AgenticAgent] ✅ Task handled by ${autoReplyResult.specialist} specialist`);
         console.log('[AgenticAgent] Task type:', autoReplyResult.taskType);
         
         // For PURE text tasks, specialist result is final (no tools needed)

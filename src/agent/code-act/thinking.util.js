@@ -32,9 +32,82 @@ ${completedDescription}`
 }
 
 const describeUploadFiles = files => {
-  let content = ''
-  for (let file of files) {
-    content += 'upload/' + file.name + "\n"
+  if (!files || files.length === 0) {
+    return '';
+  }
+  
+  let content = '\n== Available Files in This Conversation ==\n';
+  content += `Total: ${files.length} file(s)\n\n`;
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const filename = file.filename || file.name;
+    const filepath = file.filepath || file.url || 'unknown path';
+    
+    content += `${i + 1}. 📎 ${filename}\n`;
+    
+    // ALWAYS show basic file info (even without analysis)
+    // This ensures agents can see uploaded files immediately
+    if (filepath && filepath !== 'unknown path') {
+      content += `   Path: ${filepath}\n`;
+    }
+    
+    // Extract file extension for type hint
+    const ext = filename ? filename.split('.').pop().toLowerCase() : '';
+    if (ext) {
+      const typeHints = {
+        'pdf': 'PDF Document',
+        'docx': 'Word Document',
+        'xlsx': 'Excel Spreadsheet',
+        'xer': 'Primavera P6 Project',
+        'txt': 'Text File',
+        'md': 'Markdown Document',
+        'jpg': 'Image',
+        'jpeg': 'Image',
+        'png': 'Image'
+      };
+      const typeHint = typeHints[ext] || `${ext.toUpperCase()} File`;
+      content += `   Type: ${typeHint}\n`;
+    }
+    
+    // Show upload time if available
+    if (file.create_at || file.created_at) {
+      const uploadTime = file.create_at || file.created_at;
+      content += `   Uploaded: ${uploadTime}\n`;
+    }
+    
+    // If file has analysis data, include additional details
+    if (file._analysis) {
+      const analysis = file._analysis;
+      
+      // Add detailed summary if available
+      if (analysis.summary) {
+        content += `   Summary: ${analysis.summary}\n`;
+      }
+      
+      // For text content (small files)
+      if (analysis.content && typeof analysis.content === 'string' && analysis.content.length < 1000) {
+        content += `   Content:\n${analysis.content.substring(0, 500)}\n`;
+      }
+      
+      // For XER files - show project structure
+      if (analysis.extension === '.xer' && analysis.content && !analysis.content.error) {
+        content += `   Project: ${analysis.content.project_name}\n`;
+        content += `   Activities: ${analysis.content.activities_count}, Resources: ${analysis.content.resources_count}\n`;
+        content += `   WBS Nodes: ${analysis.content.wbs_count}, Relationships: ${analysis.content.relationships_count}\n`;
+      }
+      
+      // For Excel files - show sheets
+      if (analysis.content && typeof analysis.content === 'object' && !analysis.content.error && Object.keys(analysis.content).length > 0 && analysis.extension !== '.xer') {
+        const sheets = Object.keys(analysis.content);
+        content += `   Sheets: ${sheets.join(', ')}\n`;
+      }
+    } else {
+      // No analysis yet - inform agent that file can be read
+      content += `   Status: File uploaded and ready to read\n`;
+    }
+    
+    content += '\n';
   }
   return content;
 }

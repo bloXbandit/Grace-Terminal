@@ -3,6 +3,7 @@ const router = require("koa-router")();
 const handleStream = require("@src/utils/stream.util");
 
 const uuid = require("uuid");
+const { sportsQueryMiddleware } = require('@src/plugins/SportsResultsHandler');
 const { Op } = require('sequelize');
 const Conversation = require("@src/models/Conversation");
 const AgenticAgent = require("@src/agent/AgenticAgent");
@@ -91,7 +92,8 @@ const devMode = require('@src/agent/modes/DevMode');
  *               type: string
  *               description: SSE 数据流，每条数据为一个 token
  */
-router.post("/run", async (ctx, next) => {
+// Apply sports query middleware first
+router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
   let { question, conversation_id, fileIds, mcp_server_ids = [], model_id, agent_id, mode = 'auto' } = body;
@@ -121,45 +123,61 @@ router.post("/run", async (ctx, next) => {
     agent_id,
   };
 
+  console.log('[Agent Router] ========== FILE PROCESSING ==========');
+  console.log('[Agent Router] fileIds from current message:', fileIds);
+  console.log('[Agent Router] fileIds type:', typeof fileIds);
+  console.log('[Agent Router] fileIds is array:', Array.isArray(fileIds));
+  
+  // STEP 1: Process newly uploaded files (if any) - move them to conversation folder
   if (Array.isArray(fileIds) && fileIds.length > 0) {
+    console.log('[Agent Router] Processing', fileIds.length, 'newly uploaded file(s)');
     for (const fileId of fileIds) {
       await File.update(
         { conversation_id: conversation_id },
         { where: { id: fileId } }
       );
     }
-    files = await File.findAll({
-      where: {
-        id: fileIds
-      }
+    
+    const newFiles = await File.findAll({
+      where: { id: fileIds }
     });
+    console.log('[Agent Router] New files from DB:', newFiles.length);
 
-    // 根据文件名把文件从 upload文件夹内，移动到 dir_name下面的upload文件夹内
+    // Move newly uploaded files from temp upload folder to conversation folder
     const uploadDir = path.join(WORKSPACE_DIR, 'upload');
     const targetUploadDir = path.join(dir_path, 'upload');
     await fs.mkdir(targetUploadDir, { recursive: true });
 
-
-    for (const file of files) {
-      // 假设 file.filename 字段存在，且为文件名
+    for (const file of newFiles) {
       const srcPath = path.join(uploadDir, file.name);
       const destPath = path.join(targetUploadDir, file.name);
 
       try {
-        // 尝试移动文件，如果目标已存在则覆盖
         await fs.rename(srcPath, destPath);
       } catch (err) {
         if (err.code === 'EXDEV' || err.code === 'EEXIST') {
-          // 跨分区或已存在，尝试复制再删除
+          // Cross-partition or exists, copy then delete
           await fs.copyFile(srcPath, destPath);
           await fs.unlink(srcPath);
         } else {
-          // 其他错误抛出
           throw err;
         }
       }
-
     }
+  }
+  
+  // STEP 2: Load ALL files for this conversation (for agent context)
+  // This gives agent persistent file access across all messages
+  if (conversation_id) {
+    files = await File.findAll({
+      where: { conversation_id: conversation_id },
+      order: [['create_at', 'DESC']] // Newest first
+    });
+    console.log('[Agent Router] Total conversation files loaded:', files.length);
+    console.log('[Agent Router] Files:', files.map(f => f.name).join(', '));
+  } else {
+    files = [];
+    console.log('[Agent Router] No conversation_id yet, no files loaded');
   }
   if (!conversation_id) {
     conversation_id = uuid.v4();
@@ -211,6 +229,9 @@ router.post("/run", async (ctx, next) => {
     return obj
   })
 
+  console.log('[Agent Router] newFiles created:', newFiles.length);
+  console.log('[Agent Router] newFiles:', JSON.stringify(newFiles.map(f => ({ name: f.name, filepath: f.filepath })), null, 2));
+
   // Get user profile context (non-invasive)
   let profileContext = '';
   try {
@@ -234,7 +255,10 @@ router.post("/run", async (ctx, next) => {
     profileContext, // Add profile context to agent
     coordinator, // Add coordinator for specialist routing (Task/Auto modes only)
     enableSpecialistRouting: true, // Enable routing for complex tasks
+    files: newFiles, // CRITICAL: Add uploaded files for file analyzer access
   }
+
+  console.log('[Agent Router] Context created with files:', context.files ? context.files.length : 0);
 
   // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
   try {
@@ -345,6 +369,7 @@ router.post("/run", async (ctx, next) => {
     };
 
     // INTERRUPTIBLE EXECUTION: Check if conversation already has active agent
+    // RACE CONDITION FIX: Use atomic check-and-set to prevent duplicate executions
     const existingExecution = activeAgents.get(conversation_id);
     if (existingExecution) {
       console.log(`[Run] ⚠️ Conversation ${conversation_id} already has active execution ${existingExecution.executionId}`);
@@ -396,6 +421,19 @@ router.post("/run", async (ctx, next) => {
       return;
     }
     
+    // RACE CONDITION FIX: Generate execution ID and reserve slot IMMEDIATELY
+    // This prevents another request from slipping through before agent is created
+    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const reservationTime = Date.now();
+    
+    // Reserve the slot with a placeholder to block concurrent requests
+    activeAgents.set(conversation_id, { 
+      executionId, 
+      startTime: reservationTime,
+      reserved: true // Marker that agent is being created
+    });
+    console.log(`[Run] 🔒 Reserved slot ${executionId} for conversation ${conversation_id}`);
+    
     // 保存用户消息 (智能体模式)
     const msg = Message.format({
       role: 'user',
@@ -408,16 +446,14 @@ router.post("/run", async (ctx, next) => {
     const message = await Message.saveToDB(msg, conversation_id);
     // await syncQuestionVectorData(message.id,question,conversation_id)
 
-    // TASK ID TAGGING: Generate unique execution ID for this agent run
-    // This allows UI to distinguish between overlapping streams
-    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log(`[Run] Starting execution ${executionId} for conversation ${conversation_id}`);
     
     // Add execution ID to context so all messages from this run are tagged
     context.executionId = executionId;
 
     const agent = new AgenticAgent(context);
-    activeAgents.set(conversation_id, { agent, executionId, startTime: Date.now() });
+    // Update the reservation with the actual agent instance
+    activeAgents.set(conversation_id, { agent, executionId, startTime: reservationTime });
 
     const startTime = Date.now();
     agent.run(question).then(async (content) => {
@@ -516,14 +552,23 @@ async function processNextQueuedTask(conversation_id) {
   
   // Execute the queued task
   try {
-    // Generate new execution ID
+    // RACE CONDITION FIX: Reserve slot immediately (same pattern as main execution)
     const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    console.log(`[Queue] Starting execution ${executionId} for queued task`);
+    const reservationTime = Date.now();
+    
+    // Reserve the slot first
+    activeAgents.set(conversation_id, { 
+      executionId, 
+      startTime: reservationTime,
+      reserved: true 
+    });
+    console.log(`[Queue] 🔒 Reserved slot ${executionId} for queued task`);
     
     nextTask.context.executionId = executionId;
     
     const agent = new AgenticAgent(nextTask.context);
-    activeAgents.set(conversation_id, { agent, executionId, startTime: Date.now() });
+    // Update reservation with actual agent
+    activeAgents.set(conversation_id, { agent, executionId, startTime: reservationTime });
     
     const startTime = Date.now();
     agent.run(nextTask.question).then(async (content) => {
@@ -818,8 +863,12 @@ async function executeChatMode(params) {
 
 // 执行Twins模式
 async function executeTwinsMode(params, dir_path) {
-  const { stream, ctx, agent_id, conversation_id, onTokenStream } = params;
-  console.log('使用双重模式：先对话，后智能体');
+  const { question, mode, agent_id } = ctx.request.body;
+  let { conversation_id, mcp_server_ids, fileIds } = ctx.request.body;
+  console.log('[Agent Router] ========== NEW REQUEST ==========');
+  console.log('[Agent Router] conversation_id:', conversation_id);
+  console.log('[Agent Router] fileIds received:', fileIds);
+  console.log('[Agent Router] question:', question);
 
   // Twins模式的stream关闭处理（包含截图逻辑，因为最终会执行agent）
   stream.on('close', async () => {

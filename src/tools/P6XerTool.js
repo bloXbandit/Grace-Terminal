@@ -162,7 +162,6 @@ const p6xer_tool = {
     const { xer_file, output_file, filters, modifications, dcma_params } = params;
 
     const baseImport = `from xerparser.reader import Reader
-from xerparser.dcma14.analysis import DCMA14
 import json
 from datetime import datetime
 

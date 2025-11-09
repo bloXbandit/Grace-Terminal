@@ -65,7 +65,8 @@ const extractXML = (content) => {
   // Try to find XML tags (most common actions)
   const xmlTags = [
     'finish', 'write_code', 'terminal_run', 'web_search', 'read_file',
-    'revise_plan', 'browser', 'git_commit', 'manage_env', 'self_modify'
+    'revise_plan', 'browser', 'git_commit', 'manage_env', 'self_modify',
+    'file_generator'
   ];
   
   for (const tag of xmlTags) {

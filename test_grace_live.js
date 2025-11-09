@@ -49,6 +49,21 @@ const TEST_CASES = {
       breakPoints: ['intent_detection', 'llm_call', 'response']
     }
   ],
+  file: [
+    {
+      name: 'File Upload Test',
+      goal: 'I need to upload a test file named test_upload.txt',
+      mode: 'chat',
+      filePath: './test/test_upload.txt',
+      expectedActions: ['file_upload', 'file_processing'],
+      breakPoints: ['mode_command_detection', 'llm_call', 'intent_detection', 'file_processing'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /test_upload\.txt$/i,
+        location: '/workspace'
+      }
+    }
+  ],
   task: [
     {
       name: 'Word Document Creation',

@@ -35,12 +35,12 @@ export default defineConfig(({ mode }) => {
     },
   },
   server: {
-    port: env.VITE_PORT || 5005,
+    port: 5005,  // HARDCODED: Frontend always on 5005
     host: '0.0.0.0',
     strictPort: true,
     proxy: {
       '/api': {
-        target: env.VITE_SERVICE_URL || 'http://127.0.0.1:3000',
+        target: 'http://127.0.0.1:3000',  // HARDCODED: Backend always on 3000
         protocol: 'http',
         changeOrigin: true,
         ws: true,

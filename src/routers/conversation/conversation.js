@@ -57,11 +57,17 @@ router.post("/", async ({ state, request, response }) => {
   const conversation_id = uuid.v4();
   const title = content.slice(0, 20);
 
+  // DEBUG: Log what frontend sent
+  console.log('[Conversation Create] Frontend sent model_id:', model_id);
+
   // Get default model if not provided
   if (!model_id) {
     const DefaultModelSetting = require('@src/models/DefaultModelSetting');
     const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
     model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+    console.log('[Conversation Create] Using backend default model_id:', model_id);
+  } else {
+    console.log('[Conversation Create] Using frontend-provided model_id:', model_id);
   }
 
   // 构建要创建的对象

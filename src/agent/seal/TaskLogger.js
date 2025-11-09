@@ -1,5 +1,6 @@
 require('module-alias/register');
 const TaskExecution = require('@src/models/TaskExecution');
+const FileRegistry = require('@src/context/FileRegistry');
 
 /**
  * TaskLogger - Log all task executions for SEAL learning
@@ -30,6 +31,53 @@ class TaskLogger {
         metadata = {}
       } = taskData;
 
+      const now = new Date();
+
+      let finalSuccess = success;
+      let finalMetadata = { ...metadata };
+
+      if (success && conversation_id && metadata?.generatedFiles?.length) {
+        try {
+          const registry = new FileRegistry(conversation_id, user_id);
+          const verifiedFiles = [];
+
+          for (const file of metadata.generatedFiles) {
+            const fileName = typeof file === 'string' ? file : file.filename || file.filepath;
+            if (!fileName) continue;
+
+            const fileRecord = await registry.get(fileName);
+            if (fileRecord) {
+              verifiedFiles.push({
+                name: fileRecord.file_name,
+                path: fileRecord.file_path,
+                exists: true
+              });
+            } else {
+              verifiedFiles.push({
+                name: fileName,
+                exists: false
+              });
+              finalSuccess = false;
+            }
+          }
+
+          finalMetadata.generatedFiles = verifiedFiles;
+          finalMetadata.fileVerification = {
+            verified: verifiedFiles.every(file => file.exists),
+            total: verifiedFiles.length,
+            missing: verifiedFiles.filter(file => !file.exists).map(file => file.name)
+          };
+
+          if (!finalMetadata.fileVerification.verified) {
+            finalMetadata.verification_error = 'One or more generated files were not found during logging.';
+          }
+        } catch (verificationError) {
+          console.error('❌ [SEAL] File verification failed:', verificationError);
+          finalMetadata.verification_error = verificationError.message;
+          finalSuccess = false;
+        }
+      }
+
       const taskExecution = await TaskExecution.create({
         user_id,
         conversation_id,
@@ -39,17 +87,19 @@ class TaskLogger {
         output_data: JSON.stringify(output_data),
         model_used,
         execution_time_ms,
-        success,
+        success: finalSuccess,
         error_message,
         tokens_used,
         cost,
+        start_time: now,
+        end_time: new Date(now.getTime() + (execution_time_ms || 0)),
         tools_used: JSON.stringify(tools_used),
-        metadata: JSON.stringify(metadata),
+        metadata: JSON.stringify(finalMetadata),
         user_feedback: null, // Will be updated later
         feedback_score: null
       });
 
-      console.log(`📊 [SEAL] Task logged: ${task_type} (${success ? 'SUCCESS' : 'FAILED'})`);
+      console.log(`📊 [SEAL] Task logged: ${task_type} (${finalSuccess ? 'SUCCESS' : 'FAILED'})`);
       return taskExecution;
     } catch (error) {
       console.error('❌ [SEAL] Error logging task:', error);

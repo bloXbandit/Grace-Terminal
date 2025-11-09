@@ -88,4 +88,34 @@ init:
 	@$(MAKE) -s install-backend-dependencies
 	@$(MAKE) -s install-frontend-dependencies
 	@$(MAKE) -s init-tables
-	@echo "$(GREEN)Init completed successfully.$(RESET)"
+
+# Validate system before build/deployment
+validate:
+	@echo "$(BLUE)Running pre-build validation...$(RESET)"
+	@bash scripts/validate-build.sh
+	@echo "$(GREEN)Validation complete!$(RESET)"
+
+# Rebuild Docker with fresh dependencies (use after package.json changes)
+# Includes validation check
+rebuild:
+	@echo "$(YELLOW)Rebuilding Docker container with fresh dependencies...$(RESET)"
+	@$(MAKE) -s validate
+	docker compose down
+	docker compose build --no-cache grace
+	docker compose up -d
+	@echo "$(GREEN)Container rebuilt and started with latest dependencies!$(RESET)"
+	@echo "$(BLUE)Checking container health...$(RESET)"
+	@sleep 5
+	@docker exec grace-app node -e "console.log('✅ Backend is running')" 2>/dev/null || echo "$(RED)⚠️ Backend may have issues - check logs$(RESET)"
+
+# Quick restart without rebuild (use for code changes only)
+restart:
+	@echo "$(BLUE)Restarting container (no rebuild)...$(RESET)"
+	docker compose restart
+	@echo "$(GREEN)Container restarted!$(RESET)"
+
+# Safe build - runs validation first
+safe-build:
+	@echo "$(GREEN)Starting safe build with validation...$(RESET)"
+	@$(MAKE) -s validate
+	@$(MAKE) -s rebuild

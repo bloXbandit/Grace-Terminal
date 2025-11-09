@@ -10,10 +10,10 @@ axios.defaults.withCredentials = false;
 console.log("环境变量", import.meta.env);
 // 创建 axios 实例, 请求超时时间为 10 秒 baseURL: import.meta.env.BASE_URL,
 
-const isDev = import.meta.env.MODE === 'development';
-
+// HARDCODED: Always use relative URLs to ensure frontend connects to backend on same origin
+// Vite proxy forwards /api to backend on port 3000
 const instance = axios.create({
-  baseURL: isDev ? undefined : import.meta.env.VITE_SERVICE_URL,  // 开发环境不设置 baseURL
+  baseURL: undefined,  // Always relative URLs
   timeout: 100000,
 });
 
