@@ -154,11 +154,21 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
 
       try {
         await fs.rename(srcPath, destPath);
+        // CRITICAL: Update file.url to relative path after moving
+        await File.update(
+          { url: `upload/${file.name}` },
+          { where: { id: file.id } }
+        );
       } catch (err) {
         if (err.code === 'EXDEV' || err.code === 'EEXIST') {
           // Cross-partition or exists, copy then delete
           await fs.copyFile(srcPath, destPath);
           await fs.unlink(srcPath);
+          // CRITICAL: Update file.url to relative path after copying
+          await File.update(
+            { url: `upload/${file.name}` },
+            { where: { id: file.id } }
+          );
         } else {
           throw err;
         }
@@ -219,19 +229,24 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   // 处理文件信息，用于消息保存
   for (let file of files) {
     file.filename = file.name
-    // Fix path construction: url is relative like 'upload/filename.pdf'
-    // dir_path is already the conversation workspace, so just join them
-    const cleanUrl = file.url.replace(/^\/+/, ''); // Remove leading slashes
-    file.filepath = path.join(dir_path, cleanUrl)
+    // CRITICAL: url may be absolute (/app/workspace/.../upload/file.pdf) or relative (upload/file.pdf)
+    // Extract just the filename and construct correct path
+    const filename = path.basename(file.url);
+    file.filepath = path.join(dir_path, 'upload', filename)
   }
 
   const newFiles = files.map(file => {
     let obj = file.dataValues
     obj.filename = obj.name
-    // Fix path construction: url is relative like 'upload/filename.pdf'
-    const cleanUrl = obj.url.replace(/^\/+/, ''); // Remove leading slashes
-    obj.filepath = path.join(dir_path, cleanUrl)
-    console.log('[Agent Router] File path constructed:', { url: obj.url, cleanUrl, dir_path: dir_path.substring(0, 50), filepath: obj.filepath });
+    // CRITICAL: url may be absolute or relative, extract just filename
+    const filename = path.basename(obj.url);
+    obj.filepath = path.join(dir_path, 'upload', filename)
+    console.log('[Agent Router] File path constructed:', { 
+      url: obj.url, 
+      filename, 
+      dir_path: dir_path.substring(0, 50), 
+      filepath: obj.filepath 
+    });
     return obj
   })
 
