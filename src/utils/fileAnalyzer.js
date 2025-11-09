@@ -235,6 +235,7 @@ function generateContextSummary(analyses) {
   if (!analyses || analyses.length === 0) return '';
   
   let summary = `\n## 📎 Uploaded Files (${analyses.length}):\n`;
+  summary += `**IMPORTANT: Use this pre-analyzed file data directly. DO NOT create Python scripts to re-analyze files.**\n\n`;
   
   for (const analysis of analyses) {
     summary += `\n### ${analysis.filename} (${analysis.sizeFormatted})\n`;

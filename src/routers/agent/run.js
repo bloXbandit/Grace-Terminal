@@ -219,13 +219,19 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   // 处理文件信息，用于消息保存
   for (let file of files) {
     file.filename = file.name
-    file.filepath = path.join(dir_path, file.url)
+    // Fix path construction: url is relative like 'upload/filename.pdf'
+    // dir_path is already the conversation workspace, so just join them
+    const cleanUrl = file.url.replace(/^\/+/, ''); // Remove leading slashes
+    file.filepath = path.join(dir_path, cleanUrl)
   }
 
   const newFiles = files.map(file => {
     let obj = file.dataValues
     obj.filename = obj.name
-    obj.filepath = path.join(dir_path, obj.url)
+    // Fix path construction: url is relative like 'upload/filename.pdf'
+    const cleanUrl = obj.url.replace(/^\/+/, ''); // Remove leading slashes
+    obj.filepath = path.join(dir_path, cleanUrl)
+    console.log('[Agent Router] File path constructed:', { url: obj.url, cleanUrl, dir_path: dir_path.substring(0, 50), filepath: obj.filepath });
     return obj
   })
 
