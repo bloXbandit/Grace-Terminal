@@ -141,9 +141,10 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const needsTools = requiresToolExecution.includes(taskType);
     
     try {
-      // Pass conversation messages, profile context, AND onTokenStream for streaming
+      // Pass conversation messages, profile context, files, AND onTokenStream for streaming
       // This enables real-time token streaming during specialist LLM calls
-      const result = await coordinator.execute(goal, { messages, profileContext, onTokenStream });
+      // CRITICAL: Pass files array with _analysis data for file upload recognition
+      const result = await coordinator.execute(goal, { messages, profileContext, onTokenStream, files });
       console.log(`[AutoReply] Coordinator execute result:`, result.success ? 'SUCCESS' : 'FAILED');
       
       // Check if specialist failed (both primary and fallback)

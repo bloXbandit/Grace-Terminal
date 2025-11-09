@@ -831,6 +831,19 @@ ${impl.method} (Confidence: ${impl.confidence})
         console.log('[Specialist] Adding user profile context');
       }
       
+      // CRITICAL: Inject file analysis context for uploaded files
+      let fileAnalysisContext = '';
+      if (options.files && options.files.length > 0) {
+        const { generateContextSummary } = require('@src/utils/fileAnalyzer');
+        const analyses = options.files.map(f => f._analysis).filter(a => a);
+        if (analyses.length > 0) {
+          fileAnalysisContext = generateContextSummary(analyses);
+          console.log(`[Specialist] Adding file analysis context: ${analyses.length} file(s) analyzed`);
+        } else {
+          console.log('[Specialist] Files provided but no analysis data found');
+        }
+      }
+      
       // CRITICAL: Extract filename from task description if present
       let filenameContext = '';
       if (options.taskDescription) {
@@ -856,14 +869,14 @@ If this is a delivery task and the file already exists with this name, DO NOT co
         contextMessages = [...options.messages];
         // Replace first message if it's a system message, otherwise prepend
         if (contextMessages[0]?.role === 'system') {
-          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext };
+          contextMessages[0] = { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext + fileAnalysisContext };
         } else {
-          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext });
+          contextMessages.unshift({ role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext + fileAnalysisContext });
         }
       } else {
         // Create new context with system prompt and user message
         contextMessages = [
-          { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext },
+          { role: 'system', content: fullSystemPrompt + existingFilesContext + filenameContext + userProfileContext + fileAnalysisContext },
           { role: 'user', content: userMessage }
         ];
       }
@@ -1085,6 +1098,12 @@ If this is a delivery task and the file already exists with this name, DO NOT co
    * Execute task with automatic specialist routing
    */
   async execute(userMessage, options = {}) {
+    // Extract files from options (for file upload recognition)
+    const { files = [] } = options;
+    if (files.length > 0) {
+      console.log(`[Coordinator] Received ${files.length} file(s) with analysis data`);
+    }
+    
     // BACKWARD COMPATIBILITY: Accept pre-built context OR build it ourselves
     let routingContext;
     if (options.routingContext) {
