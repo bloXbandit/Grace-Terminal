@@ -292,6 +292,13 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   }
 
   console.log('[Agent Router] Context created with files:', context.files ? context.files.length : 0);
+  if (context.files && context.files.length > 0) {
+    console.log('[Agent Router] Context files detail:', context.files.map(f => ({ 
+      name: f.name, 
+      filename: f.filename, 
+      filepath: f.filepath 
+    })));
+  }
 
   // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
   try {
@@ -368,13 +375,15 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   };
 
   // 执行对应的模式
+  console.log(`[Mode Selection] Final mode: ${intent} (original mode param: ${mode})`);
+  
   if (intent === 'chat') {
     await executeChatMode(commonParams);
   } else if (intent === 'twins') {
     await executeTwinsMode(commonParams, dir_path);
   } else {
     // Agent 模式：先处理反馈，再执行任务
-    console.log('使用智能体模式');
+    console.log('使用智能体模式 (Agent mode)');
 
     // Agent模式：同步处理反馈（确保记忆更新后再执行任务）
     if (ENABLE_KNOWLEDGE === "ON") {
