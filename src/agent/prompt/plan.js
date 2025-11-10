@@ -4,7 +4,9 @@ const { resolvePlanningKnowledge } = require("@src/knowledge/index");
 const describeUploadFiles = files => {
   let content = ''
   for (let file of files) {
-    content += 'upload/' + file.name + "\n"
+    // CRITICAL: Handle both file.name and file.filename (different sources)
+    const filename = file.name || file.filename || 'unknown';
+    content += 'upload/' + filename + "\n"
   }
   return content;
 }

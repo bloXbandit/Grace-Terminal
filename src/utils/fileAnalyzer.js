@@ -225,7 +225,17 @@ function formatFileSize(bytes) {
 async function analyzeFiles(files) {
   const analyses = [];
   for (const file of files) {
-    const analysis = await analyzeFile(file.filepath, file.filename || file.name);
+    // CRITICAL: Handle both Sequelize models and plain objects
+    // Extract filename from multiple possible sources
+    const filename = file.filename || file.name || (file.filepath ? path.basename(file.filepath) : null) || (file.url ? path.basename(file.url) : null) || 'unknown';
+    const filepath = file.filepath || (file.url ? path.join(process.cwd(), file.url) : null);
+    
+    if (!filepath) {
+      console.warn('[FileAnalyzer] Skipping file with no filepath:', { file: JSON.stringify(file).substring(0, 200) });
+      continue;
+    }
+    
+    const analysis = await analyzeFile(filepath, filename);
     analyses.push(analysis);
   }
   return analyses;
@@ -235,11 +245,15 @@ function generateContextSummary(analyses) {
   if (!analyses || analyses.length === 0) return '';
   
   let summary = `\n## 📎 Uploaded Files (${analyses.length}):\n`;
-  summary += `**CRITICAL INSTRUCTIONS:**\n`;
-  summary += `- Use this pre-analyzed file data directly. DO NOT create Python scripts to re-analyze files.\n`;
-  summary += `- ONLY report facts from the analysis below. DO NOT invent, hallucinate, or guess details.\n`;
-  summary += `- If asked about file content, reference the specific data provided below.\n`;
-  summary += `- Keep responses focused and concise. No unnecessary file creation.\n\n`;
+  summary += `**🚨 CRITICAL: DO NOT RE-ANALYZE FILES 🚨**\n`;
+  summary += `- All file data is PRE-ANALYZED and provided below\n`;
+  summary += `- DO NOT write Python scripts to re-analyze files\n`;
+  summary += `- DO NOT execute code to check file existence\n`;
+  summary += `- DO NOT create file analysis scripts\n`;
+  summary += `- ONLY use the data provided in this context\n`;
+  summary += `- If user asks "what's in this file?" or "breakdown the contents", STREAM the analysis data directly in natural language\n`;
+  summary += `- Keep responses conversational - no unnecessary code execution\n`;
+  summary += `- ONLY report facts from the analysis below. DO NOT invent, hallucinate, or guess details.\n\n`;
   
   for (const analysis of analyses) {
     summary += `\n### ${analysis.filename} (${analysis.sizeFormatted})\n`;

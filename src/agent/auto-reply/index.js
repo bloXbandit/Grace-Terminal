@@ -37,6 +37,17 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       
       console.log('[AutoReply] ✅ File analysis complete - routing to specialist with context');
       
+      // CRITICAL: Fast-path for simple file content questions
+      // If user just wants to know what's in the file, return analysis directly
+      const simpleContentQuery = goal.match(/can you see|what'?s in|breakdown|analyze|contents?|summarize|show me|tell me about/i);
+      const noComplexTask = !goal.match(/create|generate|modify|edit|update|add|remove|delete|change|replace/i);
+      
+      if (simpleContentQuery && noComplexTask) {
+        console.log('[AutoReply] ⚡ Fast-path: Simple file content question detected');
+        const summary = generateContextSummary(analyses);
+        return `Yes, I can see the uploaded file(s). ${summary}`;
+      }
+      
       // Return null to let specialist handle with file context
       // File analysis is now stored in files[i]._analysis
       return null;
