@@ -241,6 +241,66 @@ async function analyzeFiles(files) {
   return analyses;
 }
 
+// Generate user-friendly summary for direct user responses (no backend instructions)
+function generateUserFriendlySummary(analyses) {
+  if (!analyses || analyses.length === 0) return '';
+  
+  let summary = '';
+  
+  for (const analysis of analyses) {
+    const filename = analysis.filename;
+    const fileType = analysis.type;
+    const size = analysis.sizeFormatted;
+    
+    // Start with friendly intro
+    if (analyses.length === 1) {
+      summary += `It's a ${fileType} (${size}). `;
+    } else {
+      summary += `\n**${filename}** - ${fileType} (${size})\n`;
+    }
+    
+    // Add content-specific details
+    if (analysis.extension === '.xer' && analysis.content && !analysis.content.error) {
+      // XER project file
+      summary += `This is a Primavera P6 project file with ${analysis.content.activities_count} activities, ${analysis.content.resources_count} resources, and ${analysis.content.wbs_count} WBS nodes.`;
+    } else if (analysis.extension === '.pdf') {
+      // PDF file
+      const pageCount = analysis.content?.pages || 'multiple';
+      summary += `The PDF contains ${pageCount} page(s).`;
+      if (analysis.summary && analysis.summary !== 'PDF document') {
+        summary += ` ${analysis.summary}`;
+      }
+    } else if (analysis.extension === '.docx' || analysis.extension === '.doc') {
+      // Word document
+      summary += `It's a Word document.`;
+      if (analysis.summary) {
+        summary += ` ${analysis.summary}`;
+      }
+    } else if (analysis.extension === '.xlsx' || analysis.extension === '.xls') {
+      // Excel file
+      if (analysis.content && typeof analysis.content === 'object' && !analysis.content.error) {
+        const sheets = Object.keys(analysis.content);
+        summary += `This Excel file has ${sheets.length} sheet(s): ${sheets.join(', ')}.`;
+      } else {
+        summary += `It's an Excel spreadsheet.`;
+      }
+    } else if (analysis.content && typeof analysis.content === 'string' && analysis.content.length < 500) {
+      // Small text file - show preview
+      summary += `Here's a preview:\n\n${analysis.content.substring(0, 200)}${analysis.content.length > 200 ? '...' : ''}`;
+    } else {
+      // Generic file
+      if (analysis.summary) {
+        summary += ` ${analysis.summary}`;
+      }
+    }
+    
+    summary += '\n';
+  }
+  
+  return summary.trim();
+}
+
+// Generate specialist context summary (with backend instructions)
 function generateContextSummary(analyses) {
   if (!analyses || analyses.length === 0) return '';
   
@@ -290,5 +350,6 @@ function generateContextSummary(analyses) {
 module.exports = {
   analyzeFile,
   analyzeFiles,
-  generateContextSummary
+  generateContextSummary,
+  generateUserFriendlySummary
 };

@@ -10,7 +10,7 @@ const conversation_token_usage = require('@src/utils/get_sub_server_token_usage'
 const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
 const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordinator');
 const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
-const { analyzeFiles, generateContextSummary } = require('@src/utils/fileAnalyzer');
+const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = require('@src/utils/fileAnalyzer');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
@@ -44,8 +44,16 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       
       if (simpleContentQuery && noComplexTask) {
         console.log('[AutoReply] ⚡ Fast-path: Simple file content question detected');
-        const summary = generateContextSummary(analyses);
-        return `Yes, I can see the uploaded file(s). ${summary}`;
+        const summary = generateUserFriendlySummary(analyses);
+        const response = `Yes, I can see the uploaded file(s). ${summary}`;
+        
+        // Return as specialist completion to prevent redundant specialist call
+        return {
+          handledBySpecialist: true,
+          specialist: 'general_chat',
+          taskType: 'general_chat',
+          result: response
+        };
       }
       
       // Return null to let specialist handle with file context
