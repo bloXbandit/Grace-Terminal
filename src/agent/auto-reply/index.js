@@ -12,6 +12,7 @@ const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordina
 const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
 const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = require('@src/utils/fileAnalyzer');
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
+const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
@@ -89,33 +90,64 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const referencesFile = goal.match(/this (file|doc|pdf|document)|the (file|doc|pdf|document)|uploaded|attachment/i);
     const explicitReanalysis = goal.match(/re-?analyze|analyze again|check again|look again|review again/i);
     
-    // Check if files already have cached analysis
-    const allFilesAnalyzed = files.every(f => f._analysis && typeof f._analysis === 'object');
-    const someFilesAnalyzed = files.some(f => f._analysis && typeof f._analysis === 'object');
+    // PERSISTENT CACHE: Check cache for each file using file ID
+    const filesToAnalyze = [];
+    const analyses = [];
     
-    console.log(`[AutoReply] Cache status: ${someFilesAnalyzed ? files.filter(f => f._analysis).length : 0}/${files.length} files cached`);
+    for (const file of files) {
+      const fileId = file.id || file.dataValues?.id;
+      if (!fileId) {
+        console.log('[AutoReply] ⚠️ File has no ID, will analyze:', file.name);
+        filesToAnalyze.push(file);
+        continue;
+      }
+      
+      // Check persistent cache
+      const cachedAnalysis = getCachedAnalysis(fileId);
+      if (cachedAnalysis && !explicitReanalysis) {
+        // Use cached analysis
+        file._analysis = cachedAnalysis;
+        analyses.push(cachedAnalysis);
+        console.log(`[AutoReply] ♻️ Cache HIT for file ${fileId}: ${file.name}`);
+      } else {
+        // Need to analyze
+        filesToAnalyze.push(file);
+        console.log(`[AutoReply] 🔍 Cache MISS for file ${fileId}: ${file.name}`);
+      }
+    }
+    
+    console.log(`[AutoReply] Cache status: ${analyses.length}/${files.length} files cached`);
+    console.log(`[AutoReply] Need to analyze: ${filesToAnalyze.length} files`);
     console.log(`[AutoReply] Request needs file analysis: ${!!needsFileAnalysis}`);
     console.log(`[AutoReply] Request references file: ${!!referencesFile}`);
     
     try {
-      let analyses = [];
-      
-      // SMART DECISION: Only analyze if needed
-      if (!allFilesAnalyzed || explicitReanalysis || (needsFileAnalysis && !someFilesAnalyzed)) {
-        console.log('[AutoReply] 🔍 Running file analysis...');
-        analyses = await analyzeFiles(files);
+      // SMART DECISION: Only analyze files that need it
+      if (filesToAnalyze.length > 0 && (needsFileAnalysis || referencesFile || explicitReanalysis)) {
+        console.log(`[AutoReply] 🔍 Running file analysis for ${filesToAnalyze.length} file(s)...`);
+        const newAnalyses = await analyzeFiles(filesToAnalyze);
         
-        // CRITICAL: Store analysis in files array for specialist access
-        // This enriches each file object with analysis data
-        for (let i = 0; i < files.length && i < analyses.length; i++) {
-          files[i]._analysis = analyses[i];
+        // CRITICAL: Store in persistent cache AND attach to file object
+        for (let i = 0; i < filesToAnalyze.length && i < newAnalyses.length; i++) {
+          const file = filesToAnalyze[i];
+          const analysis = newAnalyses[i];
+          const fileId = file.id || file.dataValues?.id;
+          
+          // Store in persistent cache
+          if (fileId) {
+            setCachedAnalysis(fileId, analysis);
+          }
+          
+          // Attach to file object for immediate use
+          file._analysis = analysis;
+          analyses.push(analysis);
         }
         
         console.log('[AutoReply] ✅ File analysis complete - cached for future messages');
+      } else if (filesToAnalyze.length > 0) {
+        console.log('[AutoReply] 🚫 Files not cached but request doesn\'t need analysis - skipping');
       } else {
-        console.log('[AutoReply] ♻️ Using cached analysis from previous message (no re-analysis needed)');
-        // Extract cached analyses from files
-        analyses = files.map(f => f._analysis).filter(a => a);
+        console.log('[AutoReply] ✅ All files cached - no analysis needed');
       }
       
       // If request doesn't need file context at all, skip fast-paths and return null early
