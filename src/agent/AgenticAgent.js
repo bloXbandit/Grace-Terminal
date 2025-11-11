@@ -282,7 +282,20 @@ class AgenticAgent {
       this.context.specialistResponse = reply.specialistResponse;
       this.context.specialist = reply.specialist;
       this.context.taskType = reply.taskType;
-      // Don't publish the object, just return null to continue to planning
+      
+      // CRITICAL: Check for ultra-fast-path flags (skipPlanning, directExecution)
+      if (reply.skipPlanning || reply.directExecution) {
+        console.log('[AgenticAgent] ⚡⚡ ULTRA Fast-path detected: skipPlanning=' + reply.skipPlanning + ', directExecution=' + reply.directExecution);
+        this.skipPlanning = true;
+        
+        // CRITICAL: Store pre-generated action if provided
+        if (reply.preGeneratedAction) {
+          console.log('[AgenticAgent] ⚡⚡ Pre-generated action detected - will bypass thinking()');
+          this.preGeneratedAction = reply.preGeneratedAction;
+        }
+      }
+      
+      // Don't publish the object, just return null to continue to planning (or skip if flag set)
       return null;
     }
     
