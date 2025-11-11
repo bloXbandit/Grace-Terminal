@@ -287,12 +287,49 @@ class AgenticAgent {
     return null; // Continue to planning
   }
 
-  // 执行规划阶段
+  // Execute planning phase
   async _performPlanning() {
+    // CRITICAL: Skip planning if ultra-fast-path flag is set (simple single-file generation)
+    if (this.skipPlanning) {
+      console.log('[AgenticAgent] ⚡⚡ Skipping planning phase (ultra-fast-path enabled)');
+      console.log('[AgenticAgent] Creating simple single-task plan for direct execution');
+      
+      // Create a minimal plan with just one task
+      const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+      await sendProgressMessage(
+        this.onTokenStream,
+        this.context.conversation_id,
+        'On it! Creating your document now...',
+        'progress'
+      );
+      
+      // Set up a simple task for the task manager
+      // CRITICAL: Include preGeneratedAction if available (bypasses thinking LLM call)
+      const task = {
+        id: 'task_1',
+        title: 'Generate Document',
+        description: this.goal,
+        requirement: this.goal, // CodeAct expects 'requirement' field
+        status: 'pending'
+      };
+      
+      // CRITICAL: Add pre-generated action XML to task (bypasses thinking())
+      if (this.preGeneratedAction) {
+        console.log('[AgenticAgent] ⚡⚡ Adding preGeneratedAction to task - will execute directly');
+        task.preGeneratedAction = this.preGeneratedAction;
+      }
+      
+      // CRITICAL: TaskManager doesn't have addTask(), use setTasks([task]) instead
+      await this.taskManager.setTasks([task]);
+      console.log('[AgenticAgent] ⚡⚡ Ultra fast-path task created and ready for execution');
+      
+      return;
+    }
+    
     await this.plan(this.goal);
   }
 
-  // 执行任务循环
+  // Execute task loop
   async _executeTasks() {
     console.log('====== start execute ======');
     await this.run_loop();
@@ -442,7 +479,19 @@ class AgenticAgent {
         this.context.specialistResponse = autoReplyResult.specialistResponse;
         this.context.specialist = autoReplyResult.specialist;
         this.context.taskType = autoReplyResult.taskType;
-        // Continue to planning which will extract and execute the code
+        
+        // CRITICAL: Check for skipPlanning flag (ultra-fast-path for simple tasks)
+        if (autoReplyResult.skipPlanning || autoReplyResult.directExecution) {
+          console.log(`[AgenticAgent] ⚡⚡ ULTRA Fast-path: skipPlanning=true, going directly to execution`);
+          this.skipPlanning = true; // Set flag to skip planning phase
+          
+          // CRITICAL: Store pre-generated action if provided (bypasses thinking LLM call)
+          if (autoReplyResult.preGeneratedAction) {
+            console.log(`[AgenticAgent] ⚡⚡ Pre-generated action XML detected - will bypass thinking()`);
+            this.preGeneratedAction = autoReplyResult.preGeneratedAction;
+          }
+        }
+        // Continue to planning which will extract and execute the code (or skip if flag set)
       }
       
       // If specialist handled it completely, stop here

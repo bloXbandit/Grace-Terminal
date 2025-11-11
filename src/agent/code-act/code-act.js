@@ -321,6 +321,13 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
             console.log('[CodeAct] Reflection suggests:', comments);
             await memory.addMessage("user", comments);
             
+            // NUANCE: Send conversational retry message to user
+            if (context.onTokenStream && retryCount < maxRetries) {
+              const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+              // Use natural reflection comments (now conversational after reflection/index.js update)
+              await sendProgressMessage(context.onTokenStream, context.conversation_id, comments, 'progress');
+            }
+            
             // Retry with reflection guidance
             retryCount++;
             totalRetryAttempts++;

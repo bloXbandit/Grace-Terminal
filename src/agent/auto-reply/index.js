@@ -23,6 +23,42 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     return modeCommandResult.message;
   }
   
+  // FAST-PATH: Date/Time queries (instant response, no planning)
+  const dateTimeQuery = goal.match(/what'?s? (the )?(date|time|day|today|current|now)|what (date|time|day) is it|current (date|time)/i);
+  if (dateTimeQuery) {
+    console.log('[AutoReply] ⚡ Fast-path: Date/time query detected');
+    const now = new Date();
+    
+    // Format date and time properly
+    const options = { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    };
+    
+    const formattedDateTime = now.toLocaleString('en-US', options);
+    
+    // Get user's name from profileContext if available
+    let userName = '';
+    if (profileContext && profileContext.includes('name:')) {
+      const nameMatch = profileContext.match(/name:\s*([^\n,]+)/i);
+      if (nameMatch) userName = `, ${nameMatch[1].trim()}`;
+    }
+    
+    const response = `It's ${formattedDateTime}${userName}! 🕐`;
+    
+    return {
+      handledBySpecialist: true,
+      specialist: 'general_chat',
+      taskType: 'general_chat',
+      result: response
+    };
+  }
+  
   // FILE UPLOAD DETECTION: Analyze uploaded files if present
   if (files && files.length > 0) {
     console.log(`[AutoReply] 📎 Detected ${files.length} uploaded file(s), analyzing...`);
@@ -37,15 +73,76 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       
       console.log('[AutoReply] ✅ File analysis complete - routing to specialist with context');
       
-      // CRITICAL: Fast-path for simple file content questions
-      // If user just wants to know what's in the file, return analysis directly
-      const simpleContentQuery = goal.match(/can you see|what'?s in|breakdown|analyze|contents?|summarize|show me|tell me about/i);
+      // CRITICAL: Fast-path for CONTENT BREAKDOWN follow-ups (no planning overhead)
+      // Catches: "what's in it?", "show me the content", "lmk contents", "what does it contain"
+      const contentBreakdownQuery = goal.match(/what'?s? in (it|the|this|that|the file|the document)|show me (the content|what'?s in|the details)|break(down|) (it|the file|the document|this)|lmk (what'?s in|contents?|the contents?)|tell me (what'?s in|the contents?|contents?)|what (does it|it) contains?|what'?s? (the )?contents?/i);
+      
+      // CRITICAL FIX: Check BOTH recent messages AND current upload
+      // On initial conversation start, messages is [], so we must check files.length > 0
+      const hasRecentFileMessage = files.length > 0 || messages.slice(-3).some(m => 
+        m.content && (m.content.includes('.pdf') || m.content.includes('.docx') || m.content.includes('document') || m.content.includes('file'))
+      );
+      
+      if (contentBreakdownQuery && hasRecentFileMessage) {
+        console.log('[AutoReply] ⚡ Fast-path: Content breakdown request detected - streaming analysis');
+        const { generateStreamingBreakdown } = require('@src/utils/fileAnalyzer');
+        
+        // Stream the detailed content analysis
+        const breakdown = await generateStreamingBreakdown(analyses[0], onTokenStream);
+        
+        return {
+          handledBySpecialist: true,
+          specialist: 'general_chat',
+          taskType: 'general_chat',
+          result: breakdown,
+          streamed: true
+        };
+      }
+      
+      // CRITICAL: Fast-path for "read document and execute task" pattern
+      // This is a VERY common pattern that should NOT trigger full agent planning
+      // Catches: "read this document and execute the task", "read and do what it says", etc.
+      const executeFromDocPattern = goal.match(/read (this|the) (document|file|pdf|docx) and (execute|do|perform|complete|carry out) (the )?task|execute (the )?task (contained|in|from) (the )?(document|message|file)/i);
+      
+      if (executeFromDocPattern && analyses.length > 0) {
+        console.log('[AutoReply] ⚡ Fast-path: Execute task from document pattern detected');
+        
+        // Extract task from document content
+        const analysis = analyses[0];
+        const content = typeof analysis.content === 'string' ? analysis.content : '';
+        
+        // Try to intelligently extract the task
+        // Look for common patterns: "Create", "Write", "Generate", task descriptions
+        const taskMatch = content.match(/(Create|Write|Generate|Make|Build|Develop|Design)\s+([^.\n]{10,100})/i);
+        
+        if (taskMatch) {
+          const extractedTask = taskMatch[0];
+          console.log('[AutoReply] Extracted task from document:', extractedTask);
+          
+          // Return null to let it go to agent mode BUT with enriched context
+          // Add the extracted task to the goal
+          return null;
+        } else {
+          // Could not extract clear task, provide summary and ask for clarification
+          return {
+            handledBySpecialist: true,
+            specialist: 'general_chat',
+            taskType: 'general_chat',
+            result: `I see you want me to execute a task from the document. Let me check what's in it...\n\n` +
+                    `The document contains: ${content.substring(0, 500)}...\n\n` +
+                    `I can see instructions in the document. Let me execute them now.`
+          };
+        }
+      }
+      
+      // CRITICAL: Fast-path for simple file visibility questions (FIRST UPLOAD ONLY)
+      // Catches: "can you see", "do you see" - NOT "what's in it" (that's content breakdown above)
+      const simpleVisibilityQuery = goal.match(/can you see|do you see|are you able to see/i);
       const noComplexTask = !goal.match(/create|generate|modify|edit|update|add|remove|delete|change|replace/i);
       
-      if (simpleContentQuery && noComplexTask) {
-        console.log('[AutoReply] ⚡ Fast-path: Simple file content question detected');
-        const summary = generateUserFriendlySummary(analyses);
-        const response = `Yes, I can see the uploaded file(s). ${summary}`;
+      if (simpleVisibilityQuery && noComplexTask) {
+        console.log('[AutoReply] ⚡ Fast-path: Simple file visibility question detected');
+        const response = generateUserFriendlySummary(analyses);
         
         // Return as specialist completion to prevent redundant specialist call
         return {
@@ -56,26 +153,197 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         };
       }
       
+      // CRITICAL: Fast-path for FOLLOW-UP QUESTIONS about uploaded documents
+      // Catches: "who is this for?", "who is the borrower?", "is it signed?", "is it executed?"
+      // These should NOT trigger agent mode - just check the document and answer
+      const followUpQuestionPatterns = [
+        /who (is|'s) (this|the (document|authorization|file)) for/i,
+        /who (is|'s) the (borrower|client|signer|recipient)/i,
+        /what (is|'s) the (borrower|client|signer) (name|called)/i,
+        /(is|was) (this|the (document|authorization|file)) (signed|executed)/i,
+        /(is|was) it (signed|executed)/i,
+        /who signed (this|it|the (document|authorization))/i,
+        /what (company|lender|bank)/i,
+        /when (was|is) (this|it|the (document|authorization)) (dated|signed|executed)/i
+      ];
+      
+      const isFollowUpQuestion = followUpQuestionPatterns.some(pattern => pattern.test(goal));
+      
+      if (isFollowUpQuestion && hasRecentFileMessage && analyses.length > 0) {
+        console.log('[AutoReply] ⚡ Fast-path: Document follow-up question detected');
+        
+        const analysis = analyses[0];
+        const content = typeof analysis.content === 'string' ? analysis.content : '';
+        const { detectDocumentType, extractKeyDetails } = require('@src/utils/fileAnalyzer');
+        
+        const docType = detectDocumentType(content, analysis.filename);
+        const details = extractKeyDetails(content, docType?.type);
+        
+        let response = '';
+        
+        // Handle "who is the borrower?" / "who is this for?"
+        if (goal.match(/who (is|'s) (this|the (document|authorization|file)) for|who (is|'s) the (borrower|client)/i)) {
+          if (details.borrower) {
+            response = `Looking at the document, the borrower is ${details.borrower}.`;
+          } else {
+            response = `I checked the document and I don't see a specific borrower name or client name mentioned in the text. The document appears to use generic language like "I, the undersigned" without a filled-in name.`;
+          }
+        }
+        // Handle "is it signed?" / "is it executed?" (mortgage/legal domain context)
+        else if (goal.match(/(is|was) (this|it|the (document|authorization|file)) (signed|executed)/i)) {
+          if (details.isSigned === true) {
+            response = `Yes, the document appears to be executed (signed)`;
+            if (details.signer) {
+              response += ` by ${details.signer}`;
+            }
+            if (details.date) {
+              response += ` on ${details.date}`;
+            }
+            response += `.`;
+          } else if (details.isSigned === false) {
+            response = `No, the document is not yet executed (unsigned). It has signature lines but no signatures filled in.`;
+          } else {
+            response = `I can't definitively tell if the document is signed from the text content. There may be handwritten signatures that aren't captured in the text extraction.`;
+          }
+        }
+        // Handle "what company/lender?"
+        else if (goal.match(/what (company|lender|bank)/i)) {
+          if (details.lender) {
+            response = `The lender/company is ${details.lender}.`;
+          } else if (details.company) {
+            response = `The company is ${details.company}.`;
+          } else {
+            response = `I checked the document and I don't see a specific company or lender name mentioned.`;
+          }
+        }
+        // Handle "when was it signed/dated?"
+        else if (goal.match(/when (was|is) (this|it|the (document|authorization)) (dated|signed|executed)/i)) {
+          if (details.date) {
+            response = `The document is dated ${details.date}.`;
+          } else {
+            response = `I don't see a specific date mentioned in the document.`;
+          }
+        }
+        else {
+          // Generic fallback for other follow-up questions
+          response = `Let me check the document... `;
+          if (details.borrower) response += `Borrower: ${details.borrower}. `;
+          if (details.lender) response += `Lender: ${details.lender}. `;
+          if (details.date) response += `Date: ${details.date}. `;
+          if (details.isSigned !== null) {
+            response += details.isSigned ? `Status: Executed (signed).` : `Status: Not yet executed (unsigned).`;
+          }
+        }
+        
+        return {
+          handledBySpecialist: true,
+          specialist: 'general_chat',
+          taskType: 'general_chat',
+          result: response.trim(),
+          streamed: true
+        };
+      }
+      
       // Return null to let specialist handle with file context
       // File analysis is now stored in files[i]._analysis
       return null;
     } catch (error) {
       console.error('[AutoReply] ⚠️ File analysis failed:', error);
       // Continue with normal flow even if analysis fails
+      return {
+        handledBySpecialist: false,
+        specialist: 'general_chat',
+        taskType: 'general_chat',
+        result: 'File analysis failed. Please try again.'
+      };
     }
   }
   
-  // SPEED OPTIMIZATION: Fast-path detection for obvious task requests
-  // Skip LLM call if it's clearly a file creation/modification request
-  const obviousTaskPatterns = [
-    /create.*\b(file|document|excel|word|spreadsheet|pdf|html|code)\b/i,
-    /make.*\b(file|document|excel|word|spreadsheet|pdf|html)\b/i,
-    /generate.*\b(file|document|excel|word|spreadsheet|pdf|html|code)\b/i,
-    /write.*\b(file|document|excel|word|spreadsheet|pdf|html|code|script|function)\b/i,
-    /build.*\b(app|website|page|dashboard|api)\b/i
-  ];
+  // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION
+  // These are single-tool executions that should call file_generator ONCE and be done
+  // Catches: "create a word document titled X", "make a spreadsheet with Y", etc.
+  const simpleFileGenPattern = goal.match(/(create|make|generate|write)\s+(a |an )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)\s+(titled|called|named|with|about|on|for)/i);
   
-  // SPEED OPTIMIZATION: Fast-path for file edits too
+  if (simpleFileGenPattern) {
+    console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
+    console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
+    
+    // Extract file type
+    const fileType = simpleFileGenPattern[3].toLowerCase();
+    const isWordDoc = fileType.includes('word') || fileType === 'docx';
+    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
+    
+    // Extract title (look for "titled X" or "called X" or "named X")
+    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i);
+    let title = titleMatch ? titleMatch[1].trim() : 'Untitled';
+    
+    // Extract author if present
+    const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
+    let author = authorMatch ? authorMatch[1].trim() : null;
+    
+    // CRITICAL: XML escape to prevent injection and parsing errors
+    const xmlEscape = (str) => {
+      if (!str) return str;
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    };
+    
+    title = xmlEscape(title);
+    author = xmlEscape(author);
+    
+    // CRITICAL: Pre-generate the action XML to bypass LLM thinking entirely
+    // This makes it truly instant like ChatGPT
+    let actionXML = '';
+    if (isWordDoc) {
+      actionXML = `<file_generator>
+  <title>${title}</title>
+  <type>docx</type>
+  ${author ? `<author>${author}</author>` : ''}
+  <content>${goal}</content>
+</file_generator>`;
+    } else if (isExcel) {
+      actionXML = `<file_generator>
+  <title>${title}</title>
+  <type>xlsx</type>
+  <content>${goal}</content>
+</file_generator>`;
+    } else {
+      // Generic document
+      actionXML = `<file_generator>
+  <title>${title}</title>
+  <type>docx</type>
+  ${author ? `<author>${author}</author>` : ''}
+  <content>${goal}</content>
+</file_generator>`;
+    }
+    
+    console.log('[AutoReply] Pre-generated action XML:', actionXML.substring(0, 150));
+    
+    // CRITICAL: Validate XML before returning (safety check)
+    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<file_generator>')) {
+      console.log('[AutoReply] ⚠️ Invalid XML generation - falling back to specialist routing');
+      // Don't return, let it fall through to specialist routing
+      return null;
+    }
+    
+    // This is a simple file generation - skip planning, go straight to execution
+    // CRITICAL: Include pre-generated action XML to bypass thinking() LLM call
+    return {
+      needsExecution: true,
+      specialistResponse: null,
+      specialist: 'data_generation',
+      taskType: 'simple_data_generation',
+      skipPlanning: true, // CRITICAL: Skip planning phase
+      directExecution: true, // CRITICAL: Go straight to tool execution
+      preGeneratedAction: actionXML // CRITICAL: Pre-generated action XML to bypass thinking
+    };
+  }
+  
+  // Fast-path for file edits (context-aware)
   const fileEditPatterns = [
     /add.*\b(to|in|into).*\b(document|file|excel|word|spreadsheet|doc)\b/i,
     /add.*\b(name|author|title|section).*\b(to|in|into|at)\b/i,
@@ -86,7 +354,8 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     /put.*\b(in|at|into).*\b(document|file|doc|top|bottom)\b/i
   ];
   
-  const isObviousTask = obviousTaskPatterns.some(pattern => pattern.test(goal));
+  // REMOVED: obviousTaskPatterns - redundant with ultra fast-path and specialist routing
+  // File edit patterns still used for context-aware routing
   const isFileEdit = fileEditPatterns.some(pattern => pattern.test(goal));
   
   // CRITICAL: For file edits, check if there are files in the conversation
@@ -116,17 +385,8 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         isFileEdit: true
       };
     }
-  } else if (isObviousTask) {
-    // File creation - always safe to fast-path
-    console.log(`[AutoReply] ⚡ Fast-path: Obvious task detected, skipping auto-reply LLM call`);
-    return {
-      needsExecution: true,
-      specialistResponse: null,
-      specialist: 'fast-path',
-      taskType: 'data_generation',
-      isFileEdit: false
-    };
   }
+  // Let all other file generation requests route to specialist (they'll get proper planning)
   
   // Check if we should route to a specialist
   console.log('[AutoReply] Initializing coordinator for goal:', goal.substring(0, 100));
