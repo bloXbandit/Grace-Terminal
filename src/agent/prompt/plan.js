@@ -23,7 +23,13 @@ const resolvePlanningPrompt = async (goal, options) => {
 
   const templateFilename = resolveTemplateFilename(planning_mode);
   const promptTemplate = await loadTemplate(templateFilename);
-  const system = `Current Time: ${new Date().toLocaleString()}`
+  
+  // Provide explicit date context to help LLM with date calculations (e.g., "last Sunday")
+  const now = new Date();
+  const dateFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' };
+  const formattedDate = now.toLocaleString('en-US', dateFormatOptions);
+  const system = `Current Time: ${formattedDate}\nToday is ${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`
+  
   const uploadFileDescription = describeUploadFiles(files);
   // 尝试不使用experience
   // const experiencePrompt = await resolveExperiencePrompt(goal, conversation_id)

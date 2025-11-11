@@ -3,7 +3,7 @@ const router = require("koa-router")();
 const handleStream = require("@src/utils/stream.util");
 
 const uuid = require("uuid");
-const { sportsQueryMiddleware } = require('@src/plugins/SportsResultsHandler');
+// REMOVED: sportsQueryMiddleware - Using auto-reply fast-path instead for proper streaming
 const { Op } = require('sequelize');
 const Conversation = require("@src/models/Conversation");
 const AgenticAgent = require("@src/agent/AgenticAgent");
@@ -92,8 +92,8 @@ const devMode = require('@src/agent/modes/DevMode');
  *               type: string
  *               description: SSE 数据流，每条数据为一个 token
  */
-// Apply sports query middleware first
-router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
+// Sports queries now handled via auto-reply fast-path for proper streaming support
+router.post("/run", async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
   let { question, conversation_id, fileIds, mcp_server_ids = [], model_id, agent_id, mode = 'auto' } = body;

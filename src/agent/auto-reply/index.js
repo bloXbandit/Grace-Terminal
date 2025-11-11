@@ -11,6 +11,7 @@ const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
 const MultiAgentCoordinator = require('@src/agent/specialists/MultiAgentCoordinator');
 const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
 const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = require('@src/utils/fileAnalyzer');
+const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
@@ -23,8 +24,28 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     return modeCommandResult.message;
   }
   
+  // FAST-PATH: Sports scores queries (instant response, no planning, no XML tags)
+  if (sportsHandler.isSportsQuery(goal)) {
+    console.log('[AutoReply] ⚡ Fast-path: Sports query detected');
+    try {
+      const response = await sportsHandler.handleSportsQuery(goal);
+      if (response) {
+        return {
+          handledBySpecialist: true,
+          specialist: 'sports_handler',
+          taskType: 'general_chat',
+          result: response
+        };
+      }
+    } catch (error) {
+      console.error('[AutoReply] Sports handler error:', error);
+      // Fall through to normal processing
+    }
+  }
+  
   // FAST-PATH: Date/Time queries (instant response, no planning)
-  const dateTimeQuery = goal.match(/what'?s? (the )?(date|time|day|today|current|now)|what (date|time|day) is it|current (date|time)/i);
+  // Catches: "what's the time", "date and time", "tell me the date", "what time is it", etc.
+  const dateTimeQuery = goal.match(/what'?s? (the )?(date|time|day|today|current|now)|what (date|time|day) is it|current (date|time)|(date|time) (n|and) (time|date)|tell me (the )?(date|time|day)|give me (the )?(date|time)/i);
   if (dateTimeQuery) {
     console.log('[AutoReply] ⚡ Fast-path: Date/time query detected');
     const now = new Date();

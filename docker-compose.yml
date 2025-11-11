@@ -9,6 +9,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=America/New_York  # Production timezone (EST/EDT)
       - DOCKER_HOST_ADDR=host.docker.internal
       - ACTUAL_HOST_WORKSPACE_PATH=${WORKSPACE_BASE:-$PWD/workspace}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

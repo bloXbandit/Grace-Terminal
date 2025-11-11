@@ -93,11 +93,24 @@ class AgenticAgent {
       // Remove Python code blocks: ```python\n...\n```
       safeContent = safeContent.replace(/```python\n[\s\S]+?\n```/g, '').trim();
       
+      // Remove XML-style Python tags: <python3>...</python3>
+      safeContent = safeContent.replace(/<python3>[\s\S]*?<\/python3>/gi, '').trim();
+      
+      // Remove XML web_browse tags: <web_browse>...</web_browse>
+      safeContent = safeContent.replace(/<web_browse>[\s\S]*?<\/web_browse>/gi, '').trim();
+      
+      // Remove XML query tags: <query>...</query>
+      safeContent = safeContent.replace(/<query>[\s\S]*?<\/query>/gi, '').trim();
+      
       // Remove inline Python commands: python3 -c "..."
       safeContent = safeContent.replace(/python3?\s+-c\s+["'][\s\S]+?["']/g, '').trim();
       
       // Remove any remaining python3 command lines
       safeContent = safeContent.replace(/^python3?\s+.+$/gm, '').trim();
+      
+      // Remove print() statements (common Python execution artifacts)
+      safeContent = safeContent.replace(/print\s*\(["'][\s\S]*?["']\)/gi, '').trim();
+      safeContent = safeContent.replace(/^print\s*\(.+\)$/gm, '').trim();
       
       // CRITICAL FIX: Remove technical processing notes that leak backend details
       // Pattern: "Updated X with Y" or "Loaded existing X"
@@ -109,8 +122,12 @@ class AgenticAgent {
       // Remove multi-line thinking blocks (The user wants me to...)
       safeContent = safeContent.replace(/The user wants me to:?\n[\s\S]+?(?=\n\n|$)/gi, '').trim();
       
+      // Remove progress messages (Looking that up..., Checking the web..., Finding info online...)
+      safeContent = safeContent.replace(/^(Checking|Searching|Looking|Finding)\s+.+\.{3}$/gm, '').trim();
+      safeContent = safeContent.replace(/^(Looking that up|Checking the web|Finding info online)\.{3}$/gm, '').trim();
+      
       if (safeContent !== originalContent && safeContent.length < originalContent.length) {
-        console.log('[AgenticAgent] Removed Python code and technical notes from message before publishing to UI');
+        console.log('[AgenticAgent] Removed Python code, XML tags, and technical notes from message before publishing to UI');
       }
     }
     
