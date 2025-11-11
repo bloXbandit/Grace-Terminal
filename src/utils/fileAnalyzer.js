@@ -663,6 +663,73 @@ function generateContextSummary(analyses) {
 async function generateStreamingBreakdown(analysis, onTokenStream) {
   if (!analysis) return 'Sorry, I couldn\'t analyze that file.';
   
+  // CRITICAL: Handle structured file types (XLSX, XER) BEFORE string content
+  // These files have object content, not string content
+  
+  // XLSX/Excel files - show sheets, rows, columns, sample data
+  if ((analysis.extension === '.xlsx' || analysis.extension === '.xls') && analysis.content && typeof analysis.content === 'object' && !analysis.content.error) {
+    let response = `Let me show you what's in this spreadsheet...\n\n`;
+    response += `**File:** ${analysis.filename} (${analysis.sizeFormatted})\n`;
+    
+    const sheets = Object.keys(analysis.content);
+    response += `**Sheets:** ${sheets.length}\n\n`;
+    
+    // Show details for each sheet (limit to first 5)
+    for (const sheetName of sheets.slice(0, 5)) {
+      const sheet = analysis.content[sheetName];
+      response += `📊 **${sheetName}**\n`;
+      response += `   • ${sheet.rows} rows × ${sheet.cols} columns\n`;
+      
+      // Show sample data (first 3 rows)
+      if (sheet.sample && sheet.sample.length > 0) {
+        response += `   • Sample data:\n`;
+        for (let i = 0; i < Math.min(3, sheet.sample.length); i++) {
+          const row = sheet.sample[i];
+          const rowPreview = row.slice(0, 5).map(cell => {
+            if (cell === null || cell === undefined) return '(empty)';
+            const str = String(cell);
+            return str.length > 20 ? str.substring(0, 17) + '...' : str;
+          }).join(' | ');
+          response += `      Row ${i + 1}: ${rowPreview}${row.length > 5 ? ' ...' : ''}\n`;
+        }
+      }
+      response += `\n`;
+    }
+    
+    if (sheets.length > 5) {
+      response += `_...and ${sheets.length - 5} more sheet(s)_\n`;
+    }
+    
+    return response;
+  }
+  
+  // XER/Primavera P6 files - show project details
+  if (analysis.extension === '.xer' && analysis.content && typeof analysis.content === 'object' && !analysis.content.error) {
+    let response = `Let me show you what's in this P6 schedule...\n\n`;
+    response += `**File:** ${analysis.filename} (${analysis.sizeFormatted})\n\n`;
+    
+    response += `📋 **Project:** ${analysis.content.project_name}\n`;
+    response += `📅 **Data Date:** ${analysis.content.data_date}\n\n`;
+    
+    response += `**Summary:**\n`;
+    response += `• Activities: ${analysis.content.activities_count}\n`;
+    response += `• Resources: ${analysis.content.resources_count}\n`;
+    response += `• WBS Nodes: ${analysis.content.wbs_count}\n`;
+    response += `• Relationships: ${analysis.content.relationships_count}\n`;
+    response += `• Calendars: ${analysis.content.calendars_count}\n\n`;
+    
+    // Show sample activities
+    if (analysis.content.sample_activities && analysis.content.sample_activities.length > 0) {
+      response += `**Sample Activities:**\n`;
+      for (const act of analysis.content.sample_activities.slice(0, 5)) {
+        response += `• ${act.id}: ${act.name} (${act.status})\n`;
+      }
+    }
+    
+    return response;
+  }
+  
+  // For text-based files (PDF, DOCX, TXT), continue with string content analysis
   const content = typeof analysis.content === 'string' ? analysis.content : '';
   const docType = detectDocumentType(content, analysis.filename);
   const details = extractKeyDetails(content, docType?.type);

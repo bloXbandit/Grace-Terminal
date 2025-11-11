@@ -462,10 +462,189 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     };
   }
   
-  // Fast-path for file edits (context-aware)
+  // CRITICAL: ULTRA Fast-path for SIMPLE document edits (context-aware)
+  // Detects simple operations like "add my name as author", "change title to X"
+  // Pre-generates XML action to skip BOTH LLM thinking AND planning for instant execution
+  
+  // Pattern 1: Add author to document
+  const addAuthorPattern = goal.match(/add\s+(?:my\s+)?(?:name|author)\s+(?:as\s+)?(?:author\s+)?(?:to|on|in)\s+(?:the\s+)?(?:document|doc|file)|add\s+author\s+["']?([^"']+)["']?/i);
+  
+  // Pattern 2: Change document title (captures until end of string, allows trailing punctuation)
+  const changeTitlePattern = goal.match(/(?:change|update)\s+(?:the\s+)?title\s+to\s+["']?([^"'\n]+?)["']?[.!?]?$/i);
+  
+  // Pattern 3: Add text at specific location
+  const addTextPattern = goal.match(/add\s+["']?(.+?)["']?\s+(?:to|at|in)\s+(?:the\s+)?(top|bottom|beginning|end)\s+of\s+(?:the\s+)?(?:document|doc|file)/i);
+  
+  if (files && files.length > 0 && (addAuthorPattern || changeTitlePattern || addTextPattern)) {
+    // Find the most recent DOCX file
+    const docxFile = files.find(f => {
+      const name = f.name || f.filename || '';
+      return name.endsWith('.docx') || name.endsWith('.doc');
+    });
+    
+    if (docxFile) {
+      const filename = docxFile.name || docxFile.filename;
+      
+      // CRITICAL: Validate filepath exists, use file object's filepath
+      // If no filepath, file might be in uploads folder or conversation folder
+      let filepath = docxFile.filepath;
+      if (!filepath) {
+        console.log('[AutoReply] ⚠️ No filepath found on file object, checking alternatives');
+        // Try to construct from conversation context
+        if (conversation_id && filename) {
+          filepath = `/workspace/uploads/${conversation_id}/${filename}`;
+        } else {
+          filepath = `/workspace/${filename}`;
+        }
+      }
+      
+      console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple document edit detected');
+      console.log('[AutoReply] Target filepath:', filepath);
+      
+      // Get user's name from profile if available
+      const userName = profileContext && profileContext.match(/name:\s*([^\n]+)/i) 
+        ? profileContext.match(/name:\s*([^\n]+)/i)[1].trim() 
+        : 'Author';
+      
+      // XML escape helper (for XML structure only, NOT for Python string content)
+      const xmlEscape = (str) => {
+        if (!str) return str;
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+      };
+      
+      // Python string escape helper (for Python string literals)
+      const pythonEscape = (str) => {
+        if (!str) return str;
+        return str
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/'/g, "\\'")    // Escape single quotes
+          .replace(/\n/g, '\\n')   // Escape newlines
+          .replace(/\r/g, '\\r');  // Escape carriage returns
+      };
+      
+      let actionXML = '';
+      let operation = '';
+      
+      if (addAuthorPattern) {
+        // Add author operation
+        const authorNameRaw = addAuthorPattern[1] || userName;
+        const authorNamePython = pythonEscape(authorNameRaw);  // Escape for Python strings
+        const filepathPython = pythonEscape(filepath);         // Escape filepath for Python
+        operation = 'add_author';
+        
+        // Pre-generate write_code action XML
+        // CRITICAL: Use CDATA to wrap Python code (prevents XML parsing issues)
+        // pythonEscape handles quotes/newlines in Python strings
+        actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/edit_author_${Date.now()}.py</filepath>
+  <code><![CDATA[from docx import Document
+
+# Load document
+doc = Document('${filepathPython}')
+
+# Add author to core properties
+doc.core_properties.author = '${authorNamePython}'
+
+# Save document
+doc.save('${filepathPython}')
+print('✅ Added author: ${authorNamePython}')]]></code>
+  <description>Add author to document metadata</description>
+</write_code>`;
+        
+      } else if (changeTitlePattern) {
+        // Change title operation
+        const newTitleRaw = changeTitlePattern[1].trim();
+        const newTitlePython = pythonEscape(newTitleRaw);  // Escape for Python strings
+        const filepathPython = pythonEscape(filepath);     // Escape filepath for Python
+        operation = 'change_title';
+        
+        actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/edit_title_${Date.now()}.py</filepath>
+  <code><![CDATA[from docx import Document
+
+# Load document
+doc = Document('${filepathPython}')
+
+# Change title in core properties
+doc.core_properties.title = '${newTitlePython}'
+
+# Also change first heading if it exists
+if len(doc.paragraphs) > 0 and doc.paragraphs[0].style.name.startswith('Heading'):
+    doc.paragraphs[0].text = '${newTitlePython}'
+
+# Save document
+doc.save('${filepathPython}')
+print('✅ Updated title to: ${newTitlePython}')]]></code>
+  <description>Update document title</description>
+</write_code>`;
+        
+      } else if (addTextPattern) {
+        // Add text at location operation
+        const textToAddRaw = addTextPattern[1];
+        const textToAddPython = pythonEscape(textToAddRaw);  // Escape for Python strings
+        const filepathPython = pythonEscape(filepath);       // Escape filepath for Python
+        const location = addTextPattern[2].toLowerCase();
+        const atTop = location === 'top' || location === 'beginning';
+        operation = 'add_text';
+        
+        // CRITICAL: Handle empty documents (no paragraphs)
+        const topCode = atTop 
+          ? `# Add text at top (handle empty document)
+if len(doc.paragraphs) > 0:
+    doc.paragraphs[0].insert_paragraph_before('${textToAddPython}')
+else:
+    # Document is empty, add first paragraph
+    doc.add_paragraph('${textToAddPython}')`
+          : `# Add text at bottom
+doc.add_paragraph('${textToAddPython}')`;
+        
+        actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/edit_text_${Date.now()}.py</filepath>
+  <code><![CDATA[from docx import Document
+
+# Load document
+doc = Document('${filepathPython}')
+
+${topCode}
+
+# Save document
+doc.save('${filepathPython}')
+print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></code>
+  <description>Add text to document</description>
+</write_code>`;
+      }
+      
+      if (actionXML) {
+        console.log('[AutoReply] Pre-generated XML for operation:', operation);
+        console.log('[AutoReply] XML preview:', actionXML.substring(0, 200) + '...');
+        
+        // CRITICAL: Return with skipPlanning=true and directExecution=true
+        // This makes it as fast as "make a document" (3-5s instead of 5-8s)
+        return {
+          needsExecution: true,
+          specialistResponse: null,
+          specialist: 'data_generation',
+          taskType: 'simple_file_edit',
+          skipPlanning: true,        // ← SKIP PLANNING!
+          directExecution: true,     // ← GO STRAIGHT TO CODE-ACT!
+          preGeneratedAction: actionXML,
+          operation
+        };
+      }
+    }
+  }
+  
+  // FALLBACK: General file edit patterns (for complex edits that need LLM)
   const fileEditPatterns = [
     /add.*\b(to|in|into).*\b(document|file|excel|word|spreadsheet|doc)\b/i,
-    /add.*\b(name|author|title|section).*\b(to|in|into|at)\b/i,
     /update.*\b(document|file|excel|word|spreadsheet|doc)\b/i,
     /modify.*\b(document|file|excel|word|spreadsheet|doc)\b/i,
     /change.*\b(in|the).*\b(document|file|excel|word|spreadsheet|doc)\b/i,
@@ -473,37 +652,18 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     /put.*\b(in|at|into).*\b(document|file|doc|top|bottom)\b/i
   ];
   
-  // REMOVED: obviousTaskPatterns - redundant with ultra fast-path and specialist routing
-  // File edit patterns still used for context-aware routing
   const isFileEdit = fileEditPatterns.some(pattern => pattern.test(goal));
   
-  // CRITICAL: For file edits, check if there are files in the conversation
-  // If no files exist, we need to ask for clarification (not fast-path)
-  if (isFileEdit) {
-    // Check if there are recent files in the conversation
-    const hasRecentFiles = messages.length > 0 && messages.some(m => 
-      m.content && (
-        m.content.includes('.docx') || 
-        m.content.includes('.xlsx') ||
-        m.content.includes('.pdf') ||
-        m.content.includes('document') ||
-        m.content.includes('file')
-      )
-    );
-    
-    if (!hasRecentFiles) {
-      console.log('[AutoReply] ⚠️ File edit requested but no files in context - routing to specialist for clarification');
-      // Don't fast-path - let specialist handle the clarification
-    } else {
-      console.log(`[AutoReply] ⚡ Fast-path: File edit with existing files detected`);
-      return {
-        needsExecution: true,
-        specialistResponse: null,
-        specialist: 'fast-path',
-        taskType: 'file_modification',
-        isFileEdit: true
-      };
-    }
+  // For complex edits, check if there are files in context
+  if (isFileEdit && files && files.length > 0) {
+    console.log(`[AutoReply] File edit detected, routing to specialist`);
+    // Let specialist handle complex edits (don't skip planning)
+    return {
+      needsExecution: true,
+      specialistResponse: null,
+      specialist: 'data_generation',
+      taskType: 'file_modification'
+    };
   }
   // Let all other file generation requests route to specialist (they'll get proper planning)
   
