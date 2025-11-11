@@ -379,8 +379,9 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   
   // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION
   // These are single-tool executions that should call file_generator ONCE and be done
-  // Catches: "create a word document titled X", "make a spreadsheet with Y", etc.
-  const simpleFileGenPattern = goal.match(/(create|make|generate|write)\s+(a |an )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)\s+(titled|called|named|with|about|on|for)/i);
+  // Catches conversational patterns: "can you make", "lets create", "i wanna make", "make me a", "i want a document", etc.
+  // Handles: explicit actions (make/create) OR implicit requests (i want/i need/give me)
+  const simpleFileGenPattern = goal.match(/(?:can you |lets |let's |i wanna |i want to |i want |i need |give me |please )?(?:(create|make|generate|write)(?:\s+\w+){0,3}\s+)?(a |an |the )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)(?:\s+\w+){0,3}\s+(titled|called|named|with|about|on|for)/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
