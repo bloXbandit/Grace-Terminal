@@ -764,14 +764,16 @@ async function generateStreamingBreakdown(analysis, onTokenStream) {
         response += `**Company:** ${details.company}\n`;
       }
       
-      // Add content preview
+      // Add content preview with cleaned text
       if (isLargeDocument) {
         // For large documents, provide concise summary
-        const lines = content.split('\n').filter(l => l.trim().length > 30);
+        const cleanedContent = cleanExtractedText(content);
+        const lines = cleanedContent.split('\n').filter(l => l.trim().length > 30);
         const preview = lines.slice(0, 10).join('\n');
         response += `\n**Summary:**\nThis is a ${pageCount}-page ${docType.type}. Here's a preview of the beginning:\n\n${preview}\n\n_If you need specific sections or details from this large document, just ask!_`;
       } else if (content && content.length > 100) {
-        response += `\n**Content Preview:**\n${content.substring(0, 800)}${content.length > 800 ? '...' : ''}\n`;
+        const cleanedContent = cleanExtractedText(content);
+        response += `\n**Content Preview:**\n${cleanedContent.substring(0, 800)}${cleanedContent.length > 800 ? '...' : ''}\n`;
       }
     }
   } else {
@@ -796,25 +798,53 @@ async function generateStreamingBreakdown(analysis, onTokenStream) {
         response += `_Note: This is a ${pageCount}-page document. I've shown you the beginning and end. If you need specific sections or details, just ask!_`;
       } else {
         response += `\n`;
-        // Show raw content for analysis (don't mention extraction failures)
-        if (content && content.length > 100) {
-          response += `**Content:**\n${content.substring(0, 1000)}${content.length > 1000 ? '\n\n...(content continues)' : ''}\n`;
-        } else if (content && content.trim().length > 0) {
-          response += `**Content:**\n${content}\n`;
+        // Show cleaned content for user-friendly display
+        const cleanedContent = cleanExtractedText(content);
+        if (cleanedContent && cleanedContent.length > 100) {
+          response += `**Content:**\n${cleanedContent.substring(0, 1000)}${cleanedContent.length > 1000 ? '\n\n...(content continues)' : ''}\n`;
+        } else if (cleanedContent && cleanedContent.trim().length > 0) {
+          response += `**Content:**\n${cleanedContent}\n`;
         }
       }
     } else {
-      // No page count, show content normally
-      if (content && content.length > 100) {
-        response += `\n**Content:**\n${content.substring(0, 1000)}${content.length > 1000 ? '\n\n...(content continues)' : ''}\n`;
-      } else if (content && content.trim().length > 0) {
-        response += `\n**Content:**\n${content}\n`;
+      // No page count, show cleaned content normally
+      const cleanedContent = cleanExtractedText(content);
+      if (cleanedContent && cleanedContent.length > 100) {
+        response += `\n**Content:**\n${cleanedContent.substring(0, 1000)}${cleanedContent.length > 1000 ? '\n\n...(content continues)' : ''}\n`;
+      } else if (cleanedContent && cleanedContent.trim().length > 0) {
+        response += `\n**Content:**\n${cleanedContent}\n`;
       }
     }
     // If no content, just show file info silently - no need to mention extraction failure
   }
   
   return response;
+}
+
+/**
+ * Clean and normalize extracted text for user-friendly display
+ * Fixes issues with broken line breaks from PDF/DOCX extraction
+ */
+function cleanExtractedText(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Replace multiple newlines with double newline (paragraph break)
+  let cleaned = text.replace(/\n{3,}/g, '\n\n');
+  
+  // Fix broken words across lines: "some\nword" -> "some word"
+  // BUT preserve intentional paragraph breaks (double newlines)
+  cleaned = cleaned.replace(/([a-z,])\n([a-z])/g, '$1 $2');
+  
+  // Remove excessive whitespace within lines
+  cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
+  
+  // Trim each line
+  cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
+  
+  // Remove empty lines between text (but keep paragraph breaks)
+  cleaned = cleaned.replace(/\n\n\n+/g, '\n\n');
+  
+  return cleaned.trim();
 }
 
 module.exports = {
