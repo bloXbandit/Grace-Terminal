@@ -13,7 +13,9 @@ RUN apt-get update && \
     wget curl sudo apt-utils git jq tmux bash curl ca-certificates file make \
     libgl1-mesa-glx \
     libasound2-plugins libatomic1 \
-    python3 python3-pip python3-venv && \
+    python3 python3-pip python3-venv \
+    tesseract-ocr tesseract-ocr-eng \
+    poppler-utils && \
     # Remove packages with CVEs and no updates yet, if present
     (apt-get remove -y libaom3 || true) && \
     (apt-get remove -y libjxl0.7 || true) && \
@@ -37,6 +39,9 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     PyP6XER \
     PyPDF2 \
     pypdf \
+    pdfplumber \
+    pytesseract \
+    pdf2image \
     requests \
     beautifulsoup4 \
     lxml \

@@ -51,9 +51,15 @@ const reflection = async (requirement, action_result = {}, conversation_id) => {
 
   // Check if output is empty or missing (possible silent failure)
   if (status === STATUS.SUCCESS && (!content || content.trim() === '')) {
+    // NUANCE: Conversational error message instead of technical backend speak
+    const naturalMessages = [
+      'Hmm, nothing came back from that. Let me try adjusting my approach...',
+      'That didn\'t produce any output. Give me a sec to fix that...',
+      'Looks like that went silent. Let me try a different way...'
+    ];
     return {
       status: STATUS.FAILURE,
-      comments: 'Execution produced no output - possible silent failure',
+      comments: naturalMessages[Math.floor(Math.random() * naturalMessages.length)],
       should_retry: true
     };
   }

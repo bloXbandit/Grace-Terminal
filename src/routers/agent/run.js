@@ -23,7 +23,7 @@ const RUNTIME_TYPE = process.env.RUNTIME_TYPE || 'local-docker'
 let closeContainer
 if (RUNTIME_TYPE && RUNTIME_TYPE === 'local-docker') {
   closeContainer = async () => {
-    console.log('本地不执行')
+    console.log('[Local] Skipping container close in local mode')
   }
 }
 
@@ -382,23 +382,23 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
   } else if (intent === 'twins') {
     await executeTwinsMode(commonParams, dir_path);
   } else {
-    // Agent 模式：先处理反馈，再执行任务
-    console.log('使用智能体模式 (Agent mode)');
+    // Agent mode: Process feedback first, then execute task
+    console.log('[Agent Mode] Using agent mode for task execution');
 
-    // Agent模式：同步处理反馈（确保记忆更新后再执行任务）
+    // Agent mode: Synchronously process feedback (ensure memory is updated before task execution)
     if (ENABLE_KNOWLEDGE === "ON") {
       try {
         await handle_feedback(feedbackOptions);
         // 更新条目数
         const knowledge_count = await Knowledge.count({ where: { agent_id: agent_id } });
         await Agent.update({ knowledge_count }, { where: { id: agent_id } });
-        console.log('Agent模式反馈处理完成，开始执行任务');
+        console.log('[Agent Mode] Feedback processing complete, starting task execution');
       } catch (error) {
-        console.error('Agent模式反馈处理失败:', error);
+        console.error('[Agent Mode] Feedback processing failed:', error);
       }
     }
 
-    // Agent模式的stream关闭处理（包含截图逻辑）
+    // Agent mode stream close handling (includes screenshot logic)
     stream.on('close', async () => {
       console.log('Agent stream closed');
       await closeContainer(ctx.state.user.id)
@@ -482,7 +482,7 @@ router.post("/run", sportsQueryMiddleware, async (ctx, next) => {
     });
     console.log(`[Run] 🔒 Reserved slot ${executionId} for conversation ${conversation_id}`);
     
-    // 保存用户消息 (智能体模式)
+    // Save user message (Agent mode)
     const msg = Message.format({
       role: 'user',
       status: 'success',
@@ -1075,23 +1075,23 @@ ${profileContext || ''}${fileContext}`
 async function runAgentPhase(params) {
   const { conversation_id, question, newFiles, onTokenStream, stream, context, agent_id, feedbackOptions } = params;
 
-  console.log('Twins模式 - 第二阶段：智能体模式');
+  console.log('[Twins Mode] Second phase: Agent mode');
   const agentModeNotification = `__lemon_mode__${JSON.stringify({ mode: 'agent', stage: 'second' })}\n\n`;
   onTokenStream(agentModeNotification);
 
-  // Agent模式：同步处理反馈
+  // Agent mode: Synchronously process feedback
   if (ENABLE_KNOWLEDGE === "ON" && agent_id) {
     try {
       await handle_feedback(feedbackOptions);
       const knowledge_count = await Knowledge.count({ where: { agent_id: agent_id } });
       await Agent.update({ knowledge_count }, { where: { id: agent_id } });
-      console.log('Agent阶段反馈处理完成，开始执行任务');
+      console.log('[Twins-Agent Phase] Feedback processing complete, starting task execution');
     } catch (error) {
-      console.error('Agent阶段反馈处理失败:', error);
+      console.error('[Twins-Agent Phase] Feedback processing failed:', error);
     }
   }
 
-  // 保存用户消息 (智能体模式)
+  // Save user message (Agent mode in Twins)
   const agentMsg = Message.format({
     role: 'user',
     status: 'success',

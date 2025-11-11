@@ -80,9 +80,31 @@ const withLLMRetry = (llmCall, retryOptions = {}) => {
 
       return shouldRetry && attempt <= 3;
     },
-    onRetry: (error, attempt, ...args) => {
+    onRetry: async (error, attempt, ...args) => {
       console.log(`[Retry ${attempt}] LLM response parsing failed:`, error.message);
       console.log(`[Retry ${attempt}] Attempting to regenerate response...`);
+      
+      // NUANCE: Varied retry messages to avoid robotic repetition
+      const retryMessages = [
+        'Hold on, reformatting that response...',
+        'Let me try that again with better structure...',
+        'Hmm, let me rephrase that...',
+        'Give me a sec, adjusting my approach...'
+      ];
+      
+      // Only send message on 2nd+ attempt (first is instant, no need to explain)
+      if (attempt > 1 && args.length > 0) {
+        const conversation_id = args[0]?.conversation_id || args[0];
+        if (conversation_id && typeof conversation_id === 'string') {
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          const message = retryMessages[Math.min(attempt - 2, retryMessages.length - 1)];
+          try {
+            await sendProgressMessage(null, conversation_id, message, 'progress');
+          } catch (e) {
+            console.log('[withRetry] Could not send retry message:', e.message);
+          }
+        }
+      }
     },
     validateResult: (result) => {
       // 验证 LLM 返回的内容是否可以被正确解析

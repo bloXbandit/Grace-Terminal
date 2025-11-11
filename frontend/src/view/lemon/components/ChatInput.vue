@@ -216,7 +216,7 @@
   <RechargeModal v-model:open="showRechargeModal" />
 </template>
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, h } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, h, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { notification, message } from "ant-design-vue";
@@ -570,8 +570,12 @@ const handleSend = () => {
     workMode: workMode.value,
   });
 
+  // CRITICAL: Clear input immediately to prevent file persistence bug
   messageText.value = "";
-  fileList.value = [];
+  // Use nextTick to ensure DOM updates before clearing
+  nextTick(() => {
+    fileList.value = [];
+  });
 };
 
 const handleStop = () => {
