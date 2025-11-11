@@ -234,9 +234,31 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       const simpleVisibilityQuery = goal.match(/can you see|do you see|are you able to see/i);
       const noComplexTask = !goal.match(/create|generate|modify|edit|update|add|remove|delete|change|replace/i);
       
-      if (simpleVisibilityQuery && noComplexTask) {
+      if (simpleVisibilityQuery && noComplexTask && analyses.length > 0) {
         console.log('[AutoReply] ⚡ Fast-path: Simple file visibility question detected');
-        const response = generateUserFriendlySummary(analyses);
+        
+        // SMART RESPONSE: Be contextual, not just generic
+        const analysis = analyses[0];
+        const content = typeof analysis.content === 'string' ? analysis.content : '';
+        const pageCount = analysis.metadata?.pageCount || 0;
+        const filename = analysis.filename || 'the file';
+        
+        let response = `Yup, got it! `;
+        
+        // Be contextual based on content
+        if (pageCount === 1 && content.length < 500) {
+          // Short single-page doc - likely a message or instruction
+          const hasTaskKeywords = /create|make|generate|write|build|design|develop/i.test(content);
+          if (hasTaskKeywords) {
+            response += `It's a 1-page PDF with a task for me. Let me know if you want me to execute it!`;
+          } else {
+            response += `It's a 1-page PDF with a message. Want me to break it down or help with something specific?`;
+          }
+        } else if (pageCount > 1) {
+          response += `It's a ${pageCount}-page ${filename.endsWith('.pdf') ? 'PDF' : 'document'}. I've got it analyzed and ready. What would you like to know about it?`;
+        } else {
+          response += `It's a ${filename.endsWith('.pdf') ? 'PDF' : 'document'} (${analysis.sizeFormatted || 'unknown size'}). I can see it clearly. How can I help?`;
+        }
         
         // Return as specialist completion to prevent redundant specialist call
         return {

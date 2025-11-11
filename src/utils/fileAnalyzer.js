@@ -828,23 +828,38 @@ async function generateStreamingBreakdown(analysis, onTokenStream) {
 function cleanExtractedText(text) {
   if (!text || typeof text !== 'string') return text;
   
-  // Replace multiple newlines with double newline (paragraph break)
-  let cleaned = text.replace(/\n{3,}/g, '\n\n');
+  // CRITICAL FIX: PDFs often have multiple newlines between words
+  // First, normalize all multi-newlines to single space for word joining
+  // This handles both \n and \n\n between words
+  let cleaned = text.replace(/([a-z,.:;!?])\n+([a-z])/gi, '$1 $2');
   
-  // Fix broken words across lines: "some\nword" -> "some word"
-  // BUT preserve intentional paragraph breaks (double newlines)
-  cleaned = cleaned.replace(/([a-z,])\n([a-z])/g, '$1 $2');
+  // Now fix sentence boundaries - keep proper spacing
+  cleaned = cleaned.replace(/([.!?])\n+([A-Z])/g, '$1 $2');
   
-  // Remove excessive whitespace within lines
+  // Clean up excessive spacing
   cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   
   // Trim each line
   cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
   
-  // Remove empty lines between text (but keep paragraph breaks)
-  cleaned = cleaned.replace(/\n\n\n+/g, '\n\n');
+  // Remove orphaned single words on lines (common PDF extraction artifact)
+  const lines = cleaned.split('\n');
+  const processedLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Skip empty lines
+    if (!line) continue;
+    
+    // If line is a single word (<15 chars) and not a number, join with previous
+    if (line.length < 15 && !/^\d/.test(line) && processedLines.length > 0) {
+      processedLines[processedLines.length - 1] += ' ' + line;
+    } else {
+      processedLines.push(line);
+    }
+  }
   
-  return cleaned.trim();
+  return processedLines.join(' ').trim();
 }
 
 module.exports = {
