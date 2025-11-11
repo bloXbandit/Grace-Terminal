@@ -14,8 +14,9 @@ const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = re
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
 
-const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = []) => {
+const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
+  console.log('[AutoReply] Newly uploaded files:', newlyUploadedFileIds ? newlyUploadedFileIds.length : 0);
   console.log('[AutoReply] Files array:', JSON.stringify(files.map(f => ({ name: f.name || f.filename, filepath: f.filepath })), null, 2));
   
   // Check for mode commands (/dev, /normal, /dev status)
@@ -102,7 +103,15 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         continue;
       }
       
-      // Check persistent cache
+      // OPTIMIZATION: Skip cache check for newly uploaded files (guaranteed cache MISS)
+      const isNewUpload = newlyUploadedFileIds && newlyUploadedFileIds.includes(fileId);
+      if (isNewUpload) {
+        console.log(`[AutoReply] ⬆️ NEWLY UPLOADED file ${fileId}: ${file.name} - skipping cache check`);
+        filesToAnalyze.push(file);
+        continue;
+      }
+      
+      // Check persistent cache for existing files
       const cachedAnalysis = getCachedAnalysis(fileId);
       if (cachedAnalysis && !explicitReanalysis) {
         // Use cached analysis

@@ -272,8 +272,9 @@ class AgenticAgent {
     // This eliminates the wait gap during specialist LLM calls
     // CRITICAL: Pass files for upload detection and analysis
     console.log('[AgenticAgent] context.files:', this.context.files ? this.context.files.length : 0);
+    console.log('[AgenticAgent] context.newlyUploadedFileIds:', this.context.newlyUploadedFileIds || []);
     console.log('[AgenticAgent] Passing files to auto_reply:', this.context.files || []);
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream, this.context.files || []);
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream, this.context.files || [], this.context.newlyUploadedFileIds || []);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {

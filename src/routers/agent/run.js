@@ -289,6 +289,7 @@ router.post("/run", async (ctx, next) => {
     coordinator, // Add coordinator for specialist routing (Task/Auto modes only)
     enableSpecialistRouting: true, // Enable routing for complex tasks
     files: newFiles, // CRITICAL: Add uploaded files for file analyzer access
+    newlyUploadedFileIds: fileIds || [], // OPTIMIZATION: Track which files are new uploads (skip cache check)
   }
 
   console.log('[Agent Router] Context created with files:', context.files ? context.files.length : 0);
