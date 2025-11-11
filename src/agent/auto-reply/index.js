@@ -80,6 +80,86 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     };
   }
   
+  // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION (check BEFORE file analyzer)
+  // These are single-tool executions that should call file_generator ONCE and be done
+  // Catches: "create a word document titled X", "make a spreadsheet with Y", etc.
+  // MUST be before file analyzer so it works even when files are in context
+  const simpleFileGenPattern = goal.match(/(create|make|generate|write)\s+(a |an )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)\s+(titled|called|named|with|about|on|for)/i);
+  
+  if (simpleFileGenPattern) {
+    console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
+    console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
+    
+    // Extract file type
+    const fileType = simpleFileGenPattern[3].toLowerCase();
+    const isWordDoc = fileType.includes('word') || fileType === 'docx';
+    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
+    
+    // Extract title (look for "titled X" or "called X" or "named X")
+    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i);
+    let title = titleMatch ? titleMatch[1].trim() : 'Untitled';
+    
+    // Extract author if present
+    const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
+    let author = authorMatch ? authorMatch[1].trim() : null;
+    
+    // Helper function to escape XML special characters (prevent injection)
+    const escapeXML = (str) => {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+    };
+    
+    // CRITICAL: Pre-generate file_generator XML to bypass BOTH planning AND thinking() LLM call
+    // This makes it truly instant like ChatGPT
+    let actionXML = '';
+    if (isWordDoc) {
+      actionXML = `<file_generator>
+  <title>${escapeXML(title)}</title>
+  <type>docx</type>
+  ${author ? `<author>${escapeXML(author)}</author>` : ''}
+  <content>${escapeXML(goal)}</content>
+</file_generator>`;
+    } else if (isExcel) {
+      actionXML = `<file_generator>
+  <title>${escapeXML(title)}</title>
+  <type>xlsx</type>
+  <content>${escapeXML(goal)}</content>
+</file_generator>`;
+    } else {
+      // Generic document
+      actionXML = `<file_generator>
+  <title>${escapeXML(title)}</title>
+  <type>docx</type>
+  ${author ? `<author>${escapeXML(author)}</author>` : ''}
+  <content>${escapeXML(goal)}</content>
+</file_generator>`;
+    }
+    
+    console.log('[AutoReply] Pre-generated action XML:', actionXML.substring(0, 150));
+    
+    // CRITICAL: Validate XML before returning (safety check)
+    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<file_generator>')) {
+      console.log('[AutoReply] ⚠️ Invalid XML generation - falling back to specialist routing');
+      // Don't return, let it fall through to file analyzer and specialist routing
+    } else {
+      // This is a simple file generation - skip planning, go straight to execution
+      // CRITICAL: Include pre-generated action XML to bypass thinking() LLM call
+      return {
+        needsExecution: true,
+        specialistResponse: null,
+        skipPlanning: true,
+        preGeneratedAction: actionXML,
+        specialist: 'file_generator',
+        taskType: 'document_creation',
+        handledBySpecialist: false // Let it go through execution phase
+      };
+    }
+  }
+  
   // FILE UPLOAD DETECTION: Analyze uploaded files if present
   if (files && files.length > 0) {
     console.log(`[AutoReply] 📎 Detected ${files.length} uploaded file(s), analyzing...`);
@@ -278,90 +358,6 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         result: 'File analysis failed. Please try again.'
       };
     }
-  }
-  
-  // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION
-  // These are single-tool executions that should call file_generator ONCE and be done
-  // Catches: "create a word document titled X", "make a spreadsheet with Y", etc.
-  const simpleFileGenPattern = goal.match(/(create|make|generate|write)\s+(a |an )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)\s+(titled|called|named|with|about|on|for)/i);
-  
-  if (simpleFileGenPattern) {
-    console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
-    console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
-    
-    // Extract file type
-    const fileType = simpleFileGenPattern[3].toLowerCase();
-    const isWordDoc = fileType.includes('word') || fileType === 'docx';
-    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
-    
-    // Extract title (look for "titled X" or "called X" or "named X")
-    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i);
-    let title = titleMatch ? titleMatch[1].trim() : 'Untitled';
-    
-    // Extract author if present
-    const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
-    let author = authorMatch ? authorMatch[1].trim() : null;
-    
-    // CRITICAL: XML escape to prevent injection and parsing errors
-    const xmlEscape = (str) => {
-      if (!str) return str;
-      return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-    };
-    
-    title = xmlEscape(title);
-    author = xmlEscape(author);
-    
-    // CRITICAL: Pre-generate the action XML to bypass LLM thinking entirely
-    // This makes it truly instant like ChatGPT
-    let actionXML = '';
-    if (isWordDoc) {
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>docx</type>
-  ${author ? `<author>${author}</author>` : ''}
-  <content>${goal}</content>
-</file_generator>`;
-    } else if (isExcel) {
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>xlsx</type>
-  <content>${goal}</content>
-</file_generator>`;
-    } else {
-      // Generic document
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>docx</type>
-  ${author ? `<author>${author}</author>` : ''}
-  <content>${goal}</content>
-</file_generator>`;
-    }
-    
-    console.log('[AutoReply] Pre-generated action XML:', actionXML.substring(0, 150));
-    
-    // CRITICAL: Validate XML before returning (safety check)
-    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<file_generator>')) {
-      console.log('[AutoReply] ⚠️ Invalid XML generation - falling back to specialist routing');
-      // Don't return, let it fall through to specialist routing
-      return null;
-    }
-    
-    // This is a simple file generation - skip planning, go straight to execution
-    // CRITICAL: Include pre-generated action XML to bypass thinking() LLM call
-    return {
-      needsExecution: true,
-      specialistResponse: null,
-      specialist: 'data_generation',
-      taskType: 'simple_data_generation',
-      skipPlanning: true, // CRITICAL: Skip planning phase
-      directExecution: true, // CRITICAL: Go straight to tool execution
-      preGeneratedAction: actionXML // CRITICAL: Pre-generated action XML to bypass thinking
-    };
   }
   
   // Fast-path for file edits (context-aware)
