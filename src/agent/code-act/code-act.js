@@ -292,8 +292,12 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
       // 6. Execute action(s)
       // CRITICAL: If multiple actions from preGeneratedAction (ultra-fast-path), execute ALL sequentially
       let action_result = null;
+      let allActionsSucceeded = false;
+      
       if (actions.length > 1 && task.preGeneratedAction) {
         console.log('[CodeAct] Executing multiple pre-generated actions:', actions.length);
+        allActionsSucceeded = true; // Assume success, set false if any fails
+        
         for (let i = 0; i < actions.length; i++) {
           const currentAction = actions[i];
           console.log(`[CodeAct] Executing action ${i + 1}/${actions.length} - type:`, currentAction.type);
@@ -311,8 +315,19 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           // If any action fails, stop and handle error
           if (action_result.status === 'failure' || action_result.error) {
             console.log(`[CodeAct] Action ${i + 1} failed, stopping execution chain`);
+            allActionsSucceeded = false;
             break;
           }
+        }
+        
+        // If all actions succeeded, return success immediately
+        if (allActionsSucceeded) {
+          console.log('[CodeAct] ✅ All multi-actions succeeded - returning success');
+          return {
+            status: 'success',
+            content: 'All actions completed successfully',
+            comments: 'Multi-action execution completed'
+          };
         }
       } else {
         // Single action - execute normally

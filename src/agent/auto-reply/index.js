@@ -456,7 +456,6 @@ print('✅ Created ${filename}')]]></content>
 <terminal_run>
   <command>python3</command>
   <args>create_doc_${timestamp}.py</args>
-  <cwd>.</cwd>
 </terminal_run>
 </actions>`;
     } else if (isExcel) {
@@ -529,7 +528,6 @@ print('✅ Created ${filename}')]]></content>
 <terminal_run>
   <command>python3</command>
   <args>create_doc_${timestamp}.py</args>
-  <cwd>.</cwd>
 </terminal_run>
 </actions>`;
     }
