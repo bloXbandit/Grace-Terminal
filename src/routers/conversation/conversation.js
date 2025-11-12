@@ -52,7 +52,8 @@ const path = require('path');
  */
 router.post("/", async ({ state, request, response }) => {
   const body = request.body || {};
-  let { content, mode_type, agent_id, model_id } = body
+  let { content, message, mode_type, agent_id, model_id } = body
+  if (!content && message) content = message; // Fallback to 'message' field
   let modeType = mode_type || 'task'
   const conversation_id = uuid.v4();
   const title = content.slice(0, 20);

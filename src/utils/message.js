@@ -72,6 +72,27 @@ class Message {
     }
   }
   static async updateToDB(messageData, conversation_id) {
+    function updateAction(message, action) {
+      if (!message) return;
+      if (action.action_type) {
+        message.meta.action_type = action.action_type;
+      }
+      if (action.json) {
+        message.meta.json = action.json;
+      }
+      if (action.filepath) {
+        message.meta.filepath = action.filepath;
+      }
+      if (action.url) {
+        message.meta.url = action.url;
+      }
+      if (action.meta_content) {
+        message.meta.content = action.meta_content;
+      }
+      if (action.status) {
+        message.status = action.status;
+      }
+    }
   }
 }
 

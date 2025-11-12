@@ -34,6 +34,62 @@ const finish_action = async (action, context, task_id) => {
     }
   }
   
+  const { createVersion } = require('@src/utils/versionManager');
+  const { extractRelativePath } = require('@src/utils/filePathHelper');
+
+  // NEW: Create versions and collect versioned file data (matches AgenticAgent)
+  const filesWithVersions = [];
+  if (context.generate_files && context.generate_files.length > 0) {
+    const state = 'Agent Coding';
+    
+    for (const filepath of context.generate_files) {
+      try {
+        // Create version (same as AgenticAgent)
+        const relativePath = extractRelativePath(filepath);
+        await createVersion(filepath, context.conversation_id, { 
+          state, 
+          action: 'Agent Coding' 
+        });
+        
+        // Get file stats
+        const stats = fs.statSync(filepath);
+        
+        // Build object matching AgenticAgent's structure
+        filesWithVersions.push({
+          filepath,
+          filename: path.basename(filepath),
+          filesize: stats.size,
+          relativePath,
+          id: undefined,  // Will be populated later
+          version: undefined  // Will be populated later
+        });
+      } catch (err) {
+        console.error('[finish_action] Version creation failed:', err);
+      }
+    }
+    
+    // NEW: Fetch version IDs (same as AgenticAgent)
+    const FileVersion = require('@src/models/FileVersion');
+    for (const file of filesWithVersions) {
+      try {
+        const version = await FileVersion.findOne({
+          where: {
+            conversation_id: context.conversation_id,
+            filepath: file.relativePath,
+            active: true
+          }
+        });
+        
+        if (version) {
+          file.id = version.getDataValue('id'); // Correct Sequelize property access
+          file.version = version.getDataValue('version');
+        }
+      } catch (err) {
+        console.error('[finish_action] Version fetch failed:', err);
+      }
+    }
+  }
+  
   const result = {
     status: "success",
     comments: "Task Success !",
@@ -53,7 +109,7 @@ const finish_action = async (action, context, task_id) => {
     content: result.content, 
     comments: result.comments, 
     memorized: result.memorized,
-    json: filesWithMetadata
+    json: filesWithVersions  // Use versioned files array
   });
   
   onTokenStream && onTokenStream(msg);
