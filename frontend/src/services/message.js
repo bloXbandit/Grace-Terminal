@@ -167,6 +167,12 @@ function updateTask(message, messages) {
     //获取 plan 的 actions
     let plan = messages[plan_message_index];
 
+    // ULTRA-FAST-PATH FIX: If no plan exists, skip task update
+    if (!plan || plan_message_index === -1) {
+        console.log('[updateTask] No plan found (ultra-fast-path) - skipping task update');
+        return;
+    }
+
     //根据plan 的 json 找到当前的task
 
     let task_index = plan.meta.json.findIndex(task => task.id === task_id);
@@ -209,6 +215,25 @@ function updateAction(message, messages) {
     let plan_message_index = messages.findLastIndex(messageInfo => messageInfo.meta && messageInfo.meta.action_type === 'plan');
     //获取 plan 的 actions
     let plan = messages[plan_message_index];
+
+    // ULTRA-FAST-PATH FIX: If no plan exists, just add message to messages array
+    if (!plan || plan_message_index === -1) {
+        console.log('[updateAction] No plan found (ultra-fast-path) - adding message directly');
+        // Check if message already exists by uuid
+        const existing_index = messages.findIndex(msg => msg.uuid === uuid && msg.uuid !== '');
+        if (existing_index !== -1) {
+            // Update existing message
+            messages[existing_index].status = message.status;
+            messages[existing_index].meta = message.meta;
+            if (message.meta.action_type === 'terminal_run') {
+                messages[existing_index].content = [messages[existing_index].content, message.content].flat();
+            }
+        } else {
+            // Add new message
+            messages.push(message);
+        }
+        return;
+    }
 
     //根据plan 的 json 找到当前的task
 

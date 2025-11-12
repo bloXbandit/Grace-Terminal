@@ -40,15 +40,14 @@ const finish_action = async (action, context, task_id) => {
   // NEW: Create versions and collect versioned file data (matches AgenticAgent)
   const filesWithVersions = [];
   if (context.generate_files && context.generate_files.length > 0) {
-    const state = 'Agent Coding';
-    
     for (const filepath of context.generate_files) {
       try {
         // Create version (same as AgenticAgent)
         const relativePath = extractRelativePath(filepath);
+        // FIX: Don't pass 'state' as string - createVersion will use filepath directly
         await createVersion(filepath, context.conversation_id, { 
-          state, 
-          action: 'Agent Coding' 
+          action: 'Agent Coding',
+          user_id: context.user_id
         });
         
         // Get file stats
