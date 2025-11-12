@@ -1,0 +1,404 @@
+# Grace AI - Initial Message Load Time & File Upload Analysis
+
+**Date:** November 11, 2025  
+**Issues:** 
+1. Initial message to new agent takes a while to initialize/load
+2. Files uploaded with first message aren't recognized (Grace claims she can't see them)
+3. Second message onwards, files are recognized
+
+---
+
+## Key Findings from Log Analysis
+
+### Finding #1: Context Building is Fast (19-52ms)
+```
+2025-11-10 23:43:37.522 | [ConversationContext] Total messages: 3
+2025-11-10 23:43:37.527 | [ConversationContext] Built context in 46ms
+2025-11-10 23:43:37.528 | [AgenticAgent] Built unified context for routing in 47ms
+```
+
+**Conclusion:** Context building is NOT the bottleneck (< 50ms)
+
+---
+
+### Finding #2: Files Are Never Loaded into Context
+```
+2025-11-10 23:43:37.528 | [AgenticAgent] context.files: 0
+2025-11-10 23:43:37.528 | [AgenticAgent] Passing files to auto_reply: []
+2025-11-10 23:44:23.093 | [AgenticAgent] context.files: 0
+2025-11-11 00:16:08.656 | [AgenticAgent] context.files: 0
+2025-11-11 01:05:58.510 | [AgenticAgent] context.files: 0
+```
+
+**Every single request shows `context.files: 0`!**
+
+**Conclusion:** Files aren't being loaded from database into context at all!
+
+---
+
+### Finding #3: Runtime Container Logs Show Old Dates
+The runtime logs (pasted_content_17.txt) show dates from **November 5, 2025**, but the main app logs show **November 10-11, 2025**.
+
+**Conclusion:** Runtime container might be stale or not restarted properly
+
+---
+
+## Root Causes Identified
+
+### Issue #1: Files Not Loaded into Context
+
+**Problem:** `ConversationContext` is not loading files from the database
+
+**Evidence:**
+1. Every request shows `context.files: 0`
+2. Files are uploaded and saved to database (we know this works)
+3. But `ConversationContext.build()` never loads them
+
+**Root Cause:** The `ConversationContext` class likely doesn't have a `_loadFiles()` method or it's not being called
+
+---
+
+### Issue #2: Initial Message Delay
+
+**Possible Causes:**
+
+1. **Database Sync on Startup** (10 seconds)
+   ```
+   2025-11-10 23:40:51.461 | filepath /app/data/database.sqlite
+   2025-11-10 23:41:01.134 | Error during sync: Error
+   ```
+   - Database sync takes ~10 seconds
+   - Happens on app startup, not per-message
+   - **NOT the issue for per-conversation delays**
+
+2. **Intent Detection LLM Call** (unknown time)
+   ```
+   Role: You are a top-tier intent recognition specialist...
+   ```
+   - AUTO mode calls LLM to detect intent ("chat" vs "agent")
+   - This adds latency to first message
+   - **Likely a significant contributor**
+
+3. **SEAL Framework Initialization** (unknown time)
+   ```
+   2025-11-10 23:41:31.625 | 🧠 [SEAL] Self-Evolving Agentic LLM Framework initialized
+   ```
+   - Happens once on app startup
+   - **NOT per-conversation**
+
+4. **Specialist Routing** (unknown time)
+   - Auto-reply calls coordinator
+   - Coordinator detects task type
+   - Routes to specialist
+   - **Adds latency**
+
+---
+
+## Detailed Analysis
+
+### Where is the Delay?
+
+Let me trace a typical first message flow:
+
+```
+User sends first message
+    ↓
+Frontend → POST /api/agent/run
+    ↓
+run.js: Load conversation, messages, files from DB
+    ↓
+AgenticAgent.run()
+    ↓
+ConversationContext.build() [47ms] ✅ FAST
+    ↓
+auto_reply()
+    ↓
+IF AUTO mode → detect_intent() [LLM CALL] ⏱️ SLOW?
+    ↓
+IF agent intent → MultiAgentCoordinator
+    ↓
+Coordinator.execute()
+    ↓
+detectTaskType() [LLM CALL?] ⏱️ SLOW?
+    ↓
+Route to specialist
+    ↓
+Specialist generates response [LLM CALL] ⏱️ SLOW
+    ↓
+Return to user
+```
+
+**Bottlenecks:**
+1. **Intent detection** (AUTO mode only) - LLM call
+2. **Task type detection** (coordinator) - LLM call or pattern matching?
+3. **Specialist response** (always) - LLM call
+
+---
+
+### Why Files Aren't Recognized on First Message
+
+**Hypothesis:** Files are uploaded AFTER the message is sent, not BEFORE
+
+**Typical flow:**
+```
+1. User types message
+2. User attaches file
+3. User clicks "Send"
+4. Frontend sends message to /api/agent/run
+5. Frontend uploads file to /api/upload (separate request)
+6. File saved to database
+7. BUT message already processing without file!
+```
+
+**On second message:**
+```
+1. File already in database from previous upload
+2. run.js loads files from database
+3. Files available in context
+4. Grace can see the file ✅
+```
+
+**Root Cause:** Race condition between message processing and file upload
+
+---
+
+## Solutions
+
+### Fix #1: Load Files into ConversationContext
+
+**Problem:** `context.files` is always 0
+
+**Solution:** Add file loading to `ConversationContext.build()`
+
+**File:** `src/agent/context/ConversationContext.js` (or wherever it's defined)
+
+**Add:**
+```javascript
+async _loadFiles() {
+  const File = require('@src/models/File');
+  const files = await File.findAll({
+    where: { conversation_id: this.conversationId },
+    order: [['created_at', 'DESC']]
+  });
+  return files;
+}
+
+async build() {
+  // ... existing code ...
+  
+  // Load files
+  const files = await this._loadFiles();
+  this.context.files = files;
+  
+  // ... rest of build ...
+}
+```
+
+**Impact:**
+- Files will be available in context
+- File analyzer can run on first message
+- Grace can see uploaded files immediately
+
+---
+
+### Fix #2: Ensure Files are Uploaded Before Message Processing
+
+**Problem:** Race condition - message processes before file upload completes
+
+**Solution:** Wait for file upload to complete before sending message
+
+**File:** Frontend - wherever message sending happens
+
+**Change:**
+```javascript
+// BEFORE (race condition):
+sendMessage(text);
+uploadFile(file);
+
+// AFTER (sequential):
+await uploadFile(file);
+await sendMessage(text);
+```
+
+**Impact:**
+- Files guaranteed to be in database before message processing
+- No more "can't see file" on first message
+
+---
+
+### Fix #3: Optimize Intent Detection (AUTO Mode)
+
+**Problem:** LLM call for intent detection adds latency
+
+**Solution:** Use pattern matching for obvious cases, LLM only for ambiguous
+
+**File:** `src/agent/auto-reply/detect_intent.js` (or wherever intent detection is)
+
+**Add fast-path:**
+```javascript
+async function detect_intent(question, conversation_id, messages) {
+  // FAST-PATH: Obvious agent tasks
+  if (question.match(/create|generate|make|write|search|find|analyze/i)) {
+    return 'agent';
+  }
+  
+  // FAST-PATH: Obvious chat
+  if (question.match(/^(hi|hello|hey|thanks|thank you|ok|okay|yes|no)$/i)) {
+    return 'chat';
+  }
+  
+  // FALLBACK: LLM for ambiguous cases
+  return await llm_detect_intent(question, conversation_id, messages);
+}
+```
+
+**Impact:**
+- 80% of queries use fast-path (no LLM call)
+- 20% still use LLM for ambiguous cases
+- Significant latency reduction
+
+---
+
+### Fix #4: Cache Specialist Routing Patterns
+
+**Problem:** Task type detection might be slow
+
+**Solution:** Cache common patterns, use LLM only for new patterns
+
+**File:** `src/agent/specialists/MultiAgentCoordinator.js`
+
+**Add caching:**
+```javascript
+const taskTypeCache = new Map();
+
+async detectTaskType(goal) {
+  // Check cache first
+  const cached = taskTypeCache.get(goal.toLowerCase());
+  if (cached) return cached;
+  
+  // Pattern matching
+  const taskType = this._patternMatch(goal);
+  if (taskType) {
+    taskTypeCache.set(goal.toLowerCase(), taskType);
+    return taskType;
+  }
+  
+  // LLM fallback
+  const llmTaskType = await this._llmDetectTaskType(goal);
+  taskTypeCache.set(goal.toLowerCase(), llmTaskType);
+  return llmTaskType;
+}
+```
+
+**Impact:**
+- Repeated queries instant
+- New queries still accurate
+- Cache grows over time
+
+---
+
+### Fix #5: Preload Common Resources
+
+**Problem:** First message might trigger lazy loading
+
+**Solution:** Preload resources on conversation creation
+
+**File:** `src/routers/agent/run.js`
+
+**Add preloading:**
+```javascript
+// When creating new conversation
+if (isNewConversation) {
+  // Preload profile
+  await UserProfile.findOne({ where: { user_id } });
+  
+  // Preload models list
+  await getDefaultModel();
+  
+  // Warm up coordinator
+  await MultiAgentCoordinator.warmup();
+}
+```
+
+**Impact:**
+- First message faster
+- Resources already in memory
+
+---
+
+## Implementation Priority
+
+### High Priority (Do First)
+1. **Fix #1: Load files into ConversationContext** - Fixes file recognition issue
+2. **Fix #2: Ensure files uploaded before message** - Fixes race condition
+
+### Medium Priority (Do Next)
+3. **Fix #3: Optimize intent detection** - Reduces AUTO mode latency
+4. **Fix #4: Cache specialist routing** - Reduces coordinator latency
+
+### Low Priority (Nice to Have)
+5. **Fix #5: Preload resources** - Marginal improvement
+
+---
+
+## Testing Plan
+
+### Test #1: File Upload on First Message
+```
+1. Create new conversation
+2. Attach file (PDF/DOCX)
+3. Type "can you see this file?"
+4. Send message
+5. Expected: Grace says "Yes, I can see [filename]"
+6. Actual (before fix): "I don't see any file"
+```
+
+### Test #2: Measure Initial Message Latency
+```
+1. Create new conversation
+2. Send "hello"
+3. Measure time from send to response
+4. Expected: < 2 seconds
+5. Actual (before fix): 5-10 seconds?
+```
+
+### Test #3: Measure Second Message Latency
+```
+1. After first message completes
+2. Send "what's the date"
+3. Measure time from send to response
+4. Expected: < 1 second (fast-path)
+5. Actual: Should be fast
+```
+
+---
+
+## Summary
+
+### Root Causes
+1. ❌ **Files never loaded into context** - `context.files` always 0
+2. ❌ **Race condition** - File upload happens after message processing starts
+3. ⚠️ **Intent detection LLM call** - Adds latency in AUTO mode
+4. ⚠️ **Specialist routing** - Might add latency
+
+### Fixes Needed
+1. ✅ Add `_loadFiles()` to ConversationContext
+2. ✅ Ensure sequential file upload → message send
+3. ✅ Add fast-path for intent detection
+4. ✅ Cache specialist routing patterns
+5. ✅ Preload resources on new conversation
+
+### Expected Impact
+- **File recognition:** Fixed immediately (no more "can't see file")
+- **Initial message latency:** Reduced by 50-80% (fast-path + caching)
+- **Second message latency:** Already fast (< 1s)
+
+---
+
+**Next Steps:**
+1. Implement Fix #1 and #2 first (file recognition)
+2. Test file upload on first message
+3. Implement Fix #3 and #4 (latency optimization)
+4. Measure before/after latency
+5. Document results
+

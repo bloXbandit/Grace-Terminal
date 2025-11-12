@@ -417,6 +417,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run
+    // WRAP in <actions> parent tag so XML parser handles multiple actions
     let actionXML = '';
     const timestamp = Date.now();
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -424,9 +425,10 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     if (isWordDoc) {
       // Generate DOCX using python-docx
       const filename = `${sanitizedTitle}.docx`;
-      actionXML = `<write_code>
+      actionXML = `<actions>
+<write_code>
   <language>python</language>
-  <filepath>/tmp/create_doc_${timestamp}.py</filepath>
+  <path>create_doc_${timestamp}.py</path>
   <content><![CDATA[from docx import Document
 from docx.shared import Pt, Inches
 
@@ -450,13 +452,20 @@ doc.add_paragraph('This document was created based on your request.')
 doc.save('${filename}')
 print('✅ Created ${filename}')]]></content>
   <description>Create Word document: ${title}</description>
-</write_code>`;
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_doc_${timestamp}.py</args>
+  <cwd>.</cwd>
+</terminal_run>
+</actions>`;
     } else if (isExcel) {
       // Generate XLSX using openpyxl
       const filename = `${sanitizedTitle}.xlsx`;
-      actionXML = `<write_code>
+      actionXML = `<actions>
+<write_code>
   <language>python</language>
-  <filepath>/tmp/create_excel_${timestamp}.py</filepath>
+  <path>create_excel_${timestamp}.py</path>
   <content><![CDATA[from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 
@@ -484,13 +493,20 @@ ws['B6'] = 'Data'
 wb.save('${filename}')
 print('✅ Created ${filename}')]]></content>
   <description>Create Excel spreadsheet: ${title}</description>
-</write_code>`;
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_excel_${timestamp}.py</args>
+  <cwd>.</cwd>
+</terminal_run>
+</actions>`;
     } else {
       // Default to DOCX
       const filename = `${sanitizedTitle}.docx`;
-      actionXML = `<write_code>
+      actionXML = `<actions>
+<write_code>
   <language>python</language>
-  <filepath>/tmp/create_doc_${timestamp}.py</filepath>
+  <path>create_doc_${timestamp}.py</path>
   <content><![CDATA[from docx import Document
 
 # Create document
@@ -509,13 +525,19 @@ doc.add_paragraph('${contentPython}')
 doc.save('${filename}')
 print('✅ Created ${filename}')]]></content>
   <description>Create document: ${title}</description>
-</write_code>`;
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_doc_${timestamp}.py</args>
+  <cwd>.</cwd>
+</terminal_run>
+</actions>`;
     }
     
-    console.log('[AutoReply] Pre-generated write_code XML:', actionXML.substring(0, 200));
+    console.log('[AutoReply] Pre-generated write_code + terminal_run XML:', actionXML.substring(0, 250));
     
     // CRITICAL: Validate XML before returning (safety check)
-    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<write_code>')) {
+    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<actions>') || !actionXML.includes('<write_code>') || !actionXML.includes('<terminal_run>')) {
       console.log('[AutoReply] ⚠️ Invalid XML generation - falling back to specialist routing');
       // Don't return, let it fall through to specialist routing
       return null;

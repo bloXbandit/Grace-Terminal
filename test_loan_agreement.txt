@@ -1,0 +1,22 @@
+LOAN AGREEMENT
+
+This Loan Agreement ("Agreement") is entered into on December 1, 2024, between:
+
+Lender: ABC Financial Corp
+Borrower: John Smith
+
+Loan Amount: $50,000
+Interest Rate: 5.5% per annum
+Repayment Term: 36 months
+
+Terms and Conditions:
+1. The borrower agrees to repay the loan in monthly installments.
+2. Payments are due on the first of each month.
+3. Late payments will incur a 2% penalty fee.
+
+Signatures:
+_________________
+ABC Financial Corp
+
+_________________
+John Smith

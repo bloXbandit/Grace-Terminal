@@ -115,15 +115,19 @@ const completeCodeAct = async (task = {}, context = {}) => {
     try {
       // CRITICAL: Check if task has pre-generated action (from specialist)
       let action = null;
+      let actions = [];
       let content = '';
       
       if (task.preGeneratedAction || task.requirement?.includes('<tool')) {
         console.log('[CodeAct] Using pre-generated action from specialist');
         const actionXML = task.preGeneratedAction || task.requirement;
         console.log('[CodeAct] Action XML:', actionXML.substring(0, 200));
-        const actions = await resolveActions(actionXML);
+        actions = await resolveActions(actionXML);
         action = actions[0];
         console.log('[CodeAct] Parsed action:', JSON.stringify(action));
+        if (actions.length > 1) {
+          console.log('[CodeAct] Multiple actions detected:', actions.length);
+        }
         content = actionXML;
       }
       
@@ -285,15 +289,42 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         }
       }
       
-      // 6. Execute action
-      console.log('[CodeAct] Executing action type:', action.type);
-      const action_result = await context.runtime.execute_action(action, context, task.id);
-      console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
-      if (!context.generate_files) {
-        context.generate_files = [];
-      }
-      if (action_result.meta && action_result.meta.filepath) {
-        context.generate_files.push(action_result.meta.filepath);
+      // 6. Execute action(s)
+      // CRITICAL: If multiple actions from preGeneratedAction (ultra-fast-path), execute ALL sequentially
+      let action_result = null;
+      if (actions.length > 1 && task.preGeneratedAction) {
+        console.log('[CodeAct] Executing multiple pre-generated actions:', actions.length);
+        for (let i = 0; i < actions.length; i++) {
+          const currentAction = actions[i];
+          console.log(`[CodeAct] Executing action ${i + 1}/${actions.length} - type:`, currentAction.type);
+          action_result = await context.runtime.execute_action(currentAction, context, task.id);
+          console.log(`[CodeAct] Action ${i + 1} result:`, JSON.stringify(action_result).substring(0, 300));
+          
+          // Track generated files
+          if (!context.generate_files) {
+            context.generate_files = [];
+          }
+          if (action_result.meta && action_result.meta.filepath) {
+            context.generate_files.push(action_result.meta.filepath);
+          }
+          
+          // If any action fails, stop and handle error
+          if (action_result.status === 'failure' || action_result.error) {
+            console.log(`[CodeAct] Action ${i + 1} failed, stopping execution chain`);
+            break;
+          }
+        }
+      } else {
+        // Single action - execute normally
+        console.log('[CodeAct] Executing action type:', action.type);
+        action_result = await context.runtime.execute_action(action, context, task.id);
+        console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
+        if (!context.generate_files) {
+          context.generate_files = [];
+        }
+        if (action_result.meta && action_result.meta.filepath) {
+          context.generate_files.push(action_result.meta.filepath);
+        }
       }
       // console.log("action_result", action_result);
 

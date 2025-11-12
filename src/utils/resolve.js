@@ -97,18 +97,47 @@ const resolveActions = xml => {
   }
   
   try {
-    // Extract XML from potentially messy LLM response
-    const cleanedXml = extractXML(xml);
+    // Check if XML has <actions> wrapper (multi-action from ultra-fast-path)
+    // If so, skip extractXML and parse directly to preserve all actions
+    let cleanedXml;
+    if (xml.includes('<actions>')) {
+      console.log('[resolveActions] Multi-action XML detected, parsing directly');
+      cleanedXml = xml;
+    } else {
+      // Extract XML from potentially messy LLM response (single action)
+      cleanedXml = extractXML(xml);
+    }
+    
     const resolved = resolveXML(cleanedXml);
     const actions = []
-    for (let key in resolved) {
-      const value = resolved[key];
-      const action = {
-        type: key,
-        params: value
+    
+    // Handle <actions> wrapper (multiple actions)
+    if (resolved.actions) {
+      console.log('[resolveActions] Processing actions wrapper');
+      for (let key in resolved.actions) {
+        const value = resolved.actions[key];
+        // Handle array of same-type actions or single action
+        if (Array.isArray(value)) {
+          value.forEach(v => {
+            actions.push({ type: key, params: v });
+          });
+        } else {
+          actions.push({ type: key, params: value });
+        }
       }
-      actions.push(action);
+    } else {
+      // Single action (no wrapper)
+      for (let key in resolved) {
+        const value = resolved[key];
+        const action = {
+          type: key,
+          params: value
+        }
+        actions.push(action);
+      }
     }
+    
+    console.log('[resolveActions] Parsed actions:', actions.length);
     return actions;
   } catch (err) {
     console.log('[resolveActions] Parse error:', err.message);
