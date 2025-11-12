@@ -378,7 +378,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   }
   
   // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION
-  // These are single-tool executions that should call file_generator ONCE and be done
+  // Uses write_code → Python script (PROVEN execution path, same as document edits)
   // Catches conversational patterns: "can you make", "lets create", "i wanna make", "make me a", "i want a document", etc.
   // Handles: explicit actions (make/create) OR implicit requests (i want/i need/give me)
   const simpleFileGenPattern = goal.match(/(?:can you |lets |let's |i wanna |i want to |i want |i need |give me |please )?(?:(create|make|generate|write)(?:\s+\w+){0,3}\s+)?(a |an |the )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)(?:\s+\w+){0,3}\s+(titled|called|named|with|about|on|for)/i);
@@ -400,50 +400,122 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
     let author = authorMatch ? authorMatch[1].trim() : null;
     
-    // CRITICAL: XML escape to prevent injection and parsing errors
-    const xmlEscape = (str) => {
+    // CRITICAL: Python string escape (for embedding in Python code)
+    const pythonEscape = (str) => {
       if (!str) return str;
       return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
+        .replace(/\\/g, '\\\\')  // Backslash must be first
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
     };
     
-    title = xmlEscape(title);
-    author = xmlEscape(author);
+    const titlePython = pythonEscape(title);
+    const authorPython = author ? pythonEscape(author) : null;
+    const contentPython = pythonEscape(goal);
     
-    // CRITICAL: Pre-generate the action XML to bypass LLM thinking entirely
-    // This makes it truly instant like ChatGPT
+    // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
+    // Uses Python script → runtime.execute_action → write_code → terminal_run
     let actionXML = '';
+    const timestamp = Date.now();
+    const sanitizedTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    
     if (isWordDoc) {
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>docx</type>
-  ${author ? `<author>${author}</author>` : ''}
-  <content>${goal}</content>
-</file_generator>`;
+      // Generate DOCX using python-docx
+      const filename = `${sanitizedTitle}.docx`;
+      actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/create_doc_${timestamp}.py</filepath>
+  <content><![CDATA[from docx import Document
+from docx.shared import Pt, Inches
+
+# Create document
+doc = Document()
+
+# Set core properties
+doc.core_properties.title = '${titlePython}'
+${authorPython ? `doc.core_properties.author = '${authorPython}'\n` : ''}
+# Add title as heading
+doc.add_heading('${titlePython}', 0)
+
+# Add content paragraph
+doc.add_paragraph('${contentPython}')
+
+# Add placeholder sections
+doc.add_heading('Overview', level=1)
+doc.add_paragraph('This document was created based on your request.')
+
+# Save document
+doc.save('${filename}')
+print('✅ Created ${filename}')]]></content>
+  <description>Create Word document: ${title}</description>
+</write_code>`;
     } else if (isExcel) {
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>xlsx</type>
-  <content>${goal}</content>
-</file_generator>`;
+      // Generate XLSX using openpyxl
+      const filename = `${sanitizedTitle}.xlsx`;
+      actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/create_excel_${timestamp}.py</filepath>
+  <content><![CDATA[from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+
+# Create workbook
+wb = Workbook()
+ws = wb.active
+ws.title = '${titlePython}'
+
+# Add header
+ws['A1'] = '${titlePython}'
+ws['A1'].font = Font(size=14, bold=True)
+ws['A1'].alignment = Alignment(horizontal='center')
+
+# Add content description
+ws['A3'] = 'Content'
+ws['B3'] = '${contentPython}'
+
+# Add sample data structure
+ws['A5'] = 'Item'
+ws['B5'] = 'Value'
+ws['A6'] = 'Sample 1'
+ws['B6'] = 'Data'
+
+# Save workbook
+wb.save('${filename}')
+print('✅ Created ${filename}')]]></content>
+  <description>Create Excel spreadsheet: ${title}</description>
+</write_code>`;
     } else {
-      // Generic document
-      actionXML = `<file_generator>
-  <title>${title}</title>
-  <type>docx</type>
-  ${author ? `<author>${author}</author>` : ''}
-  <content>${goal}</content>
-</file_generator>`;
+      // Default to DOCX
+      const filename = `${sanitizedTitle}.docx`;
+      actionXML = `<write_code>
+  <language>python</language>
+  <filepath>/tmp/create_doc_${timestamp}.py</filepath>
+  <content><![CDATA[from docx import Document
+
+# Create document
+doc = Document()
+
+# Set core properties
+doc.core_properties.title = '${titlePython}'
+${authorPython ? `doc.core_properties.author = '${authorPython}'\n` : ''}
+# Add title
+doc.add_heading('${titlePython}', 0)
+
+# Add content
+doc.add_paragraph('${contentPython}')
+
+# Save document
+doc.save('${filename}')
+print('✅ Created ${filename}')]]></content>
+  <description>Create document: ${title}</description>
+</write_code>`;
     }
     
-    console.log('[AutoReply] Pre-generated action XML:', actionXML.substring(0, 150));
+    console.log('[AutoReply] Pre-generated write_code XML:', actionXML.substring(0, 200));
     
     // CRITICAL: Validate XML before returning (safety check)
-    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<file_generator>')) {
+    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<write_code>')) {
       console.log('[AutoReply] ⚠️ Invalid XML generation - falling back to specialist routing');
       // Don't return, let it fall through to specialist routing
       return null;
@@ -543,7 +615,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         actionXML = `<write_code>
   <language>python</language>
   <filepath>/tmp/edit_author_${Date.now()}.py</filepath>
-  <code><![CDATA[from docx import Document
+  <content><![CDATA[from docx import Document
 
 # Load document
 doc = Document('${filepathPython}')
@@ -553,7 +625,7 @@ doc.core_properties.author = '${authorNamePython}'
 
 # Save document
 doc.save('${filepathPython}')
-print('✅ Added author: ${authorNamePython}')]]></code>
+print('✅ Added author: ${authorNamePython}')]]></content>
   <description>Add author to document metadata</description>
 </write_code>`;
         
@@ -567,7 +639,7 @@ print('✅ Added author: ${authorNamePython}')]]></code>
         actionXML = `<write_code>
   <language>python</language>
   <filepath>/tmp/edit_title_${Date.now()}.py</filepath>
-  <code><![CDATA[from docx import Document
+  <content><![CDATA[from docx import Document
 
 # Load document
 doc = Document('${filepathPython}')
@@ -581,7 +653,7 @@ if len(doc.paragraphs) > 0 and doc.paragraphs[0].style.name.startswith('Heading'
 
 # Save document
 doc.save('${filepathPython}')
-print('✅ Updated title to: ${newTitlePython}')]]></code>
+print('✅ Updated title to: ${newTitlePython}')]]></content>
   <description>Update document title</description>
 </write_code>`;
         
@@ -608,7 +680,7 @@ doc.add_paragraph('${textToAddPython}')`;
         actionXML = `<write_code>
   <language>python</language>
   <filepath>/tmp/edit_text_${Date.now()}.py</filepath>
-  <code><![CDATA[from docx import Document
+  <content><![CDATA[from docx import Document
 
 # Load document
 doc = Document('${filepathPython}')
@@ -617,7 +689,7 @@ ${topCode}
 
 # Save document
 doc.save('${filepathPython}')
-print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></code>
+print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
   <description>Add text to document</description>
 </write_code>`;
       }
