@@ -441,11 +441,19 @@ class AgenticAgent {
       }
     }));
 
-    const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id);
-    const uuid = uuidv4();
-    await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: filesWithVersions });
-
-    finalResult.summary = summaryContent;
+    // Skip summary if code-act already sent finish_summery (ultra-fast-path or fast-path with preGeneratedAction)
+    const hasPreGeneratedAction = tasks.some(task => task.preGeneratedAction);
+    
+    if (!hasPreGeneratedAction) {
+      // Only generate summary for full agentic flow (no pre-generated actions)
+      const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id);
+      const uuid = uuidv4();
+      await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: filesWithVersions });
+      finalResult.summary = summaryContent;
+    } else {
+      console.log('[AgenticAgent] Skipping summary - code-act already sent finish_summery');
+      finalResult.summary = 'Task completed'; // Placeholder since code-act already sent message
+    }
     
     // PHASE 2: Invalidate context after execution completes
     if (this.conversationContext) {

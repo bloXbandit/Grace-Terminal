@@ -379,9 +379,12 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   
   // CRITICAL: Ultra-fast-path for SIMPLE SINGLE-FILE GENERATION
   // Uses write_code → Python script (PROVEN execution path, same as document edits)
-  // Catches conversational patterns: "can you make", "lets create", "i wanna make", "make me a", "i want a document", etc.
-  // Handles: explicit actions (make/create) OR implicit requests (i want/i need/give me)
-  const simpleFileGenPattern = goal.match(/(?:can you |lets |let's |i wanna |i want to |i want |i need |give me |please )?(?:(create|make|generate|write)(?:\s+\w+){0,3}\s+)?(a |an |the )?(word document|word doc|docx|excel|spreadsheet|xlsx|pdf|document|file)(?:\s+\w+){0,3}\s+(titled|called|named|with|about|on|for)/i);
+  // Catches conversational patterns with maximum flexibility
+  // Prefix variants: "can you", "could you", "would you", "please", "lets", "i wanna", "i want", "i need", "make me", "give me", "build me", "get me"
+  // Action verbs: create, make, generate, write, build, produce, draft
+  // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
+  // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|docx|excel file|excel|spreadsheet|xlsx|document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
