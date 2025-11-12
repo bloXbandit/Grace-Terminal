@@ -3,6 +3,8 @@ const { resolveActions } = require("@src/utils/resolve");
 const Message = require("@src/utils/message");
 const LocalMemory = require("@src/agent/memory/LocalMemory");
 const { isPauseRequiredError } = require("@src/utils/errors");
+const fs = require('fs');
+const path = require('path');
 
 // Reflection module
 const reflection = require("@src/agent/reflection/index");
@@ -13,17 +15,47 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const finish_action = async (action, context, task_id) => {
   const { memory, onTokenStream } = context;
   const memorized_content = await memory.getMemorizedContent();
+  
+  // Collect file metadata from context.generate_files
+  const filesWithMetadata = [];
+  
+  if (context.generate_files && context.generate_files.length > 0) {
+    for (const filepath of context.generate_files) {
+      try {
+        const stats = fs.statSync(filepath);
+        filesWithMetadata.push({
+          filepath: filepath,
+          filename: path.basename(filepath),
+          filesize: stats.size
+        });
+      } catch (err) {
+        console.error('[finish_action] Error reading file stats:', err);
+      }
+    }
+  }
+  
   const result = {
     status: "success",
     comments: "Task Success !",
     content: action.params.message,
     memorized: memorized_content,
     meta: {
-      action_type: "finish",
+      action_type: "finish_summery",
     },
     timestamp: new Date().valueOf()
   };
-  const msg = Message.format({ status: "success", task_id: task_id, action_type: 'finish', content: result.content, comments: result.comments, memorized: result.memorized });
+  
+  // Send finish_summery message with file metadata (matching AgenticAgent pattern)
+  const msg = Message.format({ 
+    status: "success", 
+    task_id: task_id, 
+    action_type: 'finish_summery',
+    content: result.content, 
+    comments: result.comments, 
+    memorized: result.memorized,
+    json: filesWithMetadata
+  });
+  
   onTokenStream && onTokenStream(msg);
   await Message.saveToDB(msg, context.conversation_id);
   return result;
@@ -320,14 +352,28 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           }
         }
         
-        // If all actions succeeded, return success immediately
+        // If all actions succeeded, call finish_action to send finish_summery
         if (allActionsSucceeded) {
-          console.log('[CodeAct] ✅ All multi-actions succeeded - returning success');
-          return {
-            status: 'success',
-            content: 'All actions completed successfully',
-            comments: 'Multi-action execution completed'
+          console.log('[CodeAct] ✅ All multi-actions succeeded - calling finish_action');
+          
+          // Build summary message with file information
+          let summaryMessage = 'Task completed successfully.';
+          if (context.generate_files && context.generate_files.length > 0) {
+            const fileNames = context.generate_files.map(fp => path.basename(fp));
+            summaryMessage = `Successfully created ${context.generate_files.length} file(s): ${fileNames.join(', ')}`;
+          }
+          
+          // Create finish action object
+          const finishAction = {
+            type: 'finish',
+            params: {
+              message: summaryMessage
+            }
           };
+          
+          // Call finish_action to send finish_summery message to frontend
+          const result = await finish_action(finishAction, context, task.id);
+          return result;
         }
       } else {
         // Single action - execute normally
