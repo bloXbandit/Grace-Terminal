@@ -356,6 +356,31 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         if (allActionsSucceeded) {
           console.log('[CodeAct] ✅ All multi-actions succeeded - calling finish_action');
           
+          // CRITICAL: Scan for newly created files (e.g., .docx created by Python script)
+          // context.generate_files only has write_code files (.py), not files created during execution
+          try {
+            const conversationDir = path.join('/app/workspace', `user_${context.user_id}`, `Conversation_${context.conversation_id.substring(0, 6)}`);
+            const files = fs.readdirSync(conversationDir);
+            const now = Date.now();
+            
+            for (const file of files) {
+              const filepath = path.join(conversationDir, file);
+              const stats = fs.statSync(filepath);
+              const ageMs = now - stats.mtimeMs;
+              
+              // If file was modified in last 10 seconds and not already tracked
+              if (ageMs < 10000 && !context.generate_files.includes(filepath)) {
+                // Skip .py files (already tracked) and todo.md
+                if (!file.endsWith('.py') && file !== 'todo.md') {
+                  console.log(`[CodeAct] Found newly created file: ${file}`);
+                  context.generate_files.push(filepath);
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[CodeAct] Error scanning for new files:', err);
+          }
+          
           // Build summary message with file information
           let summaryMessage = 'Task completed successfully.';
           if (context.generate_files && context.generate_files.length > 0) {
