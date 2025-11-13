@@ -94,6 +94,16 @@ function handleFinishSummaryAddId(message, messages) {
         element.id = uuid()
     }
     // console.log('fileList by id',fileList);
+    
+    // FIX: Remove temp messages (thinking spinner) when success message arrives
+    if (message.status === 'success') {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].is_temp) {
+                messages.splice(i, 1);
+            }
+        }
+    }
+    
     messages.push(message);
 
 }

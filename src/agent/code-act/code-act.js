@@ -453,6 +453,7 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           
           // ULTRA-FAST-PATH FIX: Send dummy plan message first to satisfy frontend expectations
           // Frontend expects a plan message to exist before processing actions
+          // FIX: Add files to actions array so they appear in "view all files"
           const ultraPlan = Message.format({
             status: 'success',
             task_id: task.id,
@@ -465,7 +466,10 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
               name: 'Instant Execution',
               description: 'Ultra-fast-path execution',
               status: 'completed',
-              actions: [],
+              actions: [{
+                files: context.generate_files || [],
+                is_ultra_fast: true
+              }],
               is_ultra_fast: true
             }]
           });

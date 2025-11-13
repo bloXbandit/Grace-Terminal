@@ -395,9 +395,15 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const isWordDoc = fileType.includes('word') || fileType === 'docx';
     const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
     
-    // Extract title (look for "titled X" or "called X" or "named X")
-    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i);
-    let title = titleMatch ? titleMatch[1].trim() : 'Untitled';
+    // FIX: Extract title from request (e.g., "make me a word doc about love" → "love")
+    // Try multiple patterns:
+    // 1. "titled/called/named X"
+    // 2. "about/on/regarding X"
+    // 3. "X document" (extract X as title)
+    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
+                       goal.match(/(?:about|on|regarding|concerning|re)\s+([^.!?]+?)(?:\s+with|\s+and|$)/i) ||
+                       goal.match(/(?:make|create|generate|write)\s+(?:a|an|the|me)?\s*(?:word|excel)?\s*(?:doc|document|file|spreadsheet)?\s+(?:about\s+)?([^.!?]+?)$/i);
+    let title = titleMatch ? titleMatch[1].trim() : 'Document';
     
     // Extract author if present
     const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
@@ -416,7 +422,19 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     
     const titlePython = pythonEscape(title);
     const authorPython = author ? pythonEscape(author) : null;
-    const contentPython = pythonEscape(goal);
+    
+    // FIX: Generate actual content via LLM instead of using literal request text
+    const { callLLM } = require('@src/llm/llm');
+    const contentPrompt = `Write a professional document about "${title}" with:
+- Introduction
+- Key Points
+- Conclusion
+
+Keep it concise (2-3 paragraphs total).`;
+    
+    const contentResponse = await callLLM(contentPrompt, 'gpt-4.1-nano', 0.7, 500);
+    const generatedContent = contentResponse.trim();
+    const contentPython = pythonEscape(generatedContent);
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run
