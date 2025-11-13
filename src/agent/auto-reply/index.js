@@ -424,7 +424,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const authorPython = author ? pythonEscape(author) : null;
     
     // FIX: Generate actual content via LLM instead of using literal request text
-    const { callLLM } = require('@src/llm/llm');
+    const call = require('@src/utils/llm');
     const contentPrompt = `Write a professional document about "${title}" with:
 - Introduction
 - Key Points
@@ -432,8 +432,8 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
 
 Keep it concise (2-3 paragraphs total).`;
     
-    const contentResponse = await callLLM(contentPrompt, 'gpt-4.1-nano', 0.7, 500);
-    const generatedContent = contentResponse.trim();
+    const contentResponse = await call(contentPrompt, conversationId, 'assistant', { temperature: 0.7, max_tokens: 500 });
+    const generatedContent = contentResponse.content.trim();
     const contentPython = pythonEscape(generatedContent);
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
