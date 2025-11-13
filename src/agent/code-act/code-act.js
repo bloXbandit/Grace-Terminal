@@ -451,6 +451,31 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
             }
           };
           
+          // ULTRA-FAST-PATH FIX: Send dummy plan message first to satisfy frontend expectations
+          // Frontend expects a plan message to exist before processing actions
+          const ultraPlan = Message.format({
+            status: 'success',
+            task_id: task.id,
+            action_type: 'plan',
+            content: '',
+            comments: '',
+            memorized: '',
+            json: [{
+              id: task.id,
+              name: 'Instant Execution',
+              description: 'Ultra-fast-path execution',
+              status: 'completed',
+              actions: [],
+              is_ultra_fast: true
+            }]
+          });
+          
+          // Send plan message via onTokenStream
+          const { onTokenStream } = context;
+          if (onTokenStream) {
+            onTokenStream(ultraPlan);
+          }
+          
           // Call finish_action to send finish_summery message to frontend
           const result = await finish_action(finishAction, context, task.id);
           return result;

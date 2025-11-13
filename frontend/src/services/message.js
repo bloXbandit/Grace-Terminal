@@ -204,71 +204,176 @@ function updateTask(message, messages) {
 
 // 更新 action
 function updateAction(message, messages) {
-    const task_id = message.meta.task_id;
-    const uuid = message.uuid;
-
-    if (message.meta.action_type === 'terminal_run') {
-        message.content = [message.content]
+    // Ensure message has required properties
+    if (!message.meta) {
+        console.warn('[updateAction] Message missing meta property', message);
+        messages.push(message);
+        return;
     }
 
-    //第一步 找到 plan_message 
-    let plan_message_index = messages.findLastIndex(messageInfo => messageInfo.meta && messageInfo.meta.action_type === 'plan');
-    //获取 plan 的 actions
-    let plan = messages[plan_message_index];
+    const task_id = message.meta.task_id;
+    const message_uuid = message.uuid || uuid(); // Generate UUID if missing
+    
+    // Handle terminal_run message type
+    if (message.meta.action_type === 'terminal_run' && message.content) {
+        message.content = Array.isArray(message.content) ? message.content : [message.content];
+    }
 
-    // ULTRA-FAST-PATH FIX: If no plan exists, just add message to messages array
-    if (!plan || plan_message_index === -1) {
-        console.log('[updateAction] No plan found (ultra-fast-path) - adding message directly');
-        // Check if message already exists by uuid
-        const existing_index = messages.findIndex(msg => msg.uuid === uuid && msg.uuid !== '');
+    // Find the plan message in the conversation
+    let plan_message_index = -1;
+    let plan = null;
+    
+    try {
+        plan_message_index = messages.findLastIndex(msg => 
+            msg && 
+            msg.meta && 
+            msg.meta.action_type === 'plan'
+        );
+        
+        if (plan_message_index !== -1) {
+            plan = messages[plan_message_index];
+        }
+    } catch (error) {
+        console.error('[updateAction] Error finding plan:', error);
+    }
+
+    // ULTRA-FAST-PATH: Handle messages without a plan or with invalid plan structure
+    if (!plan || plan_message_index === -1 || !plan.meta || !Array.isArray(plan.meta.json)) {
+        console.log('[updateAction] No valid plan found - processing as direct message', {
+            hasPlan: !!plan,
+            hasMeta: !!plan?.meta,
+            hasJson: Array.isArray(plan?.meta?.json)
+        });
+        
+        // Ensure message has required structure
+        if (!message.meta.json) {
+            message.meta.json = [];
+        } else if (!Array.isArray(message.meta.json)) {
+            message.meta.json = [message.meta.json];
+        }
+        
+        // Ensure each file has an ID
+        message.meta.json = message.meta.json.map(file => ({
+            id: file.id || uuid(),
+            ...file
+        }));
+
+        // Update existing message or add new one
+        const existing_index = messages.findIndex(msg => 
+            msg.uuid === message_uuid && 
+            message_uuid && 
+            message_uuid !== ''
+        );
+
         if (existing_index !== -1) {
-            // Update existing message
-            messages[existing_index].status = message.status;
-            messages[existing_index].meta = message.meta;
-            if (message.meta.action_type === 'terminal_run') {
-                messages[existing_index].content = [messages[existing_index].content, message.content].flat();
+            // Preserve existing content if updating terminal_run
+            if (message.meta.action_type === 'terminal_run' && messages[existing_index].content) {
+                message.content = [
+                    ...(Array.isArray(messages[existing_index].content) ? 
+                        messages[existing_index].content : 
+                        [messages[existing_index].content]
+                    ),
+                    ...(Array.isArray(message.content) ? message.content : [message.content])
+                ];
             }
+            
+            // Update existing message
+            messages[existing_index] = {
+                ...messages[existing_index],
+                ...message,
+                meta: {
+                    ...messages[existing_index].meta,
+                    ...message.meta,
+                    // Preserve existing json files while adding new ones
+                    json: [
+                        ...(messages[existing_index].meta?.json || []).filter(f => 
+                            !message.meta.json.some(nf => nf.id === f.id)
+                        ),
+                        ...message.meta.json
+                    ]
+                }
+            };
         } else {
-            // Add new message
-            messages.push(message);
+            // Add new message with UUID
+            messages.push({
+                ...message,
+                uuid: message_uuid
+            });
         }
         return;
     }
 
-    //根据plan 的 json 找到当前的task
-
-    let task_index = plan.meta.json.findIndex(task => task.id === task_id);
-
-    //如果task_index 为 -1 则查询当前  status:"pending"
-    if (task_index === -1) {
-        task_index = plan.meta.json.findIndex(task => task.status === 'running');
+    // Process message with a valid plan structure
+    try {
+        // Find the appropriate task in the plan
+        let task_index = -1;
+        
+        if (task_id) {
+            task_index = plan.meta.json.findIndex(task => task && task.id === task_id);
+        }
+        
+        // If task not found by ID, try to find a running task
+        if (task_index === -1) {
+            task_index = plan.meta.json.findIndex(task => task && task.status === 'running');
+        }
+        
+        // Default to last task if still not found
         if (task_index === -1) {
             task_index = Math.max(0, plan.meta.json.length - 1);
         }
-    }
-
-    if (!plan.meta.json[task_index].actions) {
-        plan.meta.json[task_index].actions = [];
-    }
-    let actions = plan.meta.json[task_index].actions;
-
-    //判断当前uuid 在 actions 中是否存在 如果存在则更新状态 如果不存在则添加
-    let action_index = actions.findIndex(action => action.uuid === uuid);
-    //  console.log('action_index',action_index);
-    if (action_index !== -1) {
-        actions[action_index].status = message.status;
-        actions[action_index].meta = message.meta;
-        console.log('message.action_type', message.meta.action_type)
-        if (message.meta.action_type === 'terminal_run') {
-            actions[action_index].content = [actions[action_index].content[0], message.content[0]];
+        
+        // Ensure task exists and has actions array
+        if (!plan.meta.json[task_index]) {
+            console.warn('[updateAction] Task not found at index', task_index);
+            messages.push(message);
+            return;
         }
-        if (message.meta.action_type === 'mcp_tool') {
-            actions[action_index].meta.content = message.content
+        
+        // Initialize actions array if it doesn't exist
+        if (!Array.isArray(plan.meta.json[task_index].actions)) {
+            plan.meta.json[task_index].actions = [];
         }
-    } else {
-        actions.push(message);
+        
+        const actions = plan.meta.json[task_index].actions;
+        const action_index = actions.findIndex(action => action.uuid === message_uuid);
+        
+        // Update existing action or add new one
+        if (action_index !== -1) {
+            // Preserve existing content for terminal_run
+            if (message.meta.action_type === 'terminal_run' && actions[action_index].content) {
+                message.content = [
+                    ...(Array.isArray(actions[action_index].content) ? 
+                        actions[action_index].content : 
+                        [actions[action_index].content]
+                    ),
+                    ...(Array.isArray(message.content) ? message.content : [message.content])
+                ];
+            }
+            
+            // Update existing action
+            actions[action_index] = {
+                ...actions[action_index],
+                ...message,
+                meta: {
+                    ...actions[action_index].meta,
+                    ...message.meta
+                }
+            };
+        } else {
+            // Add new action
+            actions.push({
+                ...message,
+                uuid: message_uuid
+            });
+        }
+    } catch (error) {
+        console.error('[updateAction] Error processing message with plan:', error);
+        // Fallback to adding message directly if there's an error
+        messages.push({
+            ...message,
+            uuid: message_uuid
+        });
     }
-
 }
 
 export default {
