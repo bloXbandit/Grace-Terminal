@@ -432,9 +432,8 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
 
 Keep it concise (2-3 paragraphs total).`;
     
-    const contentResponse = await call(contentPrompt, conversation_id, 'assistant', { temperature: 0.7, max_tokens: 500 });
-    const generatedContent = contentResponse.content.trim();
-    const contentPython = pythonEscape(generatedContent);
+    const generatedContent = await call(contentPrompt, conversation_id, 'assistant', { temperature: 0.7, max_tokens: 500 });
+    const contentPython = pythonEscape(generatedContent.trim());
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run
