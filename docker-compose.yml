@@ -29,6 +29,7 @@ services:
       
       # HOT RELOAD: Mount source code for instant updates (no rebuild needed)
       - ./src:/app/src:cached
+      - ./frontend:/app/frontend:cached  # Mount frontend source for Vite hot reload
       - ./containers:/app/containers:cached
       - ./Makefile:/app/Makefile:cached
       - ./public:/app/public:cached  # Mount frontend build for instant updates
