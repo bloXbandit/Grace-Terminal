@@ -212,17 +212,49 @@ function updateTask(message, messages) {
 }
 
 
-// 更新 action
+/**
+ * Updates an action message in the chat
+ * @param {Object|string} message - The message to update
+ * @param {Array} messages - The array of all messages
+ */
 function updateAction(message, messages) {
-    // Ensure message has required properties
-    if (!message.meta) {
-        console.warn('[updateAction] Message missing meta property', message);
-        messages.push(message);
-        return;
-    }
-
-    const task_id = message.meta.task_id;
-    const message_uuid = message.uuid || uuid(); // Generate UUID if missing
+    // Safely handle message object
+    const messageObj = (() => {
+        // If message is a string, convert to proper message object
+        if (typeof message === 'string') {
+            console.warn('[updateAction] Received string message, converting to object');
+            return { 
+                content: message, 
+                meta: {},
+                uuid: uuid()
+            };
+        }
+        
+        // Ensure meta object exists
+        if (!message.meta) {
+            console.warn('[updateAction] Message missing meta property, adding default');
+            message.meta = {};
+        }
+        
+        // Ensure UUID exists
+        if (!message.uuid) {
+            console.warn('[updateAction] Message missing UUID, generating one');
+            message.uuid = uuid();
+        }
+        
+        return message;
+    })();
+    
+    // Safely extract properties with defaults
+    const task_id = messageObj.meta?.task_id || null;
+    const message_uuid = messageObj.uuid;
+    
+    console.debug('[updateAction] Processing message:', {
+        messageId: message_uuid,
+        taskId: task_id,
+        hasMeta: !!messageObj.meta,
+        metaKeys: messageObj.meta ? Object.keys(messageObj.meta) : []
+    });
     
     // Handle terminal_run message type
     if (message.meta.action_type === 'terminal_run' && message.content) {

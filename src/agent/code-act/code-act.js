@@ -13,45 +13,48 @@ const MAX_TOTAL_RETRIES = 10; // add：max retries times
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const finish_action = async (action, context, task_id) => {
-  const { memory, onTokenStream } = context;
+  const { memory, onTokenStream, conversation_id, user_id } = context;
   const memorized_content = await memory.getMemorizedContent();
   
-  // Collect file metadata from context.generate_files
-  const filesWithMetadata = [];
-  
-  if (context.generate_files && context.generate_files.length > 0) {
-    for (const filepath of context.generate_files) {
+  // 1. First, send a parallel dummy meta message
+  if (onTokenStream) {
+    const dummyMetaMessage = Message.format({
+      status: "success",
+      task_id: task_id,
+      action_type: 'meta_placeholder',
+      content: 'Processing file generation...',
+      json: [],
+      is_active: true,
+      timestamp: new Date().valueOf()
+    });
+    
+    // Send in non-blocking way
+    setTimeout(() => {
       try {
-        const stats = fs.statSync(filepath);
-        filesWithMetadata.push({
-          filepath: filepath,
-          filename: path.basename(filepath),
-          filesize: stats.size
-        });
-      } catch (err) {
-        console.error('[finish_action] Error reading file stats:', err);
+        onTokenStream(dummyMetaMessage);
+        console.log('[DummyMeta] Sent placeholder meta message');
+      } catch (e) {
+        console.error('[DummyMeta] Failed to send placeholder:', e);
       }
-    }
+    }, 0);
   }
-  
+
+  // 2. Process files and create versions
   const { createVersion } = require('@src/utils/versionManager');
   const { extractRelativePath } = require('@src/utils/filePathHelper');
-
-  // NEW: Create versions and collect versioned file data (matches AgenticAgent)
   const filesWithVersions = [];
-  if (context.generate_files && context.generate_files.length > 0) {
+  
+  if (context.generate_files?.length > 0) {
     for (const filepath of context.generate_files) {
       try {
-        // Create version (same as AgenticAgent)
         const relativePath = extractRelativePath(filepath);
-        // FIX: Don't pass 'state' as string - createVersion will use filepath directly
-        await createVersion(filepath, context.conversation_id, { 
-          action: 'Agent Coding',
-          user_id: context.user_id
-        });
-        
-        // Get file stats
         const stats = fs.statSync(filepath);
+        
+        // Create version for each file
+        await createVersion(filepath, conversation_id, { 
+          action: 'Agent Coding',
+          user_id: user_id
+        });
         
         // Build object matching AgenticAgent's structure
         filesWithVersions.push({
@@ -89,30 +92,54 @@ const finish_action = async (action, context, task_id) => {
     }
   }
   
+  // 3. Prepare the actual result with proper error handling
   const result = {
     status: "success",
-    comments: "Task Success !",
-    content: action.params.message,
+    comments: "Task Success!",
+    content: action?.params?.message || 'Task completed successfully',
     memorized: memorized_content,
     meta: {
       action_type: "finish_summery",
+      task_id: task_id,
+      filepath: '',
+      url: '',
+      json: filesWithVersions || [],
+      is_active: true
     },
     timestamp: new Date().valueOf()
   };
   
-  // Send finish_summery message with file metadata (matching AgenticAgent pattern)
-  const msg = Message.format({ 
-    status: "success", 
-    task_id: task_id, 
+  // 4. Format and send the actual message
+  const msg = Message.format({
+    status: "success",
+    task_id: task_id,
     action_type: 'finish_summery',
-    content: result.content, 
-    comments: result.comments, 
+    content: result.content,
+    comments: result.comments,
     memorized: result.memorized,
-    json: filesWithVersions  // Use versioned files array
+    json: result.meta.json
   });
   
-  onTokenStream && onTokenStream(msg);
-  await Message.saveToDB(msg, context.conversation_id);
+  // Send the message if we have a token stream
+  if (onTokenStream) {
+    try {
+      onTokenStream(msg);
+      console.log('[FinishAction] Sent finish_summery message');
+    } catch (e) {
+      console.error('[FinishAction] Failed to send finish_summery:', e);
+      throw e; // Re-throw to handle upstream
+    }
+  }
+  
+  // Save to database
+  try {
+    await Message.saveToDB(msg, conversation_id);
+    console.log('[FinishAction] Message saved to database');
+  } catch (e) {
+    console.error('[FinishAction] Failed to save message to database:', e);
+    // Don't fail the operation if DB save fails
+  }
+  
   return result;
 };
 

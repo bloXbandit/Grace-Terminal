@@ -75,11 +75,22 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         question: question,
         conversation_id: conversationId,
         fileIds,
+        newlyUploadedFileIds: fileIds, // Mark all files as newly uploaded to bypass cache
         mcp_server_ids,
         agent_id: agent.value.id,
         model_id: model_id.value,
         mode: workMode
     };
+    
+    console.log('[see-agent] Sending request with options:', {
+        question: question,
+        conversationId,
+        fileCount: fileIds.length,
+        newlyUploadedFileIds: fileIds,
+        agentId: agent.value.id,
+        modelId: model_id.value,
+        mode: workMode
+    });
 
     // Log mode and chatInfo values
 
