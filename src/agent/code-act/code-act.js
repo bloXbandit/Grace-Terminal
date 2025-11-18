@@ -16,8 +16,11 @@ const finish_action = async (action, context, task_id) => {
   const { memory, onTokenStream, conversation_id, user_id } = context;
   const memorized_content = await memory.getMemorizedContent();
   
-  // 1. First, send a parallel dummy meta message
-  if (onTokenStream) {
+  // Check if this is an ultra task (has preGeneratedAction in context)
+  const isUltraTask = context.task && context.task.preGeneratedAction;
+  
+  // 1. Send dummy meta message only for non-ultra tasks to reduce noise
+  if (onTokenStream && !isUltraTask) {
     const dummyMetaMessage = Message.format({
       status: "success",
       task_id: task_id,
@@ -92,11 +95,24 @@ const finish_action = async (action, context, task_id) => {
     }
   }
   
-  // 3. Prepare the actual result with proper error handling
+  // 3. Prepare the actual result with improved summary for ultra tasks
+  let summaryMessage = action?.params?.message || 'Task completed successfully';
+  
+  // Enhanced summary for ultra tasks - list created files
+  if (isUltraTask && filesWithVersions.length > 0) {
+    const fileNames = filesWithVersions.map(f => f.filename || f.filepath.split('/').pop());
+    if (fileNames.length === 1) {
+      summaryMessage = `✅ Created ${fileNames[0]}`;
+    } else {
+      summaryMessage = `✅ Created ${fileNames.length} files: ${fileNames.join(', ')}`;
+    }
+    console.log(`[UltraTask] Enhanced summary: ${summaryMessage}`);
+  }
+  
   const result = {
     status: "success",
     comments: "Task Success!",
-    content: action?.params?.message || 'Task completed successfully',
+    content: summaryMessage,
     memorized: memorized_content,
     meta: {
       action_type: "finish_summery",
@@ -336,7 +352,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
 
       // 4. Check if action is 'finish' (task completed)
       if (action.type === "finish") {
-        const result = await finish_action(action, context, task.id);
+        // Include task context so finish_action can detect ultra tasks
+        const contextWithTask = { ...context, task };
+        const result = await finish_action(action, contextWithTask, task.id);
         return result;
       }
 
@@ -508,7 +526,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           }
           
           // Call finish_action to send finish_summery message to frontend
-          const result = await finish_action(finishAction, context, task.id);
+          // Include task context so finish_action can detect ultra tasks
+          const contextWithTask = { ...context, task };
+          const result = await finish_action(finishAction, contextWithTask, task.id);
           return result;
         }
       } else {
@@ -516,6 +536,13 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         console.log('[CodeAct] Executing action type:', action.type);
         action_result = await context.runtime.execute_action(action, context, task.id);
         console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
+        
+        // CRITICAL: Mask /workspace/... Python file success messages from UI
+        if (action_result.content && /^File \/workspace\/.*\.py written successfully\.?\s*$/.test(action_result.content)) {
+          console.log('[CodeAct] Masking Python file success message from UI');
+          action_result.content = ''; // Hide from UI stream
+        }
+        
         if (!context.generate_files) {
           context.generate_files = [];
         }
@@ -595,7 +622,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           }
         }
         const finish_result = { params: { message: userMessage } };
-        const result = await finish_action(finish_result, context, task.id);
+        // Include task context so finish_action can detect ultra tasks
+        const contextWithTask = { ...context, task };
+        const result = await finish_action(finish_result, contextWithTask, task.id);
         return result;
       }
       
@@ -618,7 +647,9 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         const task_tool = task.tools && task.tools[0];
         if (action.type === task_tool) {
           const finish_result = { params: { message: content } }
-          const result = await finish_action(finish_result, context, task.id);
+          // Include task context so finish_action can detect ultra tasks
+          const contextWithTask = { ...context, task };
+          const result = await finish_action(finish_result, contextWithTask, task.id);
           return result;
         }
         continue;

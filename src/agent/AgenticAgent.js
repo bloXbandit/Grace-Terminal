@@ -391,28 +391,37 @@ class AgenticAgent {
     const newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime);
     console.log(`[AgenticAgent] Session started at ${this.sessionStartTime.toISOString()}, found ${newFiles.length} new files`);
 
-    // 创建文件版本 - VERSION ALL FILES (not just .html)
-    const state = {
-      user: { id: this.context.user_id }
-    }
-    // Create versions for ALL file types (docx, xlsx, html, etc.)
-    for (const file of newFiles) {
-      try {
-        const FileVersion = require('@src/models/FileVersion');
-        const { extractRelativePath } = require('@src/utils/filePathHelper');
-        const { createVersion } = require('@src/utils/versionManager');
-        
-        const relativePath = extractRelativePath(file.filepath);
-        const fs = require('fs');
-        
-        // Only version if file exists
-        if (fs.existsSync(file.filepath)) {
-          await createVersion(file.filepath, this.context.conversation_id, { state, action: 'Agent Coding' });
-          console.log(`[AgenticAgent] Created version for: ${file.filename}`);
-        }
-      } catch (error) {
-        console.error(`[AgenticAgent] Failed to create version for ${file.filename}:`, error.message);
+    // Skip versioning if code-act already handled it (ultra-fast-path)
+    // Check if any task has preGeneratedAction indicating ultra-fast-path
+    const hasPreGeneratedAction = tasks.some(task => task.preGeneratedAction);
+    
+    if (!hasPreGeneratedAction) {
+      // Only create versions for full agentic flow (not ultra tasks)
+      // 创建文件版本 - VERSION ALL FILES (not just .html)
+      const state = {
+        user: { id: this.context.user_id }
       }
+      // Create versions for ALL file types (docx, xlsx, html, etc.)
+      for (const file of newFiles) {
+        try {
+          const FileVersion = require('@src/models/FileVersion');
+          const { extractRelativePath } = require('@src/utils/filePathHelper');
+          const { createVersion } = require('@src/utils/versionManager');
+          
+          const relativePath = extractRelativePath(file.filepath);
+          const fs = require('fs');
+          
+          // Only version if file exists
+          if (fs.existsSync(file.filepath)) {
+            await createVersion(file.filepath, this.context.conversation_id, { state, action: 'Agent Coding' });
+            console.log(`[AgenticAgent] Created version for: ${file.filename}`);
+          }
+        } catch (error) {
+          console.error(`[AgenticAgent] Failed to create version for ${file.filename}:`, error.message);
+        }
+      }
+    } else {
+      console.log('[AgenticAgent] Skipping versioning - code-act already handled ultra task files');
     }
 
     // CRITICAL FIX: Attach version IDs to files so UI can fetch correct version
@@ -442,8 +451,7 @@ class AgenticAgent {
     }));
 
     // Skip summary if code-act already sent finish_summery (ultra-fast-path or fast-path with preGeneratedAction)
-    const hasPreGeneratedAction = tasks.some(task => task.preGeneratedAction);
-    
+    // This uses the same condition as versioning to maintain consistency
     if (!hasPreGeneratedAction) {
       // Only generate summary for full agentic flow (no pre-generated actions)
       const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id);
@@ -451,7 +459,7 @@ class AgenticAgent {
       await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: filesWithVersions });
       finalResult.summary = summaryContent;
     } else {
-      console.log('[AgenticAgent] Skipping summary - code-act already sent finish_summery');
+      console.log('[AgenticAgent] Skipping summary - code-act already sent finish_summery for ultra task');
       finalResult.summary = 'Task completed'; // Placeholder since code-act already sent message
     }
     

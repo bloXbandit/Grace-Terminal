@@ -408,7 +408,7 @@ Stay concise in explanations. The only output should be the XML action (or a sin
 
   data_generation: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
-    fallback: 'openrouter/openai/gpt-5 pro',
+    fallback: 'openrouter/openai/gpt-5-pro',
     description: 'Generate structured data, spreadsheets, CSV, JSON, lists',
     systemPrompt: `CRITICAL: ALL content MUST be in ENGLISH ONLY. No Spanish, Latin, or other languages.
 
@@ -436,6 +436,11 @@ When answering questions about uploaded files:
 
 **FOR CREATION REQUESTS:**
 When user asks to create a file:
+
+**CRITICAL: NO META-DESCRIPTIONS**
+- NEVER write "I'll create..." or "This document includes..."
+- Write ACTUAL content about the topic directly in doc.add_paragraph()
+- Example: For "love" document → write about love, not about creating a document
 
 **FILE FORMAT REQUIREMENTS:**
 - Word document = .docx (use python-docx library)

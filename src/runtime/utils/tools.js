@@ -35,10 +35,19 @@ const write_code = async (action, uuid, user_id) => {
   await write_file(filepath, fileContent);
   // const result = await executeCode(filepath);
   // return result;
+  
+  // CRITICAL: Mask Python file success messages for ultra tasks (hide from UI)
+  // Only hide .py files which are temporary scripts, keep actual document/file messages
+  let successMessage = `File ${filepath} written successfully.`;
+  if (filepath.endsWith('.py')) {
+    // For Python scripts, return minimal message that won't show in UI
+    successMessage = ''; // Empty message = won't appear in UI stream
+  }
+  
   return {
     uuid,
     status: 'success',
-    content: `File ${filepath} written successfully.`,
+    content: successMessage,
     meta: {
       action_type: action.type,
       filepath

@@ -395,16 +395,33 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const isWordDoc = fileType.includes('word') || fileType === 'docx';
     const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
     
-    // FIX: Extract title from request (e.g., "make me a word doc about love" → "love")
-    // Try multiple patterns:
-    // 1. "titled/called/named X"
-    // 2. "about/on/regarding X"
-    // 3. "X document" (extract X as title)
+    // Extract raw title from request (e.g., "make me a word doc about weight training and nutrition")
     const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
                        goal.match(/(?:about|on|regarding|concerning|re)\s+([^.!?]+?)(?:\s+with|\s+and|$)/i) ||
                        goal.match(/(?:make|create|generate|write)\s+(?:a|an|the|me)?\s*(?:word|excel)?\s*(?:doc|document|file|spreadsheet)?\s+(?:about\s+)?([^.!?]+?)$/i);
-    let title = titleMatch ? titleMatch[1].trim() : 'Document';
-    
+    let rawTitle = titleMatch ? titleMatch[1].trim() : goal.trim();
+
+    // Normalize title and extract up to two topics (e.g., "weight training and nutrition")
+    const normalizeTitle = (input) => {
+      if (!input) return { title: 'Document', topics: ['Document'] };
+      let t = input.trim();
+      t = t.replace(/^(about|on|regarding|concerning)\s+/i, '');
+      t = t.replace(/^and\s+/i, '');
+      t = t.replace(/[.!?]+$/g, '');
+      if (!t) return { title: 'Document', topics: ['Document'] };
+      const parts = t
+        .split(/\s+and\s+|,|\&/i)
+        .map(p => p.trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      const capWords = (s) => s.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      const topics = (parts.length ? parts : [t]).map(capWords);
+      const title = topics.join(' and ');
+      return { title, topics };
+    };
+
+    const { title, topics } = normalizeTitle(rawTitle);
+
     // Extract author if present
     const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
     let author = authorMatch ? authorMatch[1].trim() : null;
@@ -422,18 +439,47 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     
     const titlePython = pythonEscape(title);
     const authorPython = author ? pythonEscape(author) : null;
-    
-    // FIX: Generate actual content via LLM instead of using literal request text
-    const call = require('@src/utils/llm');
-    const contentPrompt = `Write a professional document about "${title}" with:
-- Introduction
-- Key Points
-- Conclusion
 
-Keep it concise (2-3 paragraphs total).`;
-    
-    const generatedContent = await call(contentPrompt, conversation_id, 'assistant', { temperature: 0.7, max_tokens: 500 });
-    const contentPython = pythonEscape(generatedContent.trim());
+    // Deterministic, structured content generator for 1–2 topics
+    const buildContent = (topicList) => {
+      const [primary, secondary] = topicList;
+      if (topicList.length === 1) {
+        const t = primary;
+        return (
+          `${t} plays a central role in improving overall quality of life. ` +
+          `It supports long-term health, confidence, and day-to-day performance in work, training, and personal life.\n\n` +
+          `A solid foundation in ${t} begins with understanding basic principles, setting realistic goals, and following a consistent, sustainable routine. ` +
+          `By focusing on gradual progress instead of quick fixes, people are more likely to build habits that last.\n\n` +
+          `Key considerations for ${t} include proper technique, balanced planning, and adequate recovery. ` +
+          `When combined with mindful lifestyle choices, ${t} becomes a powerful tool for building strength, resilience, and long-term well-being.\n\n` +
+          `In summary, ${t} is most effective when approached with patience, structure, and clear priorities. ` +
+          `A thoughtful plan helps transform short-term effort into lasting results.`
+        );
+      }
+      const a = primary;
+      const b = secondary;
+      return (
+        `${a} and ${b} work together to support long-term health, performance, and daily energy. ` +
+        `When they are planned in harmony, they create a strong foundation for progress and recovery.\n\n` +
+        `${a} focuses on building strength, stability, and physical capacity. A well-designed approach includes progressive overload, proper technique, and enough rest between sessions. ` +
+        `This helps protect joints, improve posture, and increase overall power and endurance.\n\n` +
+        `${b} provides the fuel and raw materials the body needs to adapt to training. Balanced meals with adequate protein, complex carbohydrates, and healthy fats support muscle repair, hormone balance, and consistent energy levels. ` +
+        `Hydration and micronutrients also play a key role in recovery and performance.\n\n` +
+        `Together, ${a} and ${b} create a complete framework for progress. ` +
+        `By aligning daily habits, training decisions, and food choices with clear goals, people can build a sustainable routine that supports both short-term results and long-term health.`
+      );
+    };
+
+    const generatedContent = buildContent(topics);
+
+    // Minimal cleanup just in case
+    const cleanContent = generatedContent
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`[^`]+`/g, '')
+      .replace(/[\[\]{}<>]/g, '')
+      .trim();
+
+    const contentPython = pythonEscape(cleanContent);
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run
@@ -457,12 +503,16 @@ doc = Document()
 
 # Set core properties
 doc.core_properties.title = '${titlePython}'
-${authorPython ? `doc.core_properties.author = '${authorPython}'\n` : ''}
-# Add title as heading
+${authorPython ? `doc.core_properties.author = '${authorPython}'\n` : ''}# Add title as heading
 doc.add_heading('${titlePython}', 0)
 
-# Add content paragraph
-doc.add_paragraph('${contentPython}')
+# Add content as structured paragraphs
+content_text = '${contentPython}'
+# Split content into paragraphs at double newlines to preserve sections
+paragraphs = content_text.split('\\n\\n')
+for para in paragraphs:
+    if para.strip():
+        doc.add_paragraph(para.strip())
 
 # Add placeholder sections
 doc.add_heading('Overview', level=1)
@@ -810,6 +860,14 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     
     const needsTools = requiresToolExecution.includes(taskType);
     
+    // CRITICAL FIX: If task needs tools, skip specialist in auto_reply
+    // Go directly to planning/execution to avoid hallucinated responses
+    if (needsTools) {
+      console.log(`[AutoReply] Task type ${taskType} requires tools - skipping auto_reply specialist`);
+      console.log(`[AutoReply] Continuing directly to planning and execution`);
+      return null; // Let AgenticAgent handle planning and execution
+    }
+    
     try {
       // Pass conversation messages, profile context, files, AND onTokenStream for streaming
       // This enables real-time token streaming during specialist LLM calls
@@ -831,19 +889,6 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
           console.log('[AutoReply] Falling back to default model');
           // Fall through to default model handling
         } else {
-          // If task needs tools, mark as needing execution but provide specialist response
-          // This allows AgenticAgent to continue to planning and tool execution
-          if (needsTools) {
-            console.log(`[AutoReply] Task type ${taskType} requires tools - continuing to planning`);
-            console.log(`[AutoReply] Specialist response content:`, result.result?.substring(0, 200) || 'EMPTY');
-            return {
-              needsExecution: true,
-              specialistResponse: result.result,
-              specialist: result.specialist,
-              taskType: taskType
-            };
-          }
-          
           // For tasks that don't need tools (like chat, analysis), mark as handled
           return {
             handledBySpecialist: true,

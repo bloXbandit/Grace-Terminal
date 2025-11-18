@@ -805,11 +805,11 @@ class GraceTester {
   async runAllTests() {
     log.section('Grace Live API Test Suite');
     log.info(`Testing Grace at: ${GRACE_URL}`);
-    log.info(`Test cases: ${TEST_CASES.length}`);
+    log.info(`Test cases: ${ALL_TEST_CASES.length}`);
     
     const results = [];
     
-    for (const testCase of TEST_CASES) {
+    for (const testCase of ALL_TEST_CASES) {
       const result = await this.runTest(testCase);
       results.push(result);
       
