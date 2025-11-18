@@ -382,18 +382,65 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Catches conversational patterns with maximum flexibility
   // Prefix variants: "can you", "could you", "would you", "please", "lets", "i wanna", "i want", "i need", "make me", "give me", "build me", "get me"
   // Action verbs: create, make, generate, write, build, produce, draft
-  // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
-  // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|docx|excel file|excel|spreadsheet|xlsx|document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  
+  // Format families aligned with FileGenerator schema
+  const FORMAT_FAMILIES = {
+    document: {
+      formats: ['docx', 'pdf', 'odt', 'rtf', 'txt', 'md', 'html'],
+      keywords: ['word document', 'word doc', 'document', 'doc', 'text file', 'markdown', 'html file', 'pdf', 'report', 'article']
+    },
+    spreadsheet: {
+      formats: ['xlsx', 'csv'],
+      keywords: ['excel', 'spreadsheet', 'sheet', 'csv', 'data file', 'table']
+    },
+    presentation: {
+      formats: ['pptx', 'odp'],
+      keywords: ['powerpoint', 'presentation', 'slides', 'slide deck']
+    },
+    data: {
+      formats: ['json', 'xml', 'yaml', 'yml', 'toml'],
+      keywords: ['json', 'xml', 'yaml', 'yml', 'toml', 'config file']
+    }
+  };
+  
+  // Detect format family and specific format from goal
+  const detectFormat = (goal) => {
+    const goalLower = goal.toLowerCase();
+    
+    for (const [family, config] of Object.entries(FORMAT_FAMILIES)) {
+      for (const keyword of config.keywords) {
+        if (goalLower.includes(keyword)) {
+          // Try to find specific format
+          for (const format of config.formats) {
+            if (goalLower.includes(format)) {
+              return { family, format, keywords: config.keywords };
+            }
+          }
+          // Default to first format in family if specific not found
+          return { family, format: config.formats[0], keywords: config.keywords };
+        }
+      }
+    }
+    
+    // Default fallback
+    return { family: 'document', format: 'docx', keywords: FORMAT_FAMILIES.document.keywords };
+  };
+  
+  // Enhanced pattern detection for simple file generation
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(\b(?:word document|word doc|document|doc|excel|spreadsheet|sheet|powerpoint|presentation|slides|pdf|text file|markdown|html file|json|xml|yaml|yml|toml|csv|data file|table|report|article|config file)\b)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
     console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
     
-    // Extract file type
-    const fileType = simpleFileGenPattern[3].toLowerCase();
-    const isWordDoc = fileType.includes('word') || fileType === 'docx';
-    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
+    // Detect format family and specific format
+    const { family, format, keywords } = detectFormat(goal);
+    console.log('[AutoReply] Detected format family:', family, 'format:', format);
+    
+    const isDocument = family === 'document';
+    const isSpreadsheet = family === 'spreadsheet';
+    const isPresentation = family === 'presentation';
+    const isData = family === 'data';
     
     // Extract raw title from request (e.g., "make me a word doc about weight training and nutrition")
     const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
@@ -488,7 +535,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const timestamp = Date.now();
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
     
-    if (isWordDoc) {
+    if (isDocument) {
       // Generate DOCX using python-docx
       const filename = `${sanitizedTitle}.docx`;
       actionXML = `<actions>
@@ -528,7 +575,7 @@ print('✅ Created ${filename}')]]></content>
   <args>create_doc_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
-    } else if (isExcel) {
+    } else if (isSpreadsheet) {
       // Generate XLSX using openpyxl
       const filename = `${sanitizedTitle}.xlsx`;
       actionXML = `<actions>
