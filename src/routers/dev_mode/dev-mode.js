@@ -1,7 +1,5 @@
 const router = require('koa-router')();
-const DevMode = require('@src/agent/modes/DevMode');
-
-const devMode = new DevMode();
+const devMode = require('@src/agent/modes/DevMode');
 
 /**
  * GET /status

@@ -263,7 +263,7 @@ const route = useRoute();
 const upgradeTitle = ref("Upgrade required");
 
 const userStore = useUserStore();
-const { user, membership, points } = storeToRefs(userStore);
+const { user, membership } = storeToRefs(userStore);  // points removed - not needed for local dev
 
 const chatStore = useChatStore();
 const { agent, chat, model_id } = storeToRefs(chatStore);
@@ -552,15 +552,7 @@ const handleSend = () => {
   let modelDetail = modelList.find((item) => item.id === model_id.value);
   console.log("modelDetail", modelDetail);
 
-  //is_subscribe
-  if (points.value.total <= 100 && modelDetail.is_subscribe) {
-    upgradeDes.value = "You don't have enough credits to use this subscription model. ";
-    upgradeDes1.value = "Please subscribe or purchase more credits to continue.";
-    upgradeTitle.value = "";
-    showUpgradeModal.value = true;
-    return;
-  }
-
+  // Points/subscription check removed for local development (dev user_1)
   emit("send", {
     text,
     mode: currentMode.value,

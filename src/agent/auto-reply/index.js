@@ -14,66 +14,7 @@ const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = re
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
 
-// Maximum retries for file analysis
-const MAX_FILE_ANALYSIS_RETRIES = 2;
-
-/**
- * Safely analyzes files with retry logic
- */
-async function analyzeFilesWithRetry(filesToAnalyze, retryCount = 0) {
-  try {
-    return await analyzeFiles(filesToAnalyze);
-  } catch (error) {
-    console.error(`[AutoReply] File analysis attempt ${retryCount + 1} failed:`, error);
-    if (retryCount < MAX_FILE_ANALYSIS_RETRIES) {
-      const delay = 1000 * (retryCount + 1);
-      console.log(`[AutoReply] Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return analyzeFilesWithRetry(filesToAnalyze, retryCount + 1);
-    }
-    throw error; // Re-throw after max retries
-  }
-}
-
-/**
- * Auto-reply handler with enhanced file processing and error handling
- * @param {string} goal - The user's input/message
- * @param {string} conversation_id - The conversation ID
- * @param {number} [user_id=1] - User ID
- * @param {Array} [messages=[]] - Conversation history
- * @param {string} [profileContext=''] - User profile context
- * @param {Function} [onTokenStream=null] - Callback for streaming tokens
- * @param {Array} [files=[]] - Array of file objects
- * @param {Array} [newlyUploadedFileIds=[]] - Array of file IDs that were just uploaded
- */
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
-  // Safely handle newlyUploadedFileIds with type checking and null/undefined filtering
-  const safeNewlyUploadedFileIds = (() => {
-    try {
-      if (!Array.isArray(newlyUploadedFileIds)) {
-        console.warn('[AutoReply] newlyUploadedFileIds is not an array, defaulting to empty array');
-        return [];
-      }
-      return newlyUploadedFileIds
-        .map(id => {
-          // Convert to string and trim, but keep original if conversion fails
-          try { return String(id).trim(); } 
-          catch (e) { return id; }
-        })
-        .filter(id => id != null && id !== ''); // Remove null, undefined, and empty strings
-    } catch (error) {
-      console.error('[AutoReply] Error processing newlyUploadedFileIds:', error);
-      return [];
-    }
-  })();
-  
-  console.log('[AutoReply] Processing with:', {
-    goal: goal.substring(0, 50) + (goal.length > 50 ? '...' : ''),
-    conversation_id,
-    filesCount: files?.length || 0,
-    newlyUploadedFileIds: safeNewlyUploadedFileIds,
-    hasTokenStream: !!onTokenStream
-  });
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
   console.log('[AutoReply] Newly uploaded files:', newlyUploadedFileIds ? newlyUploadedFileIds.length : 0);
   console.log('[AutoReply] Files array:', JSON.stringify(files.map(f => ({ name: f.name || f.filename, filepath: f.filepath })), null, 2));
@@ -155,74 +96,32 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const analyses = [];
     
     for (const file of files) {
-      try {
-        const fileId = file.id || file.dataValues?.id;
-        if (!fileId) {
-          console.warn(`[AutoReply] ⚠️ File '${file.name}' has no ID, will analyze`);
-          filesToAnalyze.push(file);
-          continue;
-        }
-        
-        // Convert both IDs to strings for reliable comparison
-        const fileIdStr = String(fileId);
-        const isNewUpload = safeNewlyUploadedFileIds.some(uploadId => {
-          try {
-            return String(uploadId) === fileIdStr;
-          } catch (e) {
-            console.error(`[AutoReply] Error comparing file IDs (${uploadId} vs ${fileIdStr}):`, e);
-            return false;
-          }
-        });
-        
-        if (isNewUpload) {
-          console.log(`[AutoReply] ⬆️ NEWLY UPLOADED file detected - ID: ${fileId}, Name: '${file.name}'`);
-          // Log additional debug info
-          console.debug('[AutoReply] New upload details:', {
-            fileId,
-            fileIdStr,
-            name: file.name,
-            size: file.size,
-            type: file.type
-          });
-          
-          filesToAnalyze.push(file);
-          continue;
-        }
-      
-      // Check persistent cache for existing files (only for non-new uploads)
-      try {
-        const cachedAnalysis = getCachedAnalysis(fileId);
-        if (cachedAnalysis && !explicitReanalysis) {
-          // Use cached analysis
-          file._analysis = cachedAnalysis;
-          analyses.push(cachedAnalysis);
-          console.log(`[AutoReply] ♻️ Cache HIT for file ${fileId}: '${file.name}'`);
-          
-          // Debug log cache hit details
-          console.debug('[AutoReply] Cached analysis:', {
-            fileId,
-            name: file.name,
-            cacheKey: `file_analysis_${fileId}`,
-            analysisType: cachedAnalysis?.type,
-            contentLength: cachedAnalysis?.content?.length
-          });
-        } else {
-          // Need to analyze
-          filesToAnalyze.push(file);
-          console.log(`[AutoReply] 🔍 Cache MISS for file ${fileId}: '${file.name}'`);
-          
-          // Debug log cache miss details
-          console.debug('[AutoReply] Cache miss details:', {
-            fileId,
-            name: file.name,
-            hasCachedAnalysis: !!cachedAnalysis,
-            explicitReanalysis: !!explicitReanalysis
-          });
-        }
-      } catch (error) {
-        console.error(`[AutoReply] ❌ Error checking cache for file ${fileId}:`, error);
-        // In case of cache error, analyze the file to be safe
+      const fileId = file.id || file.dataValues?.id;
+      if (!fileId) {
+        console.log('[AutoReply] ⚠️ File has no ID, will analyze:', file.name);
         filesToAnalyze.push(file);
+        continue;
+      }
+      
+      // OPTIMIZATION: Skip cache check for newly uploaded files (guaranteed cache MISS)
+      const isNewUpload = newlyUploadedFileIds && newlyUploadedFileIds.includes(fileId);
+      if (isNewUpload) {
+        console.log(`[AutoReply] ⬆️ NEWLY UPLOADED file ${fileId}: ${file.name} - skipping cache check`);
+        filesToAnalyze.push(file);
+        continue;
+      }
+      
+      // Check persistent cache for existing files
+      const cachedAnalysis = getCachedAnalysis(fileId);
+      if (cachedAnalysis && !explicitReanalysis) {
+        // Use cached analysis
+        file._analysis = cachedAnalysis;
+        analyses.push(cachedAnalysis);
+        console.log(`[AutoReply] ♻️ Cache HIT for file ${fileId}: ${file.name}`);
+      } else {
+        // Need to analyze
+        filesToAnalyze.push(file);
+        console.log(`[AutoReply] 🔍 Cache MISS for file ${fileId}: ${file.name}`);
       }
     }
     
@@ -235,20 +134,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       // SMART DECISION: Only analyze files that need it
       if (filesToAnalyze.length > 0 && (needsFileAnalysis || referencesFile || explicitReanalysis)) {
         console.log(`[AutoReply] 🔍 Running file analysis for ${filesToAnalyze.length} file(s)...`);
-        
-        let newAnalyses = [];
-        try {
-          newAnalyses = await analyzeFilesWithRetry(filesToAnalyze);
-        } catch (error) {
-          console.error('[AutoReply] ❌ Critical: File analysis failed after retries:', error);
-          // Continue with empty analyses rather than failing the entire request
-          newAnalyses = filesToAnalyze.map(file => ({
-            ...file,
-            error: 'Analysis failed',
-            content: '',
-            metadata: { error: true }
-          }));
-        }
+        const newAnalyses = await analyzeFiles(filesToAnalyze);
         
         // CRITICAL: Store in persistent cache AND attach to file object
         for (let i = 0; i < filesToAnalyze.length && i < newAnalyses.length; i++) {
@@ -498,61 +384,30 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Action verbs: create, make, generate, write, build, produce, draft
   // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(
-    /(?:^|\s)(?:(?:can you|could you|would you|please|lets|let's|lemme|i (?:wanna|want to|want|need)|make me|give me|build me|get me|help me)\s+)?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(?:a |an |the |me |some )?(?:new\s+)?(word\s*(?:doc(?:ument)?)?|excel(?:\s*(?:file|spreadsheet))?|doc(?:ument)?|spreadsheet|xlsx|docx|pdf|file)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i
-  );
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|docx|excel file|excel|spreadsheet|xlsx|document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
     console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
     
-    // 1. Improved file type detection
-    const fileType = simpleFileGenPattern[3]?.toLowerCase().trim() || '';
-    const isWordDoc = /word|docx?/.test(fileType);
-    const isExcel = /excel|spreadsheet|xlsx/.test(fileType);
+    // Extract file type
+    const fileType = simpleFileGenPattern[3].toLowerCase();
+    const isWordDoc = fileType.includes('word') || fileType === 'docx';
+    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType === 'xlsx';
     
-    // 2. More robust title extraction
-    let title = 'Document';
-    const titlePatterns = [
-      // "titled X", "called X", "named X"
-      /(?:titled|called|named)\s+["']?([^"'.!?]+?)(?:\s+with|\s+about|\s+on|\s+for|["']|$)/i,
-      // "about X", "on X", "regarding X"
-      /(?:about|on|regarding|concerning|re)\s+([^.!?]+?)(?:\s+with|\s+and|$)/i,
-      // "create/make X document" (extract X)
-      /(?:^|\s)(?:create|make|generate|write)\s+(?:a|an|the|me)?\s*(?:word|excel)?\s*(?:doc(?:ument)?|file|spreadsheet)?\s+(?:about\s+)?([^.!?]+?)(?:\s+(?:doc(?:ument)?|file|spreadsheet))?[.!]?$/i
-    ];
-
-    for (const pattern of titlePatterns) {
-      const match = goal.match(pattern);
-      if (match && match[1]) {
-        title = match[1].trim().replace(/["']/g, '');
-        break;
-      }
-    }
-
-    // 3. Improved author extraction
-    let author = null;
-    const authorPatterns = [
-      /(?:with|by)\s+author\s*[:=]?\s*["']?([^"'.!?]+?)(?:\s|$)/i,
-      /(?:written\s+by|author\s*[:=])\s*["']?([^"'.!?]+?)(?:\s|$)/i
-    ];
-
-    for (const pattern of authorPatterns) {
-      const match = goal.match(pattern);
-      if (match && match[1]) {
-        author = match[1].trim().replace(/["']/g, '');
-        break;
-      }
-    }
-
-    // 4. Clean up title (remove trailing prepositions, etc.)
-    title = title.replace(/\s+(?:about|on|for|with|and|or|but|the|a|an|in|at|on|by)\s*$/i, '').trim();
+    // FIX: Extract title from request (e.g., "make me a word doc about love" → "love")
+    // Try multiple patterns:
+    // 1. "titled/called/named X"
+    // 2. "about/on/regarding X"
+    // 3. "X document" (extract X as title)
+    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
+                       goal.match(/(?:about|on|regarding|concerning|re)\s+([^.!?]+?)(?:\s+with|\s+and|$)/i) ||
+                       goal.match(/(?:make|create|generate|write)\s+(?:a|an|the|me)?\s*(?:word|excel)?\s*(?:doc|document|file|spreadsheet)?\s+(?:about\s+)?([^.!?]+?)$/i);
+    let title = titleMatch ? titleMatch[1].trim() : 'Document';
     
-    // 5. Fallback to 'Document' if title is empty after cleaning
-    if (!title) title = 'Document';
-    
-    // 6. Log the extracted information
-    console.log('[AutoReply] Extracted metadata:', { fileType: fileTypeMatch, isWordDoc, isExcel, title, author });
+    // Extract author if present
+    const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
+    let author = authorMatch ? authorMatch[1].trim() : null;
     
     // CRITICAL: Python string escape (for embedding in Python code)
     const pythonEscape = (str) => {
@@ -568,38 +423,17 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const titlePython = pythonEscape(title);
     const authorPython = author ? pythonEscape(author) : null;
     
-    // Generate content with LLM, fallback to goal text on error
-    let contentToUse;
-    try {
-        const call = require('@src/utils/llm');
-        const contentPrompt = `Write a professional document about "${title}" with:
+    // FIX: Generate actual content via LLM instead of using literal request text
+    const call = require('@src/utils/llm');
+    const contentPrompt = `Write a professional document about "${title}" with:
 - Introduction
 - Key Points
 - Conclusion
 
 Keep it concise (2-3 paragraphs total).`;
-        
-        // Try LLM with 5s timeout
-        const response = await Promise.race([
-            call(contentPrompt, conversation_id, 'assistant', { 
-                temperature: 0.7, 
-                max_tokens: 500 
-            }),
-            new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
-        ]);
-        
-        // Handle different response formats
-        contentToUse = typeof response === 'string' 
-            ? response 
-            : (response?.content || goal);
-            
-        console.log('[AutoReply] Generated content with LLM');
-    } catch (error) {
-        console.warn('[AutoReply] Error generating content with LLM, falling back to goal text:', error);
-        contentToUse = goal;
-    }
     
-    const contentPython = pythonEscape(contentToUse.trim());
+    const generatedContent = await call(contentPrompt, conversation_id, 'assistant', { temperature: 0.7, max_tokens: 500 });
+    const contentPython = pythonEscape(generatedContent.trim());
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run

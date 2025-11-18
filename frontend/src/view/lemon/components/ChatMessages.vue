@@ -3,7 +3,7 @@
     <div class="message-list">
       <!-- 自动判断是否显示骨架屏 -->
       <div v-if="isLoading">
-        <a-skeleton v-for="n in 5" :key="n" active title paragraph="{ rows: 10 }" class="skeleton-message" />
+        <a-skeleton v-for="n in 5" :key="n" active title :paragraph="{ rows: 10 }" class="skeleton-message" />
       </div>
 
       <!-- 正常消息渲染 -->

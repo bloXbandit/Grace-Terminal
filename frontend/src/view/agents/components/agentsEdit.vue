@@ -35,7 +35,7 @@
                             :class="['mcp-card', { selected: form.mcpids.includes(mcp.id) }]"
                             @click="toggleMcp(mcp.id)">
                             <div class="checkbox-icon">
-                                <a-icon v-if="form.mcpids.includes(mcp.id)" type="check-circle"
+                                <CheckCircleFilled v-if="form.mcpids.includes(mcp.id)"
                                     style="color: #52c41a; font-size: 20px" />
                             </div>
                             <div class="mcp-content">
@@ -51,6 +51,7 @@
 </template>
 <script setup>
 import { ref, reactive, watch, computed } from 'vue'
+import { CheckCircleFilled } from '@ant-design/icons-vue';
 import mcpService from "@/services/mcp";
 import agentService from "@/services/agent";
 import emitter from '@/utils/emitter';

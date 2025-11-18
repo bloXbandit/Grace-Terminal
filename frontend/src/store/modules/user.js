@@ -4,8 +4,8 @@ import { defineStore } from 'pinia'
 export const useUserStore = defineStore('user', {
   state: () => ({
     user: {},
-    membership:{},
-    points:{}
+    membership: {},
+    points: { total: 0, accounts: [] }  // Initialize with default structure to prevent undefined errors
   }),
   actions: {
     setUser(user) {

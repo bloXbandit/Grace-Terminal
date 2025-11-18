@@ -19,7 +19,7 @@ BLUE=$(shell tput -Txterm setaf 6)
 RESET=$(shell tput -Txterm sgr0)
 
 # Declare phony targets to avoid conflicts with files of the same name
-.PHONY: build start-backend start-frontend run
+.PHONY: build start-backend start-frontend run rebuild-frontend
 
 # Default goal: Start both frontend and backend
 .DEFAULT_GOAL := run
@@ -109,6 +109,14 @@ rebuild:
 	@echo "$(BLUE)Checking grace-app health...$(RESET)"
 	@sleep 3
 	@docker exec grace-app node -e "console.log('✅ Backend is running')" 2>/dev/null || echo "$(RED)⚠️ Backend may have issues - check logs$(RESET)"
+
+# Rebuild frontend and restart container to force cache bust
+rebuild-frontend:
+	@echo "🔨 Building frontend..."
+	@cd frontend && npm run build
+	@echo "🔄 Restarting container to clear cache..."
+	@docker compose restart
+	@echo "✅ Frontend rebuilt! Hard refresh browser (Cmd+Shift+R) to see changes"
 
 # Quick restart without rebuild (use for code changes only)
 restart:

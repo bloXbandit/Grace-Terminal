@@ -6,7 +6,7 @@
         sub-title="正在为你打开客户端，请在浏览器提示中点击“打开”。"
       >
         <template #icon>
-          <a-icon type="check-circle" theme="twoTone" two-tone-color="#52c41a" />
+          <CheckCircleTwoTone two-tone-color="#52c41a" />
         </template>
         <template #extra>
           <a-button type="primary" size="large" @click="openApp">
@@ -21,6 +21,7 @@
   <script setup>
   import { onMounted } from 'vue';
   import { useRoute } from 'vue-router';
+  import { CheckCircleTwoTone } from '@ant-design/icons-vue';
   
   const route = useRoute();
   

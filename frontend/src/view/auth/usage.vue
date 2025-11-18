@@ -6,7 +6,7 @@
                   <div class="plan-name">
                       {{ membership?.planName || t('member.freePlan') }}
                   </div>
-                  <div class="expiration-date" v-if="membership">
+                  <div class="expiration-date" v-if="membership && membership.endDate">
                       {{ t('member.expirationDate') }}{{ dayjs(membership.endDate).format('YYYY-MM-DD HH:mm') }}
                   </div>
               </div>
@@ -16,13 +16,14 @@
               </div>
           </div>
 
-          <div class="points-details">
+          <!-- Points section - Only show if external service provides data -->
+          <div class="points-details" v-if="points && points.total !== undefined">
             <div class="points-details-text-container">
               <div class="points-details-text">{{ t('member.points') }}</div>
               <div class="points-details-total">{{ points.total }}</div>
             </div>
-            <div>
-              <div class="points-details-accounts" v-for="item in points.accounts">
+            <div v-if="points.accounts && points.accounts.length">
+              <div class="points-details-accounts" v-for="item in points.accounts" :key="item.type">
                 <div class="points-accounts">{{ getPointsTypeName(item.type) }}</div>
                 <div class="points-accounts">{{ item.balance }}</div>
               </div>
@@ -151,8 +152,8 @@ const currency = computed(() => {
 async function getUserInfo() {
   let res = await auth.getUserInfo();
   //设置缓存
-  membership.value = res.membership;
-  points.value = res.points;
+  membership.value = res.data?.membership || { planName: 'Free Plan' };
+  points.value = res.data?.points || { total: 0, accounts: [] };
 }
 
 //分页

@@ -178,6 +178,8 @@ const visible = ref(false)
 const isShowMenu = ref(false)
 const chats = ref([])
 const showProfile = ref(false)
+const isStorePage = ref(false)
+const isCollapsed = ref(false)
 
 
 

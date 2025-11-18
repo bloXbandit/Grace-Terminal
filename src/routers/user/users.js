@@ -3,7 +3,28 @@ const router = require("koa-router")();
 const forwardRequest = require('@src/utils/sub_server_forward_request')
 
 router.get("/userinfo",async (ctx) => {
-  let res =  await forwardRequest(ctx, "GET", "/api/users/userinfo")
+  // DEV MODE: Return user from auth middleware directly
+  if (ctx.state.user && !ctx.headers.authorization) {
+    ctx.body = {
+      user: ctx.state.user,
+      token: 'dev-token',
+      membership: {
+        planName: 'Free Plan',
+        tier: 'free',
+        endDate: null  // No expiration in dev mode
+      },
+      points: {
+        total: 0,
+        used: 0,
+        remaining: 0,
+        accounts: []  // No point accounts in dev mode
+      }
+    };
+    return;
+  }
+  
+  // PRODUCTION: Forward to external server
+  let res = await forwardRequest(ctx, "GET", "/api/users/userinfo")
   return ctx.body = res;
 })
 

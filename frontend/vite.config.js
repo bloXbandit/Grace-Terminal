@@ -15,7 +15,15 @@ export default defineConfig(({ mode }) => {
   base: env.VITE_IS_CLIENT === 'true' ? './' : '/', 
   build: {
     outDir: '../public', // Output to public directory where backend serves from
-    emptyOutDir: false
+    emptyOutDir: true, // Clear old build files to prevent stale cache issues
+    rollupOptions: {
+      output: {
+        // Add hash to filenames for cache busting
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
+      }
+    }
   },
   plugins: [
     vue(),
