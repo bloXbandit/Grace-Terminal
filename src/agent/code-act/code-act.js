@@ -436,6 +436,12 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           action_result = await context.runtime.execute_action(currentAction, context, task.id);
           console.log(`[CodeAct] Action ${i + 1} result:`, JSON.stringify(action_result).substring(0, 300));
           
+          // CRITICAL: Mask /workspace/... Python file success messages from UI
+          if (action_result.content && /^File \/workspace\/.*\.py written successfully\.?\s*$/.test(action_result.content)) {
+            console.log('[CodeAct] Masking Python file success message from UI (multi-action)');
+            action_result.content = ''; // Hide from UI stream
+          }
+          
           // Track generated files
           if (!context.generate_files) {
             context.generate_files = [];
