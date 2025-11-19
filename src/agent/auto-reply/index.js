@@ -382,65 +382,20 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Catches conversational patterns with maximum flexibility
   // Prefix variants: "can you", "could you", "would you", "please", "lets", "i wanna", "i want", "i need", "make me", "give me", "build me", "get me"
   // Action verbs: create, make, generate, write, build, produce, draft
-  
-  // Format families aligned with FileGenerator schema
-  const FORMAT_FAMILIES = {
-    document: {
-      formats: ['docx', 'pdf', 'odt', 'rtf', 'txt', 'md', 'html'],
-      keywords: ['word document', 'word doc', 'document', 'doc', 'text file', 'markdown', 'html file', 'pdf', 'report', 'article']
-    },
-    spreadsheet: {
-      formats: ['xlsx', 'csv'],
-      keywords: ['excel', 'spreadsheet', 'sheet', 'csv', 'data file', 'table']
-    },
-    presentation: {
-      formats: ['pptx', 'odp'],
-      keywords: ['powerpoint', 'presentation', 'slides', 'slide deck']
-    },
-    data: {
-      formats: ['json', 'xml', 'yaml', 'yml', 'toml'],
-      keywords: ['json', 'xml', 'yaml', 'yml', 'toml', 'config file']
-    }
-  };
-  
-  // Detect format family and specific format from goal
-  const detectFormat = (goal) => {
-    const goalLower = goal.toLowerCase();
-    
-    for (const [family, config] of Object.entries(FORMAT_FAMILIES)) {
-      for (const keyword of config.keywords) {
-        if (goalLower.includes(keyword)) {
-          // Try to find specific format
-          for (const format of config.formats) {
-            if (goalLower.includes(format)) {
-              return { family, format, keywords: config.keywords };
-            }
-          }
-          // Default to first format in family if specific not found
-          return { family, format: config.formats[0], keywords: config.keywords };
-        }
-      }
-    }
-    
-    // Default fallback
-    return { family: 'document', format: 'docx', keywords: FORMAT_FAMILIES.document.keywords };
-  };
-  
-  // Enhanced pattern detection for simple file generation
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(\b(?:word document|word doc|document|doc|excel|spreadsheet|sheet|powerpoint|presentation|slides|pdf|text file|markdown|html file|json|xml|yaml|yml|toml|csv|data file|table|report|article|config file)\b)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
+  // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
     console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
     
-    // Detect format family and specific format
-    const { family, format, keywords } = detectFormat(goal);
-    console.log('[AutoReply] Detected format family:', family, 'format:', format);
-    
-    const isDocument = family === 'document';
-    const isSpreadsheet = family === 'spreadsheet';
-    const isPresentation = family === 'presentation';
-    const isData = family === 'data';
+    // Extract file type (be robust when only generic "document/doc" is used)
+    const matchedText = simpleFileGenPattern[0] ? simpleFileGenPattern[0].toLowerCase() : '';
+    const fileTypeGroup = simpleFileGenPattern[3] ? simpleFileGenPattern[3].toLowerCase() : '';
+    const fileType = fileTypeGroup || matchedText;
+    const isWordDoc = fileType.includes('word') || fileType.includes('docx') || fileType.includes('document') || fileType.endsWith('doc');
+    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType.includes('xlsx');
     
     // Extract raw title from request (e.g., "make me a word doc about weight training and nutrition")
     const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
@@ -473,21 +428,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
     let author = authorMatch ? authorMatch[1].trim() : null;
     
-    // CRITICAL: Python string escape (for embedding in Python code)
-    const pythonEscape = (str) => {
-      if (!str) return str;
-      return str
-        .replace(/\\/g, '\\\\')  // Backslash must be first
-        .replace(/'/g, "\\'")
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '\\r')
-        .replace(/\t/g, '\\t');
-    };
-    
-    const titlePython = pythonEscape(title);
-    const authorPython = author ? pythonEscape(author) : null;
-
-    // Deterministic, structured content generator for 1–2 topics
+    // Deterministic, structured content generator for 1–2 topics (fallback)
     const buildContent = (topicList) => {
       const [primary, secondary] = topicList;
       if (topicList.length === 1) {
@@ -516,17 +457,181 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         `By aligning daily habits, training decisions, and food choices with clear goals, people can build a sustainable routine that supports both short-term results and long-term health.`
       );
     };
+    
+    // CRITICAL: LLM-based content generation for ultra (DOCX only for now)
+    // Uses a single LLM call to return UltraDocumentSchema (title + sections)
+    // If schema cannot be trusted, fall back to full agentic planner instead of deterministic templates
+    let schema = null;
+    if (isWordDoc) {
+      const llmStart = Date.now();
+      try {
+        const call = require('@src/utils/llm');
+        const prompt = `You are writing the actual content of a document. Do NOT describe what you will do or mention tools, files, Python, or docx. Return ONLY valid JSON in this exact format:
+{
+  "title": "Document Title",
+  "sections": [
+    { "heading": "Introduction", "body": "..." },
+    { "heading": "Topic 1", "body": "..." },
+    { "heading": "Topic 2", "body": "..." },
+    { "heading": "Conclusion", "body": "..." }
+  ]
+}
 
-    const generatedContent = buildContent(topics);
+User goal: "${goal}"
+Topics: ${topics.join(', ')}
 
-    // Minimal cleanup just in case
-    const cleanContent = generatedContent
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/`[^`]+`/g, '')
-      .replace(/[\[\]{}<>]/g, '')
-      .trim();
+Write the document content now (JSON only):`;
 
-    const contentPython = pythonEscape(cleanContent);
+        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        const llmEnd = Date.now();
+        console.log('[AutoReply] ULTRA timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
+
+        // Robustly extract JSON payload from possible ```json fenced output
+        let cleaned = (rawResponse || '').trim();
+        const fencedMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (fencedMatch && fencedMatch[1]) {
+          cleaned = fencedMatch[1].trim();
+        } else {
+          // No clear fenced block; strip any stray fences to avoid `Unexpected token '`'`
+          cleaned = cleaned.replace(/```/g, '').trim();
+        }
+
+        let parsed = null;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (err) {
+          console.log('[AutoReply] ⚠️ Ultra JSON.parse failed first pass:', err.message);
+          // Attempt to salvage JSON object between first '{' and last '}' from the ORIGINAL response
+          const source = rawResponse || cleaned;
+          const firstBrace = source.indexOf('{');
+          const lastBrace = source.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            const candidate = source.slice(firstBrace, lastBrace + 1);
+            try {
+              parsed = JSON.parse(candidate);
+              console.log('[AutoReply] ✅ Ultra JSON salvage succeeded after trimming raw braces');
+            } catch (err2) {
+              console.log('[AutoReply] ⚠️ Ultra JSON salvage parse failed:', err2.message);
+            }
+          }
+        }
+
+        if (parsed) {
+          const sectionsRaw = Array.isArray(parsed.sections) ? parsed.sections : [];
+
+          // Very permissive section normalization: accept any reasonable heading/body-like fields
+          let validSections = [];
+          if (sectionsRaw.length > 0) {
+            validSections = sectionsRaw
+              .map((s, idx) => {
+                if (!s || typeof s !== 'object') return null;
+
+                // Heading fallbacks: heading → title → name → "Section N"
+                let heading = null;
+                if (typeof s.heading === 'string') heading = s.heading;
+                else if (typeof s.title === 'string') heading = s.title;
+                else if (typeof s.name === 'string') heading = s.name;
+                else heading = `Section ${idx + 1}`;
+
+                // Body fallbacks: body/content/text/paragraphs/description, arrays joined
+                let body = null;
+                if (typeof s.body === 'string') body = s.body;
+                else if (Array.isArray(s.body)) body = s.body.join('\n\n');
+                else if (typeof s.content === 'string') body = s.content;
+                else if (Array.isArray(s.content)) body = s.content.join('\n\n');
+                else if (typeof s.text === 'string') body = s.text;
+                else if (Array.isArray(s.paragraphs)) body = s.paragraphs.join('\n\n');
+                else if (typeof s.description === 'string') body = s.description;
+
+                if (!body) return null;
+
+                heading = heading.trim();
+                body = body.trim();
+                if (!heading || !body) return null;
+                return { heading, body };
+              })
+              .filter(Boolean);
+          }
+
+          let finalTitle = typeof parsed.title === 'string' && parsed.title.trim()
+            ? parsed.title.trim()
+            : title; // fall back to normalized title from goal
+
+          if (validSections.length > 0) {
+            schema = {
+              title: finalTitle,
+              sections: validSections
+            };
+            console.log('[AutoReply] ✅ LLM UltraDocumentSchema accepted. sections_kept =', validSections.length, 'sections_total =', sectionsRaw.length);
+          } else {
+            // No usable structured sections, but we still have parsed JSON: wrap entire payload as one section
+            const fallbackBody = (() => {
+              if (typeof parsed.body === 'string' && parsed.body.trim()) return parsed.body.trim();
+              if (cleaned) return cleaned; // cleaned JSON/text
+              if (rawResponse) return rawResponse;
+              try {
+                return JSON.stringify(parsed, null, 2);
+              } catch { return String(parsed); }
+            })();
+
+            schema = {
+              title: finalTitle,
+              sections: [
+                {
+                  heading: finalTitle || 'Document',
+                  body: fallbackBody || ''
+                }
+              ]
+            };
+            console.log('[AutoReply] ⚠️ Ultra schema had no structured sections; using single-section fallback from raw content');
+          }
+        } else {
+          // JSON completely failed to parse – still build a single-section schema from raw text
+          const fallbackBody = cleaned || rawResponse || '';
+          schema = {
+            title,
+            sections: [
+              {
+                heading: title,
+                body: fallbackBody
+              }
+            ]
+          };
+          console.log('[AutoReply] ⚠️ Ultra LLM response could not be parsed as JSON; using raw text as single DOCX section');
+        }
+      } catch (err) {
+        console.log('[AutoReply] ⚠️ LLM call or JSON parse failed:', err.message);
+      }
+    }
+
+    // If DOCX schema is unavailable, fall back to full agentic planner instead of deterministic content
+    if (isWordDoc && !schema) {
+      console.log('[AutoReply] ⚠️ Ultra DOCX schema unavailable - returning null for agentic fallback');
+      return null;
+    }
+
+    // Define sections from schema to guard against any stray `${sections}` interpolation
+    const sections = schema.sections;
+    
+    // CRITICAL: Python string escape (for embedding in Python code)
+    const pythonEscape = (str) => {
+      if (!str) return str;
+      return str
+        .replace(/\\/g, '\\\\')  // Backslash must be first
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+    };
+    
+    const titlePython = pythonEscape(schema.title);
+    const authorPython = author ? pythonEscape(author) : null;
+
+    // Marshal sections into Python-safe literal (for DOCX sections rendering)
+    const sectionsPython = pythonEscape(JSON.stringify(schema.sections));
+
+    // Fallback content body (used for non-DOCX formats / legacy templates)
+    const contentPython = pythonEscape(buildContent(topics));
     
     // CRITICAL: Pre-generate write_code action XML (PROVEN execution path)
     // Uses Python script → runtime.execute_action → write_code → terminal_run
@@ -535,39 +640,97 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const timestamp = Date.now();
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
     
-    if (isDocument) {
+    if (isWordDoc) {
       // Generate DOCX using python-docx
       const filename = `${sanitizedTitle}.docx`;
+      const authorLine = authorPython
+        ? "doc.core_properties.author = '" + authorPython + "'\n"
+        : '';
+      const pyDocScript =
+        "import sys\n" +
+        "import os\n" +
+        "sys.path.append('/usr/local/lib/python3.11/site-packages')\n" +
+        "from docx import Document\n" +
+        "from docx.shared import Pt, RGBColor\n" +
+        "from docx.enum.text import WD_PARAGRAPH_ALIGNMENT\n" +
+        "import re\n" +
+        "\n" +
+        "def sanitize_text(text):\n" +
+        "    return text.replace('\\x00', '')\n" +
+        "\n" +
+        "def smart_truncate(text, max_length=8000):\n" +
+        "    if len(text) <= max_length:\n" +
+        "        return text\n" +
+        "    sentences = re.split(r'(?<=[.!?])\\s+', text)\n" +
+        "    result = ''\n" +
+        "    for sentence in sentences:\n" +
+        "        if len(result + sentence) <= max_length:\n" +
+        "            result += sentence + ' '\n" +
+        "        else:\n" +
+        "            break\n" +
+        "    return result.strip()\n" +
+        "\n" +
+        "# LLM-generated UltraDocumentSchema (title + sections)\n" +
+        'title = """' + titlePython + '"""\n' +
+        'sections = ' + sectionsPython + "\n" +
+        "\n" +
+        "doc = Document()\n" +
+        "doc.core_properties.title = sanitize_text(title)\n" +
+        authorLine +
+        'doc.core_properties.comments = "Generated by GRACE AI Assistant"\n' +
+        "\n" +
+        "title_para = doc.add_paragraph()\n" +
+        "title_run = title_para.add_run(sanitize_text(title))\n" +
+        "title_run.bold = True\n" +
+        "title_run.font.size = Pt(16)\n" +
+        "title_run.font.color.rgb = RGBColor(31, 73, 125)\n" +
+        "title_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER\n" +
+        "title_para.paragraph_format.space_after = Pt(12)\n" +
+        "\n" +
+        "# Render structured sections\n" +
+        "# Ensure sections is iterable\n" +
+        "if not isinstance(sections, list):\n" +
+        "    sections = [sections] if sections else []\n" +
+        "\n" +
+        "for section in sections:\n" +
+        "    if not isinstance(section, dict):\n" +
+        "        continue\n" +
+        "    heading = sanitize_text(section.get('heading', ''))\n" +
+        "    body = sanitize_text(section.get('body', ''))\n" +
+        "\n" +
+        "    # Skip completely empty entries\n" +
+        "    if not heading and not body:\n" +
+        "        continue\n" +
+        "\n" +
+        "    # Heading block\n" +
+        "    if heading:\n" +
+        "        heading_para = doc.add_paragraph()\n" +
+        "        heading_run = heading_para.add_run(heading)\n" +
+        "        heading_run.bold = True\n" +
+        "        heading_run.font.size = Pt(13)\n" +
+        "        heading_run.font.color.rgb = RGBColor(31, 73, 125)\n" +
+        "        heading_para.paragraph_format.space_before = Pt(18)\n" +
+        "        heading_para.paragraph_format.space_after = Pt(6)\n" +
+        "\n" +
+        "    # Body text: split into logical paragraphs on blank lines for readability\n" +
+        "    if body:\n" +
+        "        paragraphs = re.split(r'\\n{2,}', body)\n" +
+        "        for para in paragraphs:\n" +
+        "            para = para.strip()\n" +
+        "            if not para:\n" +
+        "                continue\n" +
+        "            body_para = doc.add_paragraph()\n" +
+        "            body_para.add_run(smart_truncate(para))\n" +
+        "            body_para.paragraph_format.space_after = Pt(10)\n" +
+        "\n" +
+        "doc.save('" + filename + "')\n" +
+        "print('✅ Created " + filename + "')\n";
+
       actionXML = `<actions>
 <write_code>
   <language>python</language>
   <path>create_doc_${timestamp}.py</path>
-  <content><![CDATA[from docx import Document
-from docx.shared import Pt, Inches
-
-# Create document
-doc = Document()
-
-# Set core properties
-doc.core_properties.title = '${titlePython}'
-${authorPython ? `doc.core_properties.author = '${authorPython}'\n` : ''}# Add title as heading
-doc.add_heading('${titlePython}', 0)
-
-# Add content as structured paragraphs
-content_text = '${contentPython}'
-# Split content into paragraphs at double newlines to preserve sections
-paragraphs = content_text.split('\\n\\n')
-for para in paragraphs:
-    if para.strip():
-        doc.add_paragraph(para.strip())
-
-# Add placeholder sections
-doc.add_heading('Overview', level=1)
-doc.add_paragraph('This document was created based on your request.')
-
-# Save document
-doc.save('${filename}')
-print('✅ Created ${filename}')]]></content>
+  <content><![CDATA[${pyDocScript}]]></content>
   <description>Create Word document: ${title}</description>
 </write_code>
 <terminal_run>
@@ -575,7 +738,7 @@ print('✅ Created ${filename}')]]></content>
   <args>create_doc_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
-    } else if (isSpreadsheet) {
+    } else if (isExcel) {
       // Generate XLSX using openpyxl
       const filename = `${sanitizedTitle}.xlsx`;
       actionXML = `<actions>
