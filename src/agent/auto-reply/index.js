@@ -384,7 +384,29 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Action verbs: create, make, generate, write, build, produce, draft
   // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  
+  // Ultra Doc Path v3: Local text normalization for typo-resilient detection
+  const normalizeGoalTextLocal = (raw) => {
+    if (!raw || typeof raw !== 'string') return '';
+    let s = raw.toLowerCase().trim();
+    s = s.replace(/([a-z])\1{2,}/g, '$1'); // okkkk → ok
+    
+    const replacements = [
+      [/makeme/g, 'make me'],
+      [/wr?d+d?oc+ument|wr?d+doc+ument|docu?ment/gi, 'word document'],
+      [/docx?/gi, 'docx'],
+      [/exel|xlxs|spreedsheet|spreadhseet/gi, 'excel'],
+      [/\bwerd\b/gi, 'word'],   // catch 'werd'
+      [/\bdok\b/gi, 'doc'],     // catch 'dok'
+      [/\bu\b/g, 'you'],
+    ];
+    
+    for (const [pattern, rep] of replacements) s = s.replace(pattern, rep);
+    return s.replace(/\s+/g, ' ');
+  };
+  
+  const normalizedGoal = normalizeGoalTextLocal(goal);
+  const simpleFileGenPattern = normalizedGoal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
@@ -586,28 +608,21 @@ Write the document content now (JSON only):`;
             console.log('[AutoReply] ⚠️ Ultra schema had no structured sections; using single-section fallback from raw content');
           }
         } else {
-          // JSON completely failed to parse – still build a single-section schema from raw text
-          const fallbackBody = cleaned || rawResponse || '';
-          schema = {
-            title,
-            sections: [
-              {
-                heading: title,
-                body: fallbackBody
-              }
-            ]
-          };
-          console.log('[AutoReply] ⚠️ Ultra LLM response could not be parsed as JSON; using raw text as single DOCX section');
+          // Ultra Doc Path v3: JSON completely failed to parse → return null for full agentic fallback
+          console.log('[AutoReply][Ultra] Schema parse failed completely – returning null for full agentic fallback');
+          return null;  // AgenticAgent will proceed with full planning + specialists
         }
       } catch (err) {
-        console.log('[AutoReply] ⚠️ LLM call or JSON parse failed:', err.message);
+        console.log('[AutoReply][Ultra] LLM call failed:', err.message, '– returning null for full agentic fallback');
+        // Ultra Doc Path v3: Hard failure (network/timeout) → return null, not minimal schema
+        return null;  // Let full agentic flow handle content generation
       }
     }
 
-    // If DOCX schema is unavailable, fall back to full agentic planner instead of deterministic content
+    // Ultra Doc Path v3: If DOCX schema is still null after LLM block, return null for full agentic fallback
     if (isWordDoc && !schema) {
-      console.log('[AutoReply] ⚠️ Ultra DOCX schema unavailable - returning null for agentic fallback');
-      return null;
+      console.log('[AutoReply][Ultra] Schema unusable – returning null for full agentic fallback');
+      return null;  // NOT handledBySpecialist: true – this allows full planner to take over
     }
 
     // Define sections from schema to guard against any stray `${sections}` interpolation
@@ -688,40 +703,22 @@ Write the document content now (JSON only):`;
         "title_para.paragraph_format.space_after = Pt(12)\n" +
         "\n" +
         "# Render structured sections\n" +
-        "# Ensure sections is iterable\n" +
-        "if not isinstance(sections, list):\n" +
-        "    sections = [sections] if sections else []\n" +
-        "\n" +
         "for section in sections:\n" +
-        "    if not isinstance(section, dict):\n" +
-        "        continue\n" +
         "    heading = sanitize_text(section.get('heading', ''))\n" +
         "    body = sanitize_text(section.get('body', ''))\n" +
-        "\n" +
-        "    # Skip completely empty entries\n" +
-        "    if not heading and not body:\n" +
+        "    if not heading:\n" +
         "        continue\n" +
-        "\n" +
-        "    # Heading block\n" +
-        "    if heading:\n" +
-        "        heading_para = doc.add_paragraph()\n" +
-        "        heading_run = heading_para.add_run(heading)\n" +
-        "        heading_run.bold = True\n" +
-        "        heading_run.font.size = Pt(13)\n" +
-        "        heading_run.font.color.rgb = RGBColor(31, 73, 125)\n" +
-        "        heading_para.paragraph_format.space_before = Pt(18)\n" +
-        "        heading_para.paragraph_format.space_after = Pt(6)\n" +
-        "\n" +
-        "    # Body text: split into logical paragraphs on blank lines for readability\n" +
+        "    heading_para = doc.add_paragraph()\n" +
+        "    heading_run = heading_para.add_run(heading)\n" +
+        "    heading_run.bold = True\n" +
+        "    heading_run.font.size = Pt(13)\n" +
+        "    heading_run.font.color.rgb = RGBColor(31, 73, 125)\n" +
+        "    heading_para.paragraph_format.space_before = Pt(18)\n" +
+        "    heading_para.paragraph_format.space_after = Pt(6)\n" +
         "    if body:\n" +
-        "        paragraphs = re.split(r'\\n{2,}', body)\n" +
-        "        for para in paragraphs:\n" +
-        "            para = para.strip()\n" +
-        "            if not para:\n" +
-        "                continue\n" +
-        "            body_para = doc.add_paragraph()\n" +
-        "            body_para.add_run(smart_truncate(para))\n" +
-        "            body_para.paragraph_format.space_after = Pt(10)\n" +
+        "        body_para = doc.add_paragraph()\n" +
+        "        body_para.add_run(smart_truncate(body))\n" +
+        "        body_para.paragraph_format.space_after = Pt(10)\n" +
         "\n" +
         "doc.save('" + filename + "')\n" +
         "print('✅ Created " + filename + "')\n";
