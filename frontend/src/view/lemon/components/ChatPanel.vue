@@ -4,7 +4,7 @@
     <template v-else-if="conversationId">
       <div class="chat-panel-content">
         <ChatHeader :title="currentChat?.title" @share="handleShare" />
-        <ChatMessages :messages="messages" :mode="mode" />
+        <ChatMessages :key="conversationId" :messages="messages" :mode="mode" />
         <ChatInput @send="handleSendMessage" />
         <div class="scroll-to-bottom" @click="scrollToBottom" v-if="isShowScrollToBottom">
           <Down />
@@ -19,7 +19,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watchEffect, onMounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted } from "vue";
 import ChatHeader from "./ChatHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import Preview from "@/components/preview/index.vue";
@@ -59,17 +59,24 @@ const handleSendMessage = async (value) => {
   await seeAgent.sendMessage(text, chatStore.chat.conversation_id, files, mcp_server_ids, workMode);
 };
 
-const conversationId = ref(route.params.id);
+const conversationId = ref(route.params.id || null);
 const agentId = computed(() => route.params.agentId && route.params.agentId != "chat");
-watchEffect(() => {
-  console.log("route.params", route.params);
-  conversationId.value = route.params.id;
-  if (!route.params.id) {
-    chatStore.conversationId = null;
-    chatStore.chat = null;
-    chatStore.messages = [];
-  }
-});
+
+watch(
+  () => ({ id: route.params.id, agentId: route.params.agentId }),
+  async ({ id }) => {
+    console.log("route.params", route.params);
+    conversationId.value = id || null;
+
+    if (id) {
+      chatStore.conversationId = id;
+      await chatStore.initConversation(id);
+    } else {
+      chatStore.resetCurrentConversation();
+    }
+  },
+  { immediate: true }
+);
 
 // src/context/ws-client-provider.tsx
 const currentChat = computed(() => chatStore.chat);
@@ -79,12 +86,12 @@ const messages = computed(() => {
   console.log("出发了messages computed");
   switch (mode.value) {
     case "task":
-      return chatStore.messages;
+      return chatStore.messages || [];
     case "chat":
       console.log("chatInfo.value.msgList", chatInfo.value.msgList);
       return chat.convertToTree(chatInfo.value.msgList);
     default:
-      return chatStore.messages;
+      return chatStore.messages || [];
   }
 });
 

@@ -83,10 +83,19 @@ export const useChatStore = defineStore('chat', {
       this.status = 'done'
     },
     clearMessages() {
-      this.messages = [];
+      if (Array.isArray(this.messages)) {
+        this.messages.splice(0, this.messages.length);
+      } else {
+        this.messages = [];
+      }
       this.isScrolledToBottom = true;
       this.status == "done";
       this.chatInfo.pid = -1;
+    },
+    resetCurrentConversation() {
+      this.conversationId = null;
+      this.chat = {};
+      this.clearMessages();
     },
     clearAgent() {
       this.agent = {};
@@ -97,7 +106,15 @@ export const useChatStore = defineStore('chat', {
       console.log('initConversation');
       await this.resetChatInfo()
       let res = await chat.messageList(conversationId);
-      this.messages = []
+      if (!Array.isArray(res)) {
+        console.warn('[initConversation] Invalid response, initializing empty list', res);
+        res = [];
+      }
+      if (Array.isArray(this.messages)) {
+        this.messages.splice(0, this.messages.length);
+      } else {
+        this.messages = [];
+      }
       if (this.mode === 'task') {
         res.forEach(item => {
           if (item.meta && typeof item.meta === 'string') {

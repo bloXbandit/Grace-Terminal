@@ -44,54 +44,6 @@ const modeCommandHandler = require('@src/agent/modes/ModeCommandHandler');
 const devMode = require('@src/agent/modes/DevMode');
 
 /**
- * Ultra Doc Path v3: Text normalization helpers for typo-resilient intent detection
- */
-function normalizeGoalText(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  let s = raw.toLowerCase().trim();
-  
-  // Collapse 3+ repeated letters: okkkk → ok
-  s = s.replace(/([a-z])\1{2,}/g, '$1');
-  
-  const replacements = [
-    [/makeme/g, 'make me'],
-    [/wr?d+d?oc+ument|wr?d+doc+ument|docu?ment/gi, 'word document'],
-    [/docx?/gi, 'docx'],
-    [/exel|xlxs|spreedsheet|spreadhseet/gi, 'excel'],
-    [/\bwerd\b/gi, 'word'],   // typo: werd → word
-    [/\bdok\b/gi, 'doc'],     // typo: dok → doc
-    [/\bu\b/g, 'you'],
-  ];
-  
-  for (const [pattern, rep] of replacements) {
-    s = s.replace(pattern, rep);
-  }
-  
-  return s.replace(/\s+/g, ' ');
-}
-
-function isDocLike(normalizedGoal) {
-  // Exclude multi-step / infrastructure requests
-  const hasMultiStepVerbs = /\b(deploy|monitor|automate|pipeline|scrape|crawler|cron|api|service|ci|cd|kubernetes|docker compose|research.*then|first.*then)\b/.test(normalizedGoal);
-  
-  if (hasMultiStepVerbs) {
-    return { wordDoc: false, excel: false, isMultiStep: true };
-  }
-  
-  // Doc/Excel detection
-  const hasDocToken = /\b(word document|word doc|docx|report|document)\b/.test(normalizedGoal);
-  const hasExcelToken = /\b(excel|spreadsheet|xlsx)\b/.test(normalizedGoal);
-  const hasMakeCreateWrite = /\b(make|create|write|generate|draft)\b/.test(normalizedGoal);
-  const hasTopicPhrase = /\babout\b/.test(normalizedGoal) || /\bfor\b/.test(normalizedGoal);
-  
-  return {
-    wordDoc: hasDocToken && hasMakeCreateWrite && hasTopicPhrase,
-    excel: hasExcelToken && hasMakeCreateWrite,
-    isMultiStep: false,
-  };
-}
-
-/**
  * @swagger
  * /api/agent/run:
  *   post:
@@ -370,43 +322,34 @@ router.post("/run", async (ctx, next) => {
       console.log(`[AUTO Mode] 📎 File upload detected (${files.length} file(s)) - forcing agent mode`);
       intent = 'agent';
     } else {
-      // Ultra Doc Path v3: Check for doc-like intent first
-      const norm = normalizeGoalText(question);
-      const docIntent = isDocLike(norm);
-      
-      if (docIntent.wordDoc || docIntent.excel) {
-        console.log('[AUTO Mode] 📄 Doc-like intent detected → agent mode (Ultra path)', docIntent);
-        intent = 'agent';  // Forces AgenticAgent → auto_reply → Ultra path
-      } else {
-        // 自动选择：使用意图识别
-        console.log('自动模式：开始意图识别...');
-        try {
-          // 获取上下文消息用于意图识别
-          const contextMessages = await MessageTable.findAll({
-            where: {
-              conversation_id: conversation_id
-            },
-            order: [['create_at', 'ASC']]
-          })
+      // 自动选择：使用意图识别
+      console.log('自动模式：开始意图识别...');
+      try {
+        // 获取上下文消息用于意图识别
+        const contextMessages = await MessageTable.findAll({
+          where: {
+            conversation_id: conversation_id
+          },
+          order: [['create_at', 'ASC']]
+        })
 
-          // 构建上下文格式
-          const messagesContext = contextMessages.map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }));
+        // 构建上下文格式
+        const messagesContext = contextMessages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
 
-          intent = await detect_intent(question, conversation_id, messagesContext);
-          console.log('意图识别结果:', intent);
-          // 将结果标准化为小写
-          intent = intent.toLowerCase().trim();
-          if (intent !== 'chat' && intent !== 'agent') {
-            console.log('意图识别结果异常，默认使用agent模式');
-            intent = 'agent';
-          }
-        } catch (error) {
-          console.error('意图识别失败，默认使用agent模式:', error);
+        intent = await detect_intent(question, conversation_id, messagesContext);
+        console.log('意图识别结果:', intent);
+        // 将结果标准化为小写
+        intent = intent.toLowerCase().trim();
+        if (intent !== 'chat' && intent !== 'agent') {
+          console.log('意图识别结果异常，默认使用agent模式');
           intent = 'agent';
         }
+      } catch (error) {
+        console.error('意图识别失败，默认使用agent模式:', error);
+        intent = 'agent';
       }
     }
   } else {

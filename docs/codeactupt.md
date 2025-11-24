@@ -100,11 +100,7 @@ const finish_action = async (action, context, task_id) => {
   
   // Enhanced summary for ultra tasks - list created files
   if (isUltraTask && filesWithVersions.length > 0) {
-    // Separate Python helper scripts from user-facing files
-    const nonPyFiles = filesWithVersions.filter(f => !f.filename?.endsWith('.py') && !f.filepath.endsWith('.py'));
-    const filesForSummary = nonPyFiles.length > 0 ? nonPyFiles : filesWithVersions;
-
-    const fileNames = filesForSummary.map(f => f.filename || f.filepath.split('/').pop());
+    const fileNames = filesWithVersions.map(f => f.filename || f.filepath.split('/').pop());
     if (fileNames.length === 1) {
       summaryMessage = `✅ Created ${fileNames[0]}`;
     } else {
@@ -440,7 +436,7 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           action_result = await context.runtime.execute_action(currentAction, context, task.id);
           console.log(`[CodeAct] Action ${i + 1} result:`, JSON.stringify(action_result).substring(0, 300));
           
-          // CRITICAL: Mask /workspace/... Python file success messages from UI (multi-action)
+          // CRITICAL: Mask /workspace/... Python file success messages from UI
           if (action_result.content && /^File \/workspace\/.*\.py written successfully\.?\s*$/.test(action_result.content)) {
             console.log('[CodeAct] Masking Python file success message from UI (multi-action)');
             action_result.content = ''; // Hide from UI stream
@@ -460,6 +456,27 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
             allActionsSucceeded = false;
             break;
           }
+        }
+        
+        // Ultra Doc Path v3: If Ultra fast-path failed, send graceful message and return null for fallback
+        if (!allActionsSucceeded && task.isUltraDoc) {
+          console.log('[CodeAct] Ultra fast-path failed - immediate fallback to full agentic flow');
+          
+          // Send user-friendly error message
+          const errorMessage = Message.format({
+            status: 'failure',
+            task_id: task.id,
+            action_type: 'progress',
+            content: 'I encountered an issue creating that document. Let me try a different approach...',
+            meta: { action_type: 'progress' }
+          });
+          
+          if (context.onTokenStream) {
+            context.onTokenStream(errorMessage);
+          }
+          
+          // Return null to trigger full agentic fallback (no retries for Ultra)
+          return null;
         }
         
         // If all actions succeeded, call finish_action to send finish_summery

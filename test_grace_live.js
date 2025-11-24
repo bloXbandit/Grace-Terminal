@@ -174,6 +174,27 @@ const TEST_CASES = {
       breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
     },
     {
+      name: 'Auto Mode - Noisy Word Doc (Typos)',
+      goal: 'ok so can u jus make like a word docuement about artafical inteligence an how it kinda works in the real word nothing to crazy but make it read smooth, im typin fast so sorry for all the spellin and stuuff',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
+    },
+    {
+      name: 'Auto Mode - Messy Excel Request (Typos)',
+      goal: 'hey grace can you plz do like a exel spreedsheet for me with sum sales numbrs and dates and maybe profit or loss idk just make it make sense im not good at explainin but you get the idea right',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
+    },
+    {
+      name: 'Auto Mode - Run-on Ultra Style Doc Request',
+      goal: 'could you maybe make like a nice profesonal word doc that kinda looks like a summary report bout this topic artificial inteligence in bussiness and like how we can use it to save time and money and maybe some bullet points and lil intro and outro i know this is a run on but i just need something clean from you',
+      mode: 'auto',
+      expectedActions: ['plan', 'write_code', 'terminal_run'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'thinking']
+    },
+    {
       name: 'Auto Mode - 500 Animals Excel with Graphs',
       goal: 'could you make me an excel spread sheet 500 random animals, their geographic location and use separate sheets in the excel to show graphs of these animals and their imaginary danger level and maybe endangered percentage.. you can make the best you can of this ask but use real world data to support your data',
       mode: 'auto',

@@ -1,27 +1,64 @@
-# Ultra Doc Path – v3 Implementation Plan
+# Ultra Doc Path – v3 Implementation Plan (REVISED)
 
-**Status:** Ready for implementation  
+**Status:** REVISING after post-implementation analysis  
 **Scope:** AUTO mode Word/Excel doc requests with typo resilience  
-**Date:** 2025-11-20
+**Date:** 2025-11-20 (Revised after testing)
 
 ---
 
-## Core Design Principles
+## CRITICAL REALIZATIONS FROM TESTING
 
-1. **Decoupled Normalization:** `run.js` and `auto_reply` each do their own normalization independently
-2. **Clean Fallback:** Ultra schema fail → `return null` → full agentic flow (not dead error)
-3. **Guaranteed finish_summery:** Ultra success always hits `finish_action()` in CodeAct
-4. **Grace-style messaging:** No todo lists in Ultra, just natural progress blips
+### ❌ What We Got Wrong Initially:
+1. **Routing was NOT the problem** - `detect_intent()` LLM already handles typos perfectly for routing to agent mode
+2. **We over-engineered routing** - Adding regex-based `isDocLike()` BEFORE `detect_intent()` created a bypass that missed typos
+3. **The real problem**: Once in agent mode, Ultra's `simpleFileGenPattern` regex in `auto_reply` is too strict
+
+### ✅ What Actually Needs Fixing:
+1. **Ultra detection in auto_reply** - Add normalization ONLY here (line ~387)
+2. **Python JSON marshaling bug** - CRITICAL: Don't escape JSON for direct Python embedding
+3. **UI message handling** - Better handling of execution failures and retry loops
+4. **Fallback semantics** - Return `null` on schema fail (already correct in existing code)
+
+### 🔍 Actual Architecture:
+```
+AUTO Mode Request
+    ↓
+detect_intent() LLM ← Already handles ALL typos, no changes needed
+    ↓
+intent = 'agent' or 'chat'
+    ↓
+AgenticAgent.run()
+    ↓
+auto_reply() fast-path check
+    ↓
+simpleFileGenPattern regex ← THIS is where typos break (needs normalization)
+    ↓
+Ultra path or fallback to planner
+```
 
 ---
 
-## 1. Routing Layer – Doc Bias (run.js)
+## Core Design Principles (REVISED)
 
-### Location
-- **File:** `src/routers/agent/run.js`
-- **Area:** AUTO mode intent logic around lines ~317–364
+1. **Don't break existing spell-check:** `detect_intent()` LLM already handles routing typos - leave it alone
+2. **Normalize ONLY in Ultra block:** Add local normalization in `auto_reply` for regex matching
+3. **Fix Python JSON bug:** Use `json.loads()` with raw strings, NOT direct string escaping
+4. **Clean Fallback:** Ultra schema fail → `return null` → full agentic flow
+5. **Better UI handling:** Improve error messaging and retry loop UX
 
-### Add Helper Functions (near top of file, ~lines 40-80)
+---
+
+## 1. ~~Routing Layer – Doc Bias (run.js)~~ [REMOVED - NOT NEEDED]
+
+**DECISION:** Remove the routing layer changes entirely.
+
+### Why Remove?
+- `detect_intent()` LLM at line 398 already handles typos perfectly
+- Adding regex-based `isDocLike()` check BEFORE the LLM creates a brittle bypass
+- Typo-heavy requests that miss the regex fall through to `detect_intent()` anyway
+- No benefit, just adds complexity and potential for routing misses
+
+### Original Routing Layer Helpers (DO NOT IMPLEMENT)
 
 ```js
 function normalizeGoalText(raw) {
@@ -98,7 +135,7 @@ if (mode === 'auto') {
 
 ---
 
-## 2. Ultra Fast-Path – Local Normalization (auto-reply/index.js)
+## 2. Ultra Fast-Path – Local Normalization (auto-reply/index.js) ✅
 
 ### Location
 - **File:** `src/agent/auto-reply/index.js`
@@ -107,27 +144,39 @@ if (mode === 'auto') {
 ### Add Local Helper (near top of Ultra block)
 
 ```js
-function normalizeGoalTextLocal(raw) {
+// Ultra Doc Path: Local normalization for typo-resilient regex matching
+const normalizeGoalTextLocal = (raw) => {
   if (!raw || typeof raw !== 'string') return '';
   let s = raw.toLowerCase().trim();
-  s = s.replace(/([a-z])\1{2,}/g, '$1'); // okkkk → ok
   
+  // Collapse 3+ repeated letters: okkkk → ok, doocument → document
+  s = s.replace(/([a-z])\1{2,}/g, '$1');
+  
+  // AGGRESSIVE typo replacements for common misspellings
   const replacements = [
     [/makeme/g, 'make me'],
-    [/wr?d+d?oc+ument|wr?d+doc+ument|docu?ment/gi, 'word document'],
-    [/docx?/gi, 'docx'],
-    [/exel|xlxs|spreedsheet|spreadhseet/gi, 'excel'],
-    [/\bwerd\b/gi, 'word'],
-    [/\bdok\b/gi, 'doc'],
-    [/\bu\b/g, 'you'],
+    [/\bmakke\b/g, 'make'],           // makke → make
+    [/\bdoocument\b/g, 'document'],   // doocument → document
+    [/\bwr?d+d?oc+ument\b/gi, 'word document'],
+    [/\bdocx?\b/gi, 'docx'],
+    [/\bexel\b/gi, 'excel'],          // exel → excel
+    [/\bxlxs\b/gi, 'xlsx'],           // xlxs → xlsx
+    [/\bspreedsheet\b/gi, 'spreadsheet'],
+    [/\bwerd\b/gi, 'word'],           // werd → word
+    [/\bdok\b/gi, 'doc'],             // dok → doc
+    [/\byouo?\b/g, 'you'],            // youo → you
+    [/\bu\b/g, 'you'],                // u → you
   ];
   
-  for (const [pattern, rep] of replacements) s = s.replace(pattern, rep);
-  return s.replace(/\s+/g, ' ');
-}
+  for (const [pattern, rep] of replacements) {
+    s = s.replace(pattern, rep);
+  }
+  
+  return s.replace(/\s+/g, ' ').trim();
+};
 ```
 
-### Use Normalized Goal in Ultra Detection (~line 387)
+### Use Normalized Goal in Ultra Detection (~line 408)
 
 ```js
 // OLD:
@@ -135,14 +184,82 @@ function normalizeGoalTextLocal(raw) {
 
 // NEW:
 const normalizedGoal = normalizeGoalTextLocal(goal);
-const simpleFileGenPattern = normalizedGoal.match(/...existing Ultra regex.../i);
+const simpleFileGenPattern = normalizedGoal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
 ```
 
-**Why:** Ultra now benefits from same typo resilience as routing, but stays **decoupled** (no shared context variable).
+**Why:** Ultra regex now matches normalized text, catching typos like "makke", "doocument", "youo" that `detect_intent()` routed here.
+
+**Key Difference from Routing:** We DON'T bypass `detect_intent()` - we just make Ultra's regex more forgiving once we're IN agent mode.
 
 ---
 
-## 3. Fallback Semantics – Schema Fail → Full Agent
+## 3. Python JSON Marshaling Fix – CRITICAL BUG ⚠️
+
+### Location
+- **File:** `src/agent/auto-reply/index.js`
+- **Area:** Python script generation for DOCX (~line 646, 690)
+
+### ❌ WRONG APPROACH (DO NOT DO THIS):
+
+```js
+// BAD: Escaping JSON string for direct Python embedding
+const pythonEscape = (str) => {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')    // ← This breaks when used with JSON.stringify()
+    .replace(/'/g, "\\'");
+};
+
+const sectionsPython = pythonEscape(JSON.stringify(schema.sections));
+
+// Creates invalid Python:
+// sections = [{"heading":"...", "body":"{\\n \\"title\\"..."}]
+//                                            ^^^ SyntaxError
+```
+
+### ✅ CORRECT APPROACH:
+
+```js
+// GOOD: Use Python's json module to parse JSON string
+const sectionsJSON = JSON.stringify(schema.sections);
+
+const pyDocScript = 
+  "import sys\n" +
+  "import os\n" +
+  "import json\n" +  // ← Add json import
+  "sys.path.append('/usr/local/lib/python3.11/site-packages')\n" +
+  "from docx import Document\n" +
+  "from docx.shared import Pt, RGBColor\n" +
+  "from docx.enum.text import WD_PARAGRAPH_ALIGNMENT\n" +
+  "import re\n" +
+  "\n" +
+  "def sanitize_text(text):\n" +
+  "    return text.replace('\\x00', '')\n" +
+  "\n" +
+  "# LLM-generated UltraDocumentSchema\n" +
+  "title = '''{{TITLE}}'''\n" +
+  "sections_json = '''{{SECTIONS_JSON}}'''\n" +  // ← Triple-quoted raw string
+  "sections = json.loads(sections_json)\n" +     // ← Parse with json.loads()
+  "\n" +
+  "doc = Document()\n" +
+  "# ... rest of DOCX generation\n";
+
+// Replace placeholders
+pyDocScript = pyDocScript
+  .replace('{{TITLE}}', schema.title)
+  .replace('{{SECTIONS_JSON}}', sectionsJSON);
+```
+
+**Why This Works:**
+- Triple-quoted strings in Python preserve all quotes and backslashes literally
+- `json.loads()` handles all escaping properly
+- No need for manual character escaping
+
+**Critical Note:** The `pythonEscape()` function should ONLY be used for simple string literals (title, author), NOT for JSON structures.
+
+---
+
+## 4. Fallback Semantics – Schema Fail → Full Agent
 
 ### Location
 - **File:** `src/agent/auto-reply/index.js`
@@ -179,44 +296,101 @@ If Ultra successfully generates code but Python/terminal fails:
 
 ---
 
-## 4. Guaranteed `finish_summery` Emission
+## 5. UI Message Handling – Fix Retry Loops and Error UX
+
+### Problem
+When Ultra Python script fails:
+1. CodeAct retry mechanism kicks in (3 attempts)
+2. Each retry creates new `write_code` action
+3. User sees looping "File written successfully" messages for `.py` files
+4. After 3 failures: "Task exception terminated: max consecutive execution failures"
+5. `finish_summery` never emitted → UI hangs or shows incomplete state
 
 ### Location
 - **File:** `src/agent/code-act/code-act.js`
-- **Area:** Multi-action execution block (~lines 428–543)
+- **Area:** Multi-action execution and error handling (~lines 428-570)
 
-### Current State
-Ultra uses `preGeneratedAction` → multi-action path in CodeAct → should hit `finish_action()`.
-
-### QA Check (no changes needed if already working)
-
-Ensure this block always executes for Ultra:
+### Solution A: Better Error Messages for Ultra Failures
 
 ```js
 if (actions.length > 1 && task.preGeneratedAction) {
-  // Execute write_code, then terminal_run
-  // Scan conversation dir for new .docx/.xlsx
-  // Build summary (filter out .py files)
-  // Send plan message
+  // ... execute actions ...
   
+  if (!allActionsSucceeded) {
+    console.log('[CodeAct] Ultra multi-action failed - sending user-friendly error');
+    
+    // Send graceful failure message instead of raw Python errors
+    const errorMessage = Message.format({
+      status: 'failure',
+      task_id: task.id,
+      action_type: 'progress',
+      content: 'I encountered an issue creating that document. Let me try a different approach...',
+      meta: { action_type: 'progress' }
+    });
+    
+    if (context.onTokenStream) {
+      context.onTokenStream(errorMessage);
+    }
+    
+    // Return null to trigger full agentic fallback
+    return null;
+  }
+  
+  // Success path - existing finish_action() call
   if (allActionsSucceeded) {
-    await finish_action(/* ... */);  // ← Emits finish_summery SSE
+    await finish_action(finishAction, contextWithTask, task.id);
+    return result;
   }
 }
 ```
 
-**Optional enhancement** (if Ultra sometimes doesn't hit finish_action):
+### Solution B: Suppress .py File Messages in Ultra Path
+
+The masking logic already exists but may not be catching all cases:
 
 ```js
-// If Ultra task created files, send finish_summery even if allActionsSucceeded is false
-if (task.isUltraDoc && context.generate_files && context.generate_files.length > 0) {
-  await finish_action(/* ... with degraded summary if needed */);
+// CRITICAL: Mask /workspace/... Python file success messages from UI
+if (action_result.content && /^File \/workspace\/.*\.py written successfully\.?\s*$/.test(action_result.content)) {
+  console.log('[CodeAct] Masking Python file success message from UI (multi-action)');
+  action_result.content = ''; // Hide from UI stream
+}
+```
+
+**Verify this regex catches all variations** of the success message.
+
+### Solution C: Reduce Retry Count for Ultra
+
+Ultra is meant to be fast-path. If it fails, fall back immediately instead of retrying 3 times:
+
+```js
+// In CodeAct error handling
+if (task.preGeneratedAction && task.isUltraDoc) {
+  console.log('[CodeAct] Ultra fast-path failed - immediate fallback, no retry');
+  maxRetries = 0;  // Don't retry Ultra, just fall back to planner
 }
 ```
 
 ---
 
-## 5. Grace-Style Messaging (No Todo Lists for Ultra)
+## 6. Guaranteed `finish_summery` Emission ✅
+
+### Current State
+Ultra uses `preGeneratedAction` → multi-action path in CodeAct → already hits `finish_action()` at line ~541.
+
+### QA Verification (no changes needed)
+
+The existing code at lines 465-542 already:
+- Executes all actions sequentially
+- Scans for new .docx/.xlsx files
+- Builds summary message
+- Sends plan message via `onTokenStream`
+- Calls `finish_action()` which emits `finish_summery`
+
+**Status:** ✅ Already correct, verified in code review.
+
+---
+
+## 7. Grace-Style Messaging (No Todo Lists for Ultra)
 
 ### 5.1 Ultra JSON Prompt (auto-reply/index.js)
 
@@ -253,23 +427,40 @@ sendProgressMessage('On it! Creating your document now...');
 
 ---
 
-## 6. Frontend – Message Prop Types (Diagnostic Only)
+## 8. Frontend – Vue Prop Type Warnings (Low Priority)
 
-### Current State
+### Observed Warnings
 
-- `Message.vue` expects `message: Object` ✅
-- `ChatMessages.vue` passes `message` as Object ✅
+```
+[Vue warn]: Invalid prop: type check failed for prop "message". Expected Array, got Object
+[Vue warn]: Invalid prop: type check failed for prop "content". Expected String, got Array
+```
+
+### Status
+**Pre-existing issue, NOT caused by v3 implementation.**
+
+### Diagnosis Needed
+
+These warnings appear throughout the UI, not just in Ultra path. Likely causes:
+1. Some Vue components incorrectly define `message` prop as `Array` when it should be `Object`
+2. Some components define `content` prop as `String` when it receives `Array` (multi-line content)
 
 ### Implementation Step
 
-**Do NOT blindly change prop types.**
+**Do NOT fix blindly - requires systematic audit:**
 
-1. Run Ultra test with browser DevTools open
-2. Capture any actual Vue warnings (component name, prop, expected/received)
-3. Fix the **real source** (likely a wrapper or meta formatting issue)
-4. Verify `finish_summery` message shape matches other messages
+1. Run any flow (not just Ultra) with browser DevTools open
+2. Capture exact component names and prop types from warnings
+3. Audit frontend component prop definitions:
+   - `frontend/src/components/Message/`
+   - `frontend/src/components/ChatMessages/`
+   - Message wrapper components
+4. Fix prop type definitions to match actual data structures
+5. Verify all message types (chat, progress, action, finish_summery) work correctly
 
-**Files to inspect if issues arise:**
+**Priority:** Low - these are warnings only, functionality works despite type mismatches.
+
+---
 
 - `frontend/src/view/lemon/message/Message.vue`
 - `frontend/src/view/lemon/components/ChatMessages.vue`
@@ -278,7 +469,52 @@ sendProgressMessage('On it! Creating your document now...');
 
 ---
 
-## 7. Test Validation Protocol
+## 9. Implementation Summary (REVISED)
+
+### What Changed from Original v3 Plan?
+
+**❌ REMOVED:** Routing layer normalization in `run.js`
+- **Why:** `detect_intent()` LLM already handles typos perfectly
+- **Result:** Simpler architecture, no routing regression
+
+**✅ KEPT:** Ultra block normalization in `auto_reply/index.js`
+- **Why:** This is where typos actually break (regex matching)
+- **Result:** Ultra catches typo-heavy doc requests
+
+**✅ ADDED:** Python JSON marshaling fix
+- **Critical bug discovered during testing**
+- **Solution:** Use `json.loads()` instead of direct string escaping
+
+**✅ ADDED:** UI error handling improvements
+- **Problem:** Retry loops and confusing error messages
+- **Solution:** Better failure UX, reduced Ultra retries
+
+### Files to Modify (REVISED LIST)
+
+1. **src/agent/auto-reply/index.js** - ONLY file that needs changes:
+   - Add `normalizeGoalTextLocal()` helper (~line 388)
+   - Use normalized goal for Ultra regex matching (~line 408)
+   - Fix Python script to use `json.loads()` (~line 690)
+   - Ensure schema-fail returns `null` (~line 625)
+
+2. **src/agent/code-act/code-act.js** - Optional UI improvements:
+   - Better error messages for Ultra failures
+   - Reduce retry count for Ultra fast-path
+
+3. **~~src/routers/agent/run.js~~** - **NO CHANGES NEEDED**
+   - Keep `detect_intent()` LLM intact
+   - Don't add routing normalization
+
+### Priority Order
+
+1. **Fix Python JSON bug** (blocking all Ultra)
+2. **Add Ultra normalization** (typo handling)
+3. **Improve UI error handling** (UX)
+4. **Vue prop types audit** (low priority warnings)
+
+---
+
+## 10. Test Validation Protocol
 
 ### 7.1 Backend Validation
 

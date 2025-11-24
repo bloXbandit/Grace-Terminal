@@ -384,7 +384,29 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Action verbs: create, make, generate, write, build, produce, draft
   // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  
+  // Ultra Doc Path v3: Local text normalization for typo-resilient detection
+  const normalizeGoalTextLocal = (raw) => {
+    if (!raw || typeof raw !== 'string') return '';
+    let s = raw.toLowerCase().trim();
+    s = s.replace(/([a-z])\1{2,}/g, '$1'); // okkkk → ok
+    
+    const replacements = [
+      [/makeme/g, 'make me'],
+      [/wr?d+d?oc+ument|wr?d+doc+ument|docu?ment/gi, 'word document'],
+      [/docx?/gi, 'docx'],
+      [/exel|xlxs|spreedsheet|spreadhseet/gi, 'excel'],
+      [/\bwerd\b/gi, 'word'],   // catch 'werd'
+      [/\bdok\b/gi, 'doc'],     // catch 'dok'
+      [/\bu\b/g, 'you'],
+    ];
+    
+    for (const [pattern, rep] of replacements) s = s.replace(pattern, rep);
+    return s.replace(/\s+/g, ' ');
+  };
+  
+  const normalizedGoal = normalizeGoalTextLocal(goal);
+  const simpleFileGenPattern = normalizedGoal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
@@ -586,48 +608,21 @@ Write the document content now (JSON only):`;
             console.log('[AutoReply] ⚠️ Ultra schema had no structured sections; using single-section fallback from raw content');
           }
         } else {
-          // JSON completely failed to parse – still build a single-section schema from raw text
-          const fallbackBody = cleaned || rawResponse || '';
-          schema = {
-            title,
-            sections: [
-              {
-                heading: title,
-                body: fallbackBody
-              }
-            ]
-          };
-          console.log('[AutoReply] ⚠️ Ultra LLM response could not be parsed as JSON; using raw text as single DOCX section');
+          // Ultra Doc Path v3: JSON completely failed to parse → return null for full agentic fallback
+          console.log('[AutoReply][Ultra] Schema parse failed completely – returning null for full agentic fallback');
+          return null;  // AgenticAgent will proceed with full planning + specialists
         }
       } catch (err) {
-        console.log('[AutoReply] ⚠️ LLM call or JSON parse failed:', err.message);
-        // Hard failure (network/timeout/etc). Still build a minimal DOCX so the user gets a file.
-        const fallbackBody = `Grace encountered an internal error while generating structured content for your document.\n\nOriginal goal:\n${goal}`;
-        schema = {
-          title,
-          sections: [
-            {
-              heading: title,
-              body: fallbackBody
-            }
-          ]
-        };
-        console.log('[AutoReply] ⚠️ Ultra fallback: using minimal single-section DOCX from goal text due to LLM error');
+        console.log('[AutoReply][Ultra] LLM call failed:', err.message, '– returning null for full agentic fallback');
+        // Ultra Doc Path v3: Hard failure (network/timeout) → return null, not minimal schema
+        return null;  // Let full agentic flow handle content generation
       }
     }
 
-    // If DOCX schema is somehow still unavailable, synthesize a last-resort schema from the goal
+    // Ultra Doc Path v3: If DOCX schema is still null after LLM block, return null for full agentic fallback
     if (isWordDoc && !schema) {
-      console.log('[AutoReply] ⚠️ Ultra DOCX schema was null after LLM block; building last-resort fallback from goal');
-      schema = {
-        title,
-        sections: [
-          {
-            heading: title,
-            body: goal || ''
-          }
-        ]
-      };
+      console.log('[AutoReply][Ultra] Schema unusable – returning null for full agentic fallback');
+      return null;  // NOT handledBySpecialist: true – this allows full planner to take over
     }
 
     // Define sections from schema to guard against any stray `${sections}` interpolation
@@ -647,7 +642,8 @@ Write the document content now (JSON only):`;
     const titlePython = pythonEscape(schema.title);
     const authorPython = author ? pythonEscape(author) : null;
 
-    // Marshal sections into Python-safe literal (for DOCX sections rendering)
+    // Marshal sections into Python-safe JSON (for DOCX sections rendering)
+    // CRITICAL: Use json.loads() instead of direct string embedding to avoid double-escaping
     const sectionsJSON = JSON.stringify(schema.sections);
 
     // Fallback content body (used for non-DOCX formats / legacy templates)
@@ -669,6 +665,7 @@ Write the document content now (JSON only):`;
       const pyDocScript =
         "import sys\n" +
         "import os\n" +
+        "import json\n" +
         "sys.path.append('/usr/local/lib/python3.11/site-packages')\n" +
         "from docx import Document\n" +
         "from docx.shared import Pt, RGBColor\n" +
@@ -692,8 +689,7 @@ Write the document content now (JSON only):`;
         "\n" +
         "# LLM-generated UltraDocumentSchema (title + sections)\n" +
         'title = """' + titlePython + '"""\n' +
-        'sections_json = """' + sectionsJSON + '"""\n' +
-        'import json\n' +
+        'sections_json = \'\'\'{{SECTIONS_JSON}}\'\'\'\n' +
         'sections = json.loads(sections_json)\n' +
         "\n" +
         "doc = Document()\n" +
@@ -729,12 +725,15 @@ Write the document content now (JSON only):`;
         "\n" +
         "doc.save('" + filename + "')\n" +
         "print('✅ Created " + filename + "')\n";
+      
+      // Replace JSON placeholder with actual sections data
+      const pyDocScriptFinal = pyDocScript.replace('{{SECTIONS_JSON}}', sectionsJSON);
 
       actionXML = `<actions>
 <write_code>
   <language>python</language>
   <path>create_doc_${timestamp}.py</path>
-  <content><![CDATA[${pyDocScript}]]></content>
+  <content><![CDATA[${pyDocScriptFinal}]]></content>
   <description>Create Word document: ${title}</description>
 </write_code>
 <terminal_run>

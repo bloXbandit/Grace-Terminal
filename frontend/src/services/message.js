@@ -1,12 +1,46 @@
 import { v4 as uuid } from 'uuid';
+import { nextTick } from 'vue';
 import i18n from '@/locals';
 
 let messageStatus = "running";
+const PROGRESS_ACTIONS = new Set(['progress', 'coding']);
+
+const normalizeContent = (content) => {
+    if (Array.isArray(content)) {
+        return content
+            .filter(item => item !== undefined && item !== null)
+            .join('\n')
+            .trim();
+    }
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (content && typeof content === 'object') {
+        try {
+            return JSON.stringify(content, null, 2);
+        } catch (err) {
+            console.warn('[handleMessage] Failed to stringify content object', err);
+            return '';
+        }
+    }
+    return '';
+};
+
+const isSandboxTraceback = (message) => {
+    if (!message) return false;
+    if (message.role !== 'system') return false;
+    if (!PROGRESS_ACTIONS.has(message.meta?.action_type)) return false;
+    const content = typeof message.content === 'string' ? message.content : '';
+    return content.includes('Traceback (most recent call last)');
+};
+
 // 处理消息
 function handleMessage(message, messages) {
     if (message.meta && typeof message.meta === 'string') {
         message.meta = JSON.parse(message.meta);
     }
+
+    message.content = normalizeContent(message.content);
 
     if(message.meta.action_type == ""){
         return
@@ -14,6 +48,11 @@ function handleMessage(message, messages) {
 
     if (!message.meta || !message.meta.action_type) {
         return messages.push(message);
+    }
+
+    if (isSandboxTraceback(message)) {
+        console.warn('[handleMessage] Masking sandbox traceback message', message.content);
+        return;
     }
 
     const { action_type } = message.meta;
@@ -88,23 +127,40 @@ function handleStop(message, messages) {
     return
 }
 function handleFinishSummaryAddId(message, messages) {
-    let fileList = message.meta.json;
-    for (let i = 0; i < fileList.length; i++) {
-        const element = fileList[i];
-        element.id = uuid()
+    const rawList = Array.isArray(message.meta?.json) ? message.meta.json : [];
+    const filteredList = rawList.filter(file => {
+        const name = file?.name || file?.file_name || file?.title || '';
+        if (!name) return true;
+        return !name.endsWith('.py');
+    });
+
+    for (let i = 0; i < filteredList.length; i++) {
+        const element = filteredList[i];
+        element.id = uuid();
     }
-    // console.log('fileList by id',fileList);
-    
-    // FIX: Remove temp messages (thinking spinner) when success message arrives
-    if (message.status === 'success') {
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].is_temp) {
-                messages.splice(i, 1);
-            }
-        }
+
+    if (message.meta) {
+        message.meta.json = filteredList;
     }
-    
+
     messages.push(message);
+
+    if (message.status === 'success') {
+        nextTick(() => {
+            const filteredMessages = messages.filter(msg => {
+                // Keep all non-temp messages
+                if (!msg?.is_temp) return true;
+                
+                // Keep user messages even if marked temp (preserves user prompts)
+                if (msg.role === 'user') return true;
+                
+                // Remove all other temp messages (system spinners, etc.)
+                return false;
+            });
+
+            messages.splice(0, messages.length, ...filteredMessages);
+        });
+    }
 
 }
 // 删掉临时message update_status

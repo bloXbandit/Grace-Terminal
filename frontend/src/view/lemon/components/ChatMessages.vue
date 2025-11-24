@@ -8,7 +8,12 @@
 
       <!-- 正常消息渲染 -->
       <template v-else-if="mode === 'task'">
-        <div v-for="message in messages" :key="message.id" class="message-item" :class="message.role">
+        <div
+          v-for="(message, idx) in messages"
+          :key="message.id || message.uuid || message.meta?.message_id || `msg-${message.timestamp || idx}`"
+          class="message-item"
+          :class="message.role"
+        >
           <div style="display: flex; align-items: center; justify-content: flex-end" v-if="message?.meta?.screenshot || message?.meta?.json?.screenshot">
             <ChatReference :meta="message?.meta?.json || message?.meta" />
           </div>
