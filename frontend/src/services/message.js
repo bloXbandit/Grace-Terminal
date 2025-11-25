@@ -159,6 +159,15 @@ function handleFinishSummaryAddId(message, messages) {
 
     if (message.meta) {
         message.meta.json = filteredList;
+        
+        // CRITICAL: Clean up Ultra metadata after completion to prevent stale flags
+        if (message.status === 'success' || message.status === 'completed') {
+            delete message.meta.is_ultra_fast;
+            // Clean up any stale Ultra action metadata that could cause render errors
+            if (message.meta.action && typeof message.meta.action === 'object') {
+                delete message.meta.action.is_ultra_fast;
+            }
+        }
     }
 
     // Only mutate messages array if ChatPanel is still mounted
@@ -245,6 +254,16 @@ function handleChatMessage(message, messages) {
         console.warn('[handleChatMessage] message.content is not a string:', typeof message.content, message.content);
         message.content = message.content ? String(message.content) : '';
     }
+    
+    // CRITICAL: Clean up Ultra metadata from historical messages to prevent stale flags
+    if (message.meta && (message.status === 'success' || message.status === 'completed')) {
+        delete message.meta.is_ultra_fast;
+        // Clean up any stale Ultra action metadata that could cause render errors
+        if (message.meta.action && typeof message.meta.action === 'object') {
+            delete message.meta.action.is_ultra_fast;
+        }
+    }
+    
     // Only mutate messages array if ChatPanel is still mounted
     if (window.isChatPanelMounted?.value) {
         messages.push(message);

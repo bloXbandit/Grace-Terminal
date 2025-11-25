@@ -40,6 +40,7 @@ services:
       - ./frontend/src/services/see-agent.js:/app/frontend/src/services/see-agent.js:cached  # Mount see-agent for SSE cleanup fix
       - ./frontend/src/store/modules/chat.js:/app/frontend/src/store/modules/chat.js:cached  # Mount chat store for Vue Render Storm fix & SSE cleanup
       - ./frontend/src/view/lemon/components/ChatPanel.vue:/app/frontend/src/view/lemon/components/ChatPanel.vue:cached  # Mount ChatPanel for lifecycle guards & SSE cleanup
+      - ./frontend/src/view/lemon/message:/app/frontend/src/view/lemon/message:cached  # Mount message components for Vue render error fixes
       
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files

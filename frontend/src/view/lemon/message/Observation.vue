@@ -5,7 +5,7 @@
       <LoadingOutlined />
       <span style="margin-left: 5px">{{ command }} {{ information }}</span>
     </div>
-    <div class="observation" :class="status" @click="togglePreview" v-else>
+    <div class="observation" :class="action.status" @click="togglePreview" v-else>
       <div class="observation-details" v-if="information">
         <div class="command-output">
           <component :is="iconComponent" />
@@ -59,17 +59,17 @@ const svgHash = {
 };
 
 const command = computed(() => {
-  const actionType = props.action.meta.action_type;
+  const actionType = props.action?.meta?.action_type;
   return actionTypeDescriptions[actionType] || "";
 });
 
 const iconComponent = computed(() => {
-  const actionType = props.action.meta.action_type;
+  const actionType = props.action?.meta?.action_type;
   return svgHash[actionType] || Tools; // 使用Tools作为默认的工具调用图标
 });
 
 const information = computed(() => {
-  if (props.action.meta.action_type == "terminal_run") {
+  if (props.action?.meta?.action_type == "terminal_run") {
     // For terminal_run, content is [command, output]
     // Show only the output (index 1), not the command (index 0)
     return Array.isArray(props.action.content) && props.action.content.length > 1

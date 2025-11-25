@@ -69,7 +69,12 @@ const showFiles = computed(() => {
 });
 
 const content = computed(() => {
-  return props.message.content;
+  // Ensure content is always a string for markdown component
+  if (typeof props.message.content === 'string') {
+    return props.message.content;
+  }
+  // Convert objects/other types to string representation
+  return props.message.content ? String(props.message.content) : '';
 });
 
 // 安全的JSON解析函数
