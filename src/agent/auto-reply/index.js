@@ -396,6 +396,10 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const fileType = fileTypeGroup || matchedText;
     const isWordDoc = fileType.includes('word') || fileType.includes('docx') || fileType.includes('document') || fileType.endsWith('doc');
     const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType.includes('xlsx');
+    const isPowerPoint = fileType.includes('powerpoint') || fileType.includes('ppt') || fileType.includes('pptx') || fileType.includes('presentation') || fileType.includes('slides') || fileType.includes('slide deck');
+    const isMarkdown = fileType.includes('markdown') || fileType.includes('md') || goal.match(/\bmarkdown\b/i);
+    const isPlainText = fileType.includes('text') || fileType.includes('txt') || goal.match(/\btext file\b/i);
+    const isPDF = fileType.includes('pdf') || goal.match(/\bpdf\b/i);
     
     // Extract raw title from request (e.g., "make me a word doc about weight training and nutrition")
     const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
@@ -723,13 +727,25 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
         .replace(/\t/g, '\\t');
     };
     
+    // Special escaping for JSON content embedded in Python triple-quoted strings
+    const pythonJsonEscape = (jsonStr) => {
+      if (!jsonStr) return jsonStr;
+      // Double-escape backslashes and control characters for Python json.loads
+      return jsonStr
+        .replace(/\\/g, '\\\\')  // Double backslashes
+        .replace(/"/g, '\\"')    // Escape quotes
+        .replace(/\n/g, '\\n')   // Escape newlines
+        .replace(/\r/g, '\\r')   // Escape carriage returns
+        .replace(/\t/g, '\\t');  // Escape tabs
+    };
+    
     // CRITICAL: Only access schema properties based on file type
     const titlePython = schema ? pythonEscape(schema.title) : pythonEscape(title);
     const authorPython = author ? pythonEscape(author) : null;
     
-    // For Word docs: sections
-    const sectionsJSON = (isWordDoc && schema) ? JSON.stringify(schema.sections) : null;
-    const sections = (isWordDoc && schema) ? schema.sections : null;
+    // For text-based docs: sections (Word, Markdown, Plain Text, PowerPoint, PDF)
+    const sectionsJSON = ((isWordDoc || isMarkdown || isPlainText || isPowerPoint || isPDF) && schema) ? pythonJsonEscape(JSON.stringify(schema.sections)) : null;
+    const sections = ((isWordDoc || isMarkdown || isPlainText || isPowerPoint || isPDF) && schema) ? schema.sections : null;
     
     // For Excel: headers and rows
     const excelDataJSON = (isExcel && schema) ? JSON.stringify({ headers: schema.headers, rows: schema.rows }) : null;
@@ -746,7 +762,10 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
     
     if (isWordDoc) {
       // Generate DOCX using python-docx
-      const filename = `${sanitizedTitle}.docx`;
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.docx`;
       const authorLine = authorPython
         ? "doc.core_properties.author = '" + authorPython + "'\n"
         : '';
@@ -826,9 +845,154 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
   <args>create_doc_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
+    } else if (isMarkdown || isPlainText || isPowerPoint || isPDF) {
+      // REUSE Word doc schema for all text-based formats
+      const llmStart = Date.now();
+      try {
+        const call = require('@src/utils/llm');
+        const prompt = `You are writing the actual content of a document. Do NOT describe what you will do or mention tools, files, Python, or docx. Return ONLY valid JSON in this exact format:
+{
+  "title": "Document Title",
+  "sections": [
+    { "heading": "Introduction", "body": "..." },
+    { "heading": "Topic 1", "body": "..." },
+    { "heading": "Topic 2", "body": "..." },
+    { "heading": "Conclusion", "body": "..." }
+  ]
+}
+
+User goal: "${goal}"
+Topics: ${topics.join(', ')}
+
+Generate realistic, well-structured content. JSON only:`;
+        const response = await call(prompt, { temperature: 0.7, max_tokens: 4000 });
+        const rawResponse = response.content || response.message?.content || '';
+        console.log('[AutoReply] 🧠 Ultra LLM raw response length:', rawResponse.length);
+        console.log('[AutoReply] 🧠 Ultra LLM raw response preview:', rawResponse.slice(0, 200) + (rawResponse.length > 200 ? '...' : ''));
+
+        // Robust JSON extraction (same as Word/Excel)
+        let parsed = null;
+        const cleaned = rawResponse.trim().replace(/```json\s*|\s*```/gi, '').trim();
+        try {
+          parsed = JSON.parse(cleaned);
+          console.log('[AutoReply] ✅ Ultra LLM JSON parse succeeded');
+        } catch (err) {
+          console.log('[AutoReply] ⚠️ Ultra LLM JSON parse failed:', err.message);
+          // Try salvage: find first { and last } and parse that substring
+          const source = cleaned;
+          const firstBrace = source.indexOf('{');
+          const lastBrace = source.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            const candidate = source.slice(firstBrace, lastBrace + 1);
+            try {
+              parsed = JSON.parse(candidate);
+              console.log('[AutoReply] ✅ Ultra JSON salvage succeeded after trimming raw braces');
+            } catch (err2) {
+              console.log('[AutoReply] ⚠️ Ultra JSON salvage parse failed:', err2.message);
+            }
+          }
+        }
+
+        if (parsed) {
+          const sectionsRaw = Array.isArray(parsed.sections) ? parsed.sections : [];
+
+          // Very permissive section normalization: accept any reasonable heading/body-like fields
+          let validSections = [];
+          if (sectionsRaw.length > 0) {
+            validSections = sectionsRaw
+              .map(s => {
+                // Heading fallbacks: heading/title/subject/topic/name
+                let heading = null;
+                if (typeof s.heading === 'string') heading = s.heading;
+                else if (typeof s.title === 'string') heading = s.title;
+                else if (typeof s.subject === 'string') heading = s.subject;
+                else if (typeof s.topic === 'string') heading = s.topic;
+                else if (typeof s.name === 'string') heading = s.name;
+
+                // Body fallbacks: body/content/text/paragraphs/description, arrays joined
+                let body = null;
+                if (typeof s.body === 'string') body = s.body;
+                else if (Array.isArray(s.body)) body = s.body.join('\n\n');
+                else if (typeof s.content === 'string') body = s.content;
+                else if (Array.isArray(s.content)) body = s.content.join('\n\n');
+                else if (typeof s.text === 'string') body = s.text;
+                else if (Array.isArray(s.paragraphs)) body = s.paragraphs.join('\n\n');
+                else if (typeof s.description === 'string') body = s.description;
+
+                if (!body) return null;
+
+                heading = heading.trim();
+                body = body.trim();
+                if (!heading || !body) return null;
+
+                return { heading, body };
+              })
+              .filter(Boolean);
+          }
+
+          let finalTitle = typeof parsed.title === 'string' && parsed.title.trim()
+            ? parsed.title.trim()
+            : title; // fall back to normalized title from goal
+
+          if (validSections.length > 0) {
+            schema = {
+              title: finalTitle,
+              sections: validSections
+            };
+            console.log('[AutoReply] ✅ LLM UltraDocumentSchema accepted. sections_kept =', validSections.length, 'sections_total =', sectionsRaw.length);
+          } else {
+            // No usable structured sections, but we still have parsed JSON: wrap entire payload as one section
+            const fallbackBody = (() => {
+              if (typeof parsed.body === 'string' && parsed.body.trim()) return parsed.body.trim();
+              if (cleaned) return cleaned; // cleaned JSON/text
+              return rawResponse || '';
+            })();
+
+            schema = {
+              title: finalTitle,
+              sections: [
+                {
+                  heading: finalTitle || 'Document',
+                  body: fallbackBody || ''
+                }
+              ]
+            };
+            console.log('[AutoReply] ⚠️ Ultra schema had no structured sections; using single-section fallback from raw content');
+          }
+        } else {
+          // JSON completely failed to parse – still build a single-section schema from raw text
+          const fallbackBody = cleaned || rawResponse || '';
+          schema = {
+            title,
+            sections: [
+              {
+                heading: title,
+                body: fallbackBody
+              }
+            ]
+          };
+          console.log('[AutoReply] ⚠️ Ultra LLM response could not be parsed as JSON; using raw text as single section');
+        }
+      } catch (err) {
+        console.log('[AutoReply] ⚠️ LLM call or JSON parse failed:', err.message);
+        // Hard failure (network/timeout/etc). Still build a minimal document so the user gets a file.
+        const fallbackBody = `Grace encountered an internal error while generating structured content for your document.\n\nOriginal goal:\n${goal}`;
+        schema = {
+          title,
+          sections: [
+            {
+              heading: title,
+              body: fallbackBody
+            }
+          ]
+        };
+      }
     } else if (isExcel) {
       // Generate XLSX using openpyxl with LLM-generated data
-      const filename = `${sanitizedTitle}.xlsx`;
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.xlsx`;
       const pyExcelScript =
         "import json\n" +
         "from openpyxl import Workbook\n" +
@@ -871,6 +1035,9 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
         "# Auto-adjust column widths\n" +
         "for col in ws.columns:\n" +
         "    max_length = 0\n" +
+        "    # Skip merged cells which don't have column_letter property\n" +
+        "    if not hasattr(col[0], 'column_letter'):\n" +
+        "        continue\n" +
         "    column = col[0].column_letter\n" +
         "    for cell in col:\n" +
         "        if cell.value:\n" +
@@ -890,6 +1057,214 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
 <terminal_run>
   <command>python3</command>
   <args>create_excel_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isMarkdown) {
+      // Generate Markdown using pure Python (zero dependencies)
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.md`;
+      const pyMarkdownScript =
+        "import json\n" +
+        "\n" +
+        "# LLM-generated sections (same as DOCX)\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        'title = "' + titlePython + '"\n' +
+        "\n" +
+        "# Build markdown content\n" +
+        'md_content = f"# {title}\\n\\n"\n' +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    md_content += f\"## {heading}\\n\\n\"\n" +
+        "    md_content += f\"{body}\\n\\n\"\n" +
+        "\n" +
+        "# Write to file\n" +
+        'with open("' + filename + '", "w", encoding="utf-8") as f:\n' +
+        "    f.write(md_content)\n" +
+        'print("✅ Created ' + filename + '")\n';
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_markdown_${timestamp}.py</path>
+  <content><![CDATA[${pyMarkdownScript}]]></content>
+  <description>Create Markdown document: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_markdown_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPlainText) {
+      // Generate Plain Text using pure Python (zero dependencies)
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.txt`;
+      const pyTextScript =
+        "import json\n" +
+        "\n" +
+        "# LLM-generated sections (same as DOCX)\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        'title = "' + titlePython + '"\n' +
+        "\n" +
+        "# Build plain text content\n" +
+        'txt_content = f"{title}\\n"\n' +
+        'txt_content += "=" * len(title) + "\\n\\n"\n' +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    txt_content += f\"{heading}\\n\"\n" +
+        "    txt_content += \"-\" * len(heading) + \"\\n\"\n" +
+        "    txt_content += f\"{body}\\n\\n\"\n" +
+        "\n" +
+        "# Write to file\n" +
+        'with open("' + filename + '", "w", encoding="utf-8") as f:\n' +
+        "    f.write(txt_content)\n" +
+        'print("✅ Created ' + filename + '")\n';
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_text_${timestamp}.py</path>
+  <content><![CDATA[${pyTextScript}]]></content>
+  <description>Create Plain Text document: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_text_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPowerPoint) {
+      // Generate PowerPoint using python-pptx
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.pptx`;
+      const pyPPTScript =
+        "import json\n" +
+        "from pptx import Presentation\n" +
+        "from pptx.util import Inches, Pt\n" +
+        "\n" +
+        "# LLM-generated sections (same as DOCX)\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        'title = "' + titlePython + '"\n' +
+        "\n" +
+        "# Create presentation\n" +
+        "prs = Presentation()\n" +
+        "\n" +
+        "# Title slide\n" +
+        "title_slide_layout = prs.slide_layouts[0]\n" +
+        "slide = prs.slides.add_slide(title_slide_layout)\n" +
+        "title_shape = slide.shapes.title\n" +
+        "subtitle_shape = slide.placeholders[1]\n" +
+        "title_shape.text = title\n" +
+        "subtitle_shape.text = \"Generated by GRACE AI\"\n" +
+        "\n" +
+        "# Content slides (one per section)\n" +
+        "for section in sections:\n" +
+        "    bullet_slide_layout = prs.slide_layouts[1]\n" +
+        "    slide = prs.slides.add_slide(bullet_slide_layout)\n" +
+        "    shapes = slide.shapes\n" +
+        "    title_shape = shapes.title\n" +
+        "    body_shape = shapes.placeholders[1]\n" +
+        "    title_shape.text = section.get('heading', '')\n" +
+        "    tf = body_shape.text_frame\n" +
+        "    tf.text = section.get('body', '')\n" +
+        "    # Style the text\n" +
+        "    for paragraph in tf.paragraphs:\n" +
+        "        paragraph.font.size = Pt(18)\n" +
+        "\n" +
+        "prs.save('" + filename + "')\n" +
+        'print("✅ Created ' + filename + '")\n';
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_ppt_${timestamp}.py</path>
+  <content><![CDATA[${pyPPTScript}]]></content>
+  <description>Create PowerPoint presentation: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_ppt_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPDF) {
+      // Generate PDF using reportlab (without image support initially)
+      // Use LLM schema title for more intuitive filenames, fallback to user input
+      const schemaTitle = schema?.title || title;
+      const cleanSchemaTitle = schemaTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanSchemaTitle}.pdf`;
+      const pyPDFScript =
+        "import json\n" +
+        "from reportlab.lib.pagesizes import letter\n" +
+        "from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle\n" +
+        "from reportlab.lib.units import inch\n" +
+        "from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer\n" +
+        "from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY\n" +
+        "\n" +
+        "# LLM-generated sections (same as DOCX)\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        'title = "' + titlePython + '"\n' +
+        "\n" +
+        "# Create PDF\n" +
+        'doc = SimpleDocTemplate("' + filename + '", pagesize=letter)\n' +
+        "styles = getSampleStyleSheet()\n" +
+        "story = []\n" +
+        "\n" +
+        "# Custom styles\n" +
+        "title_style = ParagraphStyle(\n" +
+        "  'CustomTitle',\n" +
+        "  parent=styles['Heading1'],\n" +
+        "  fontSize=24,\n" +
+        "  textColor='#1F497D',\n" +
+        "  spaceAfter=30,\n" +
+        "  alignment=TA_CENTER\n" +
+        ")\n" +
+        "heading_style = ParagraphStyle(\n" +
+        "  'CustomHeading',\n" +
+        "  parent=styles['Heading2'],\n" +
+        "  fontSize=16,\n" +
+        "  textColor='#1F497D',\n" +
+        "  spaceAfter=12,\n" +
+        "  spaceBefore=12\n" +
+        ")\n" +
+        "\n" +
+        "# Add title\n" +
+        "story.append(Paragraph(title, title_style))\n" +
+        "story.append(Spacer(1, 0.2*inch))\n" +
+        "\n" +
+        "# Add sections\n" +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    # Add heading\n" +
+        "    story.append(Paragraph(heading, heading_style))\n" +
+        "    # Add body\n" +
+        "    story.append(Paragraph(body, styles['BodyText']))\n" +
+        "    story.append(Spacer(1, 0.2*inch))\n" +
+        "\n" +
+        "# Build PDF\n" +
+        "doc.build(story)\n" +
+        'print("✅ Created ' + filename + '")\n';
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_pdf_${timestamp}.py</path>
+  <content><![CDATA[${pyPDFScript}]]></content>
+  <description>Create PDF document: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_pdf_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
     } else {
