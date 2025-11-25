@@ -92,14 +92,19 @@ function handleMessage(message, messages) {
 }
 
 function handleStop(message, messages) {
-    messages.push(message);
+    // Only mutate messages array if ChatPanel is still mounted
+    if (window.isChatPanelMounted?.value) {
+        messages.push(message);
+    }
     // messageStatus = "stop";
     console.log('handleStop', messages);
     //找到 meta.action_type 是 plan 的
     //删除 action_type : "update_status"
-    for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].meta?.action_type === "update_status") {
-            messages.splice(i, 1); // 原地删除元素
+    if (window.isChatPanelMounted?.value) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].meta?.action_type === "update_status") {
+                messages.splice(i, 1); // 原地删除元素
+            }
         }
     }
     messages.forEach((message) => {
@@ -127,6 +132,19 @@ function handleStop(message, messages) {
     return
 }
 function handleFinishSummaryAddId(message, messages) {
+    // Defensive: Ensure message.content is a string
+    if (typeof message.content !== 'string') {
+        console.warn('[handleFinishSummaryAddId] message.content is not a string:', typeof message.content, message.content);
+        message.content = message.content ? String(message.content) : '';
+    }
+    
+    // Defensive: Ensure meta.json exists and is an array
+    if (!message.meta || !Array.isArray(message.meta.json)) {
+        console.warn('[handleFinishSummaryAddId] meta.json is not an array:', message.meta);
+        if (!message.meta) message.meta = {};
+        if (!message.meta.json) message.meta.json = [];
+    }
+    
     const rawList = Array.isArray(message.meta?.json) ? message.meta.json : [];
     const filteredList = rawList.filter(file => {
         const name = file?.name || file?.file_name || file?.title || '';
@@ -143,25 +161,30 @@ function handleFinishSummaryAddId(message, messages) {
         message.meta.json = filteredList;
     }
 
-    messages.push(message);
+    // Only mutate messages array if ChatPanel is still mounted
+    if (window.isChatPanelMounted?.value) {
+        messages.push(message);
 
-    if (message.status === 'success') {
-        nextTick(() => {
-            const filteredMessages = messages.filter(msg => {
-                // Keep all non-temp messages
-                if (!msg?.is_temp) return true;
-                
-                // Keep user messages even if marked temp (preserves user prompts)
-                if (msg.role === 'user') return true;
-                
-                // Remove all other temp messages (system spinners, etc.)
-                return false;
+        if (message.status === 'success') {
+            nextTick(() => {
+                // Double-check mounted state before mutating
+                if (window.isChatPanelMounted?.value) {
+                    const filteredMessages = messages.filter(msg => {
+                        // Keep all non-temp messages
+                        if (!msg?.is_temp) return true;
+                        
+                        // Keep user messages even if marked temp (preserves user prompts)
+                        if (msg.role === 'user') return true;
+                        
+                        // Remove all other temp messages (system spinners, etc.)
+                        return false;
+                    });
+
+                    messages.splice(0, messages.length, ...filteredMessages);
+                }
             });
-
-            messages.splice(0, messages.length, ...filteredMessages);
-        });
+        }
     }
-
 }
 // 删掉临时message update_status
 function deleteTempMessage(messages) {
@@ -175,6 +198,12 @@ function deleteTempMessage(messages) {
 }
 
 function handlePlan(message, messages) {
+    // Only mutate messages array if ChatPanel is still mounted
+    if (!window.isChatPanelMounted?.value) {
+        console.log('[handlePlan] Blocked mutation - ChatPanel unmounting');
+        return;
+    }
+    
     deleteTempMessage(messages);
     console.log('plan', message);
     //将第一task的任务设置为开始
@@ -193,27 +222,46 @@ function handlePlan(message, messages) {
 
 //处理自动回复
 function handleAutoReply(message, messages) {
-    messages.push(message);
-    //update_status
-    messages.push(
-        {
-            content: i18n.global.t('lemon.message.botInitialPlan'),
-            role: 'assistant',
-            is_temp: true,
-            meta: {
-                action_type: "update_status",
-            },
-        }
-    )
+    // Only mutate messages array if ChatPanel is still mounted
+    if (window.isChatPanelMounted?.value) {
+        messages.push(message);
+        //update_status
+        messages.push(
+            {
+                content: i18n.global.t('lemon.message.botInitialPlan'),
+                role: 'assistant',
+                is_temp: true,
+                meta: {
+                    action_type: "update_status",
+                },
+            }
+        )
+    }
 }
 function handleChatMessage(message, messages) {
     console.log('handleChatMessage', message);
-    messages.push(message);
+    // Defensive: Ensure message.content is a string
+    if (typeof message.content !== 'string') {
+        console.warn('[handleChatMessage] message.content is not a string:', typeof message.content, message.content);
+        message.content = message.content ? String(message.content) : '';
+    }
+    // Only mutate messages array if ChatPanel is still mounted
+    if (window.isChatPanelMounted?.value) {
+        messages.push(message);
+    } else {
+        console.log('[handleChatMessage] Blocked mutation - ChatPanel unmounting');
+    }
 }
 
 //处理question
 function handleQuestion(message, messages) {
     console.log('handleQuestion', message);
+    // Only mutate messages array if ChatPanel is still mounted
+    if (!window.isChatPanelMounted?.value) {
+        console.log('[handleQuestion] Blocked mutation - ChatPanel unmounting');
+        return;
+    }
+    
     //判断 messages 中 有没有  role: 'user', is_temp: true, 的数据 如果有则替换 如果没有 则添加
     let user_message_index = messages.findLastIndex(messageInfo => messageInfo.role === 'user' && messageInfo.is_temp);
     if (user_message_index !== -1) {
@@ -393,10 +441,14 @@ function updateAction(message, messages) {
             };
         } else {
             // Add new message with UUID
-            messages.push({
-                ...message,
-                uuid: message_uuid
-            });
+            if (window.isChatPanelMounted?.value) {
+                messages.push({
+                    ...message,
+                    uuid: message_uuid
+                });
+            } else {
+                console.log('[updateAction] Blocked push mutation - ChatPanel unmounting');
+            }
         }
         return;
     }

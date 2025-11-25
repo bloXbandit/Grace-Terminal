@@ -32,6 +32,14 @@ services:
       - ./containers:/app/containers:cached
       - ./Makefile:/app/Makefile:cached
       - ./public:/app/public:cached  # Mount frontend build for instant updates
+      - ./frontend/vite.config.js:/app/frontend/vite.config.js:cached  # Mount only config for allowedHosts
+      - ./frontend/src/view/lemon/components/Sidebar.vue:/app/frontend/src/view/lemon/components/Sidebar.vue:cached  # Mount Sidebar for UI hang fix
+      - ./frontend/src/view/menu/secondMenu.vue:/app/frontend/src/view/menu/secondMenu.vue:cached  # Mount secondMenu for async navigation fix
+      - ./frontend/src/components/markdown/index.vue:/app/frontend/src/components/markdown/index.vue:cached  # Mount markdown for content type safety
+      - ./frontend/src/services/message.js:/app/frontend/src/services/message.js:cached  # Mount message handlers for content type safety
+      - ./frontend/src/services/see-agent.js:/app/frontend/src/services/see-agent.js:cached  # Mount see-agent for SSE cleanup fix
+      - ./frontend/src/store/modules/chat.js:/app/frontend/src/store/modules/chat.js:cached  # Mount chat store for Vue Render Storm fix & SSE cleanup
+      - ./frontend/src/view/lemon/components/ChatPanel.vue:/app/frontend/src/view/lemon/components/ChatPanel.vue:cached  # Mount ChatPanel for lifecycle guards & SSE cleanup
       
       # Local filesystem access - Mount entire home for fluid access
       # This prevents Frankenstein state by always seeing latest user files

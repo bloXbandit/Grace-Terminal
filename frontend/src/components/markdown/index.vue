@@ -57,7 +57,8 @@ watch(
   () => props.content,
   (val) => {
     nextTick(() => {
-      renderHTML.value = md.render(val);
+      const content = typeof val === 'string' ? val : (val || '');
+      renderHTML.value = md.render(content);
     })
   }
 );
@@ -66,9 +67,9 @@ watch(
 // console.log("props", props.content);
 onMounted(() => {
   nextTick(() => {
-    renderHTML.value = md.render(props.content || "");
+    const content = typeof props.content === 'string' ? props.content : (props.content || '');
+    renderHTML.value = md.render(content);
   })
- 
 });
 </script>
 

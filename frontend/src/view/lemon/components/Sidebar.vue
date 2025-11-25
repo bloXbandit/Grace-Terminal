@@ -102,9 +102,11 @@ const toggleCollapse = () => {
 import { useRouter } from 'vue-router';
 const router = useRouter();
 
-const setActiveChat = (chat) => {
+const setActiveChat = async (chat) => {
   conversationId.value = chat.conversation_id;
+  chatStore.chat = chat;
   chatStore.clearMessages();
+  await chatStore.initConversation(chat.conversation_id);
   router.push(`/grace/${chat.conversation_id}`);
 };
 </script>

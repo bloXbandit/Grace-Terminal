@@ -46,6 +46,7 @@ export default defineConfig(({ mode }) => {
     port: 5005,  // HARDCODED: Frontend always on 5005
     host: '0.0.0.0',
     strictPort: true,
+    allowedHosts: ['.ngrok-free.app', '.trycloudflare.com'],
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:3000',  // HARDCODED: Backend always on 3000

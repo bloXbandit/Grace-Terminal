@@ -19,7 +19,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import ChatHeader from "./ChatHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import Preview from "@/components/preview/index.vue";
@@ -62,6 +62,12 @@ const handleSendMessage = async (value) => {
 const conversationId = ref(route.params.id || null);
 const agentId = computed(() => route.params.agentId && route.params.agentId != "chat");
 
+// Global flag to prevent SSE mutations during component unmount
+const isChatPanelMounted = ref(false);
+
+// Make it globally accessible for message handlers
+window.isChatPanelMounted = isChatPanelMounted;
+
 watch(
   () => ({ id: route.params.id, agentId: route.params.agentId }),
   async ({ id }) => {
@@ -98,6 +104,10 @@ const messages = computed(() => {
 const isShowScrollToBottom = ref(false);
 
 onMounted(() => {
+  // Set mounted flag to allow SSE mutations
+  console.log('[ChatPanel] Component mounted - enabling SSE mutations');
+  isChatPanelMounted.value = true;
+  
   //添加滚动事件监听
   const chatMessages = document.querySelector(".chat-messages");
   if (!chatMessages) return false;
@@ -117,6 +127,19 @@ onMounted(() => {
       emitter.emit("preview", { message: lastAction });
     }
   });
+});
+
+onBeforeUnmount(() => {
+  // Clear mounted flag to prevent SSE mutations during unmount
+  console.log('[ChatPanel] Component unmounting - disabling SSE mutations');
+  isChatPanelMounted.value = false;
+  
+  // CRITICAL: Abort SSE connection when component unmounts
+  console.log('[ChatPanel] Unmounting - aborting SSE');
+  if (chatStore.abortController) {
+    chatStore.abortController.abort();
+    chatStore.abortController = null;
+  }
 });
 
 const scrollToBottom = () => {

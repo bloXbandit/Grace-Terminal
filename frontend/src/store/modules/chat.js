@@ -27,6 +27,8 @@ export const useChatStore = defineStore('chat', {
     stopReplay: false,
     replayStatus: 'done',
     mode: 'task',
+    // SSE abort controller for cleanup
+    abortController: null, // ← ADD THIS LINE
     mode_editor: false,
     model_id: '',
     chatInfo: {
@@ -116,6 +118,8 @@ export const useChatStore = defineStore('chat', {
         this.messages = [];
       }
       if (this.mode === 'task') {
+        // NEW (FIXED): Build all messages in temp array first - ONE render for all messages!
+        const tempMessages = [];
         res.forEach(item => {
           if (item.meta && typeof item.meta === 'string') {
             item.meta = JSON.parse(item.meta);
@@ -128,8 +132,9 @@ export const useChatStore = defineStore('chat', {
               chat.status = "done";
             }
           }
-          messageFun.handleMessage(item, this.messages);
+          messageFun.handleMessage(item, tempMessages); // ← No reactivity yet
         });
+        this.messages = tempMessages; // ← ONE render for all messages!
         const lastItem = res[res.length - 1];
         if (lastItem && lastItem.meta) {
           const { action_type } = lastItem.meta;

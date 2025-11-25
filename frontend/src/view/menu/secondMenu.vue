@@ -287,16 +287,23 @@ const closeOtherWindows = () => {
 };
 
 // process chat click 
-const handleChatClick = (chat) => {
+const handleChatClick = async (chat) => {
   closeCollapse();
   closeOtherWindows();
+  // CRITICAL: Abort any running SSE before navigation
+  if (chatStore.abortController) {
+    console.log('[Navigation] Aborting SSE connection');
+    chatStore.abortController.abort();
+    chatStore.abortController = null;
+  }
   console.log("handleChatClick",chat)
   chatStore.conversationId = chat.conversation_id;
   console.log("chatStore.conversationId",conversationId.value)
 
   chatStore.chat = chat;
   chatStore.clearMessages();
-  chatStore.initConversation(chat.conversation_id);
+  // CRITICAL FIX: Await initConversation to finish loading messages before navigation
+  await chatStore.initConversation(chat.conversation_id);
   if(mode.value == 'chat'){
     router.push(`/grace/chat/${chat.conversation_id}`);
   }else{
