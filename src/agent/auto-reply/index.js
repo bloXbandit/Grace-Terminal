@@ -382,9 +382,9 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Catches conversational patterns with maximum flexibility
   // Prefix variants: "can you", "could you", "would you", "please", "lets", "i wanna", "i want", "i need", "make me", "give me", "build me", "get me"
   // Action verbs: create, make, generate, write, build, produce, draft
-  // File types: word doc/document, docx, excel, spreadsheet, xlsx, document, doc
+  // File types: word, docx, excel, xlsx, pdf, powerpoint, pptx, markdown, md, text, txt
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|docx|excel|xlsx)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|powerpoint|presentation|slide deck|slides|pdf document|pdf file|markdown file|markdown doc|text file|docx|excel|xlsx|ppt|pptx|pdf|markdown|md|txt|document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
@@ -394,8 +394,17 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const matchedText = simpleFileGenPattern[0] ? simpleFileGenPattern[0].toLowerCase() : '';
     const fileTypeGroup = simpleFileGenPattern[3] ? simpleFileGenPattern[3].toLowerCase() : '';
     const fileType = fileTypeGroup || matchedText;
-    const isWordDoc = fileType.includes('word') || fileType.includes('docx') || fileType.includes('document') || fileType.endsWith('doc');
+    
+    // CRITICAL: Check file types in priority order (most specific first)
+    const isPDF = fileType.includes('pdf');
+    const isPowerPoint = fileType.includes('powerpoint') || fileType.includes('ppt') || fileType.includes('presentation') || fileType.includes('slide');
+    const isMarkdown = fileType.includes('markdown') || fileType.includes('md');
+    const isPlainText = fileType.includes('text') || fileType.includes('txt');
     const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType.includes('xlsx');
+    // Word doc check LAST (most generic - "document" matches many things)
+    const isWordDoc = !isPDF && !isPowerPoint && !isMarkdown && !isPlainText && !isExcel && (fileType.includes('word') || fileType.includes('docx') || fileType.includes('document') || fileType.endsWith('doc'));
+    
+    console.log('[AutoReply] File type detection:', { fileType, isPDF, isPowerPoint, isMarkdown, isPlainText, isExcel, isWordDoc });
     
     // Extract raw title from request (e.g., "make me a word doc about weight training and nutrition")
     const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
@@ -458,11 +467,12 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       );
     };
     
-    // CRITICAL: LLM-based content generation for ultra (DOCX and XLSX)
-    // Uses a single LLM call to return structured schema (title + sections/rows)
-    // If schema cannot be trusted, fall back to full agentic planner instead of deterministic templates
+    // CRITICAL: LLM-based content generation for ultra
+    // DOCX, PPT, MD, TXT use sections schema (title + sections)
+    // XLSX uses tabular schema (title + headers + rows)
+    // PDF uses enhanced sections schema (with optional image prompts)
     let schema = null;
-    if (isWordDoc) {
+    if (isWordDoc || isPowerPoint || isMarkdown || isPlainText) {
       const llmStart = Date.now();
       try {
         const call = require('@src/utils/llm');
@@ -616,9 +626,9 @@ Write the document content now (JSON only):`;
       }
     }
 
-    // If DOCX schema is somehow still unavailable, synthesize a last-resort schema from the goal
-    if (isWordDoc && !schema) {
-      console.log('[AutoReply] ⚠️ Ultra DOCX schema was null after LLM block; building last-resort fallback from goal');
+    // If sections-based schema is unavailable, synthesize fallback
+    if ((isWordDoc || isPowerPoint || isMarkdown || isPlainText) && !schema) {
+      console.log('[AutoReply] ⚠️ Ultra sections schema was null; building fallback from goal');
       schema = {
         title,
         sections: [
@@ -824,6 +834,182 @@ Generate realistic data with 5-10 rows. Use appropriate column headers. JSON onl
 <terminal_run>
   <command>python3</command>
   <args>create_doc_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPowerPoint) {
+      // Generate PPTX using python-pptx with LLM-generated sections
+      const filename = `${sanitizedTitle}.pptx`;
+      const pyPPTScript =
+        "import json\n" +
+        "from pptx import Presentation\n" +
+        "from pptx.util import Inches, Pt\n" +
+        "\n" +
+        "# LLM-generated sections (same as DOCX)\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        "title_text = '" + titlePython + "'\n" +
+        "\n" +
+        "prs = Presentation()\n" +
+        "\n" +
+        "# Title slide\n" +
+        "title_slide_layout = prs.slide_layouts[0]\n" +
+        "slide = prs.slides.add_slide(title_slide_layout)\n" +
+        "title = slide.shapes.title\n" +
+        "subtitle = slide.placeholders[1]\n" +
+        "title.text = title_text\n" +
+        "subtitle.text = 'Generated by GRACE AI'\n" +
+        "\n" +
+        "# Content slides (one per section)\n" +
+        "for section in sections:\n" +
+        "    bullet_slide_layout = prs.slide_layouts[1]\n" +
+        "    slide = prs.slides.add_slide(bullet_slide_layout)\n" +
+        "    shapes = slide.shapes\n" +
+        "    title_shape = shapes.title\n" +
+        "    body_shape = shapes.placeholders[1]\n" +
+        "    title_shape.text = section.get('heading', '')\n" +
+        "    tf = body_shape.text_frame\n" +
+        "    tf.text = section.get('body', '')\n" +
+        "    for paragraph in tf.paragraphs:\n" +
+        "        paragraph.font.size = Pt(18)\n" +
+        "\n" +
+        "prs.save('" + filename + "')\n" +
+        "print('✅ Created " + filename + "')\n";
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_ppt_${timestamp}.py</path>
+  <content><![CDATA[${pyPPTScript}]]></content>
+  <description>Create PowerPoint presentation: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_ppt_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isMarkdown) {
+      // Generate Markdown file with LLM-generated sections
+      const filename = `${sanitizedTitle}.md`;
+      const pyMDScript =
+        "import json\n" +
+        "\n" +
+        "# LLM-generated sections\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        "title = '" + titlePython + "'\n" +
+        "\n" +
+        "# Build markdown content\n" +
+        "md_content = f'# {title}\\n\\n'\n" +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    md_content += f'## {heading}\\n\\n'\n" +
+        "    md_content += f'{body}\\n\\n'\n" +
+        "\n" +
+        "# Write to file\n" +
+        "with open('" + filename + "', 'w', encoding='utf-8') as f:\n" +
+        "    f.write(md_content)\n" +
+        "print('✅ Created " + filename + "')\n";
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_md_${timestamp}.py</path>
+  <content><![CDATA[${pyMDScript}]]></content>
+  <description>Create Markdown file: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_md_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPlainText) {
+      // Generate plain text file with LLM-generated sections
+      const filename = `${sanitizedTitle}.txt`;
+      const pyTXTScript =
+        "import json\n" +
+        "\n" +
+        "# LLM-generated sections\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        "title = '" + titlePython + "'\n" +
+        "\n" +
+        "# Build plain text content\n" +
+        "txt_content = f'{title}\\n'\n" +
+        "txt_content += '=' * len(title) + '\\n\\n'\n" +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    txt_content += f'{heading}\\n'\n" +
+        "    txt_content += '-' * len(heading) + '\\n'\n" +
+        "    txt_content += f'{body}\\n\\n'\n" +
+        "\n" +
+        "# Write to file\n" +
+        "with open('" + filename + "', 'w', encoding='utf-8') as f:\n" +
+        "    f.write(txt_content)\n" +
+        "print('✅ Created " + filename + "')\n";
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_txt_${timestamp}.py</path>
+  <content><![CDATA[${pyTXTScript}]]></content>
+  <description>Create text file: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_txt_${timestamp}.py</args>
+</terminal_run>
+</actions>`;
+    } else if (isPDF) {
+      // Generate PDF using reportlab with LLM-generated sections
+      const filename = `${sanitizedTitle}.pdf`;
+      const pyPDFScript =
+        "import json\n" +
+        "from reportlab.lib.pagesizes import letter\n" +
+        "from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle\n" +
+        "from reportlab.lib.units import inch\n" +
+        "from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer\n" +
+        "from reportlab.lib.enums import TA_CENTER\n" +
+        "\n" +
+        "# LLM-generated sections\n" +
+        'sections_json = """' + sectionsJSON + '"""\n' +
+        'sections = json.loads(sections_json)\n' +
+        "title_text = '" + titlePython + "'\n" +
+        "\n" +
+        "doc = SimpleDocTemplate('" + filename + "', pagesize=letter)\n" +
+        "styles = getSampleStyleSheet()\n" +
+        "story = []\n" +
+        "\n" +
+        "# Custom title style\n" +
+        "title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor='#1F497D', spaceAfter=30, alignment=TA_CENTER)\n" +
+        "heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, textColor='#1F497D', spaceAfter=12, spaceBefore=12)\n" +
+        "\n" +
+        "# Add title\n" +
+        "story.append(Paragraph(title_text, title_style))\n" +
+        "story.append(Spacer(1, 0.2*inch))\n" +
+        "\n" +
+        "# Add sections\n" +
+        "for section in sections:\n" +
+        "    heading = section.get('heading', '')\n" +
+        "    body = section.get('body', '')\n" +
+        "    story.append(Paragraph(heading, heading_style))\n" +
+        "    story.append(Paragraph(body, styles['BodyText']))\n" +
+        "    story.append(Spacer(1, 0.2*inch))\n" +
+        "\n" +
+        "doc.build(story)\n" +
+        "print('✅ Created " + filename + "')\n";
+
+      actionXML = `<actions>
+<write_code>
+  <language>python</language>
+  <path>create_pdf_${timestamp}.py</path>
+  <content><![CDATA[${pyPDFScript}]]></content>
+  <description>Create PDF document: ${title}</description>
+</write_code>
+<terminal_run>
+  <command>python3</command>
+  <args>create_pdf_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
     } else if (isExcel) {
