@@ -458,8 +458,8 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       );
     };
     
-    // CRITICAL: LLM-based content generation for ultra (DOCX only for now)
-    // Uses a single LLM call to return UltraDocumentSchema (title + sections)
+    // CRITICAL: LLM-based content generation for ultra (DOCX and XLSX)
+    // Uses a single LLM call to return structured schema (title + sections/rows)
     // If schema cannot be trusted, fall back to full agentic planner instead of deterministic templates
     let schema = null;
     if (isWordDoc) {
@@ -629,26 +629,110 @@ Write the document content now (JSON only):`;
         ]
       };
     }
-
-    // Define sections from schema to guard against any stray `${sections}` interpolation
-    const sections = schema.sections;
     
+    // CRITICAL: LLM-based Excel schema generation (similar to DOCX)
+    if (isExcel) {
+      const llmStart = Date.now();
+      try {
+        const call = require('@src/utils/llm');
+        const prompt = `You are generating data for an Excel spreadsheet. Return ONLY valid JSON in this exact format:
+{
+  "title": "Spreadsheet Title",
+  "headers": ["Column 1", "Column 2", "Column 3", "Column 4"],
+  "rows": [
+    ["Data 1A", "Data 1B", "Data 1C", "Data 1D"],
+    ["Data 2A", "Data 2B", "Data 2C", "Data 2D"],
+    ["Data 3A", "Data 3B", "Data 3C", "Data 3D"]
+  ]
+}
+
+User goal: "${goal}"
+Topics: ${topics.join(', ')}
+
+Generate realistic data with 5-10 rows. Use appropriate column headers. JSON only:`;
+
+        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        const llmEnd = Date.now();
+        console.log('[AutoReply] ULTRA Excel timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
+
+        // Robustly extract JSON (same as DOCX)
+        let cleaned = (rawResponse || '').trim();
+        const fencedMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (fencedMatch && fencedMatch[1]) {
+          cleaned = fencedMatch[1].trim();
+        } else {
+          cleaned = cleaned.replace(/```/g, '').trim();
+        }
+
+        let parsed = null;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (err) {
+          console.log('[AutoReply] ⚠️ Ultra Excel JSON.parse failed first pass:', err.message);
+          const source = rawResponse || cleaned;
+          const firstBrace = source.indexOf('{');
+          const lastBrace = source.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            const candidate = source.slice(firstBrace, lastBrace + 1);
+            try {
+              parsed = JSON.parse(candidate);
+              console.log('[AutoReply] ✅ Ultra Excel JSON salvage succeeded');
+            } catch (err2) {
+              console.log('[AutoReply] ⚠️ Ultra Excel JSON salvage failed:', err2.message);
+            }
+          }
+        }
+
+        if (parsed && parsed.headers && Array.isArray(parsed.rows)) {
+          schema = {
+            title: parsed.title || title,
+            headers: parsed.headers,
+            rows: parsed.rows
+          };
+          console.log('[AutoReply] ✅ Ultra Excel schema generated:', schema.headers.length, 'columns,', schema.rows.length, 'rows');
+        } else {
+          console.log('[AutoReply] ⚠️ Ultra Excel LLM response invalid, using fallback');
+        }
+      } catch (err) {
+        console.log('[AutoReply] ⚠️ Ultra Excel LLM call failed:', err.message);
+      }
+    }
+    
+    // If Excel schema unavailable, synthesize fallback
+    if (isExcel && !schema) {
+      console.log('[AutoReply] ⚠️ Ultra Excel schema was null; building fallback');
+      schema = {
+        title,
+        headers: ['Item', 'Description', 'Category', 'Value'],
+        rows: [
+          [topics[0] || 'Sample 1', 'Generated data for ' + (topics[0] || 'item'), 'Category A', '100'],
+          [topics[1] || 'Sample 2', 'Generated data for ' + (topics[1] || 'item'), 'Category B', '200'],
+          ['Sample 3', 'Additional example data', 'Category C', '150']
+        ]
+      };
+    }
+
     // CRITICAL: Python string escape (for embedding in Python code)
     const pythonEscape = (str) => {
       if (!str) return str;
       return str
-        .replace(/\\/g, '\\\\')  // Backslash must be first
+        .replace(/\\/g, '\\\\')
         .replace(/'/g, "\\'")
         .replace(/\n/g, '\\n')
         .replace(/\r/g, '\\r')
         .replace(/\t/g, '\\t');
     };
     
-    const titlePython = pythonEscape(schema.title);
+    // CRITICAL: Only access schema properties based on file type
+    const titlePython = schema ? pythonEscape(schema.title) : pythonEscape(title);
     const authorPython = author ? pythonEscape(author) : null;
-
-    // Marshal sections into Python-safe literal (for DOCX sections rendering)
-    const sectionsJSON = JSON.stringify(schema.sections);
+    
+    // For Word docs: sections
+    const sectionsJSON = (isWordDoc && schema) ? JSON.stringify(schema.sections) : null;
+    const sections = (isWordDoc && schema) ? schema.sections : null;
+    
+    // For Excel: headers and rows
+    const excelDataJSON = (isExcel && schema) ? JSON.stringify({ headers: schema.headers, rows: schema.rows }) : null;
 
     // Fallback content body (used for non-DOCX formats / legacy templates)
     const contentPython = pythonEscape(buildContent(topics));
@@ -743,44 +827,69 @@ Write the document content now (JSON only):`;
 </terminal_run>
 </actions>`;
     } else if (isExcel) {
-      // Generate XLSX using openpyxl
+      // Generate XLSX using openpyxl with LLM-generated data
       const filename = `${sanitizedTitle}.xlsx`;
+      const pyExcelScript =
+        "import json\n" +
+        "from openpyxl import Workbook\n" +
+        "from openpyxl.styles import Font, Alignment, PatternFill\n" +
+        "\n" +
+        "# LLM-generated Excel data (headers + rows)\n" +
+        'data_json = """' + excelDataJSON + '"""\n' +
+        'data = json.loads(data_json)\n' +
+        "\n" +
+        "# Create workbook\n" +
+        "wb = Workbook()\n" +
+        "ws = wb.active\n" +
+        "title = '" + titlePython + "'\n" +
+        "ws.title = title[:31]  # Excel sheet name limit\n" +
+        "\n" +
+        "# Add title (row 1, merged)\n" +
+        "ws['A1'] = title\n" +
+        "ws['A1'].font = Font(size=14, bold=True)\n" +
+        "ws['A1'].alignment = Alignment(horizontal='center')\n" +
+        "\n" +
+        "# Merge title across all columns\n" +
+        "headers = data.get('headers', [])\n" +
+        "if len(headers) > 1:\n" +
+        "    end_col = chr(64 + len(headers))\n" +
+        "    ws.merge_cells(f'A1:{end_col}1')\n" +
+        "\n" +
+        "# Add headers (row 3) with styling\n" +
+        "for col_idx, header in enumerate(headers, start=1):\n" +
+        "    cell = ws.cell(row=3, column=col_idx, value=header)\n" +
+        "    cell.font = Font(bold=True, color='FFFFFF')\n" +
+        "    cell.fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')\n" +
+        "    cell.alignment = Alignment(horizontal='center')\n" +
+        "\n" +
+        "# Add data rows (starting from row 4)\n" +
+        "rows = data.get('rows', [])\n" +
+        "for row_idx, row_data in enumerate(rows, start=4):\n" +
+        "    for col_idx, value in enumerate(row_data, start=1):\n" +
+        "        ws.cell(row=row_idx, column=col_idx, value=value)\n" +
+        "\n" +
+        "# Auto-adjust column widths\n" +
+        "for col in ws.columns:\n" +
+        "    max_length = 0\n" +
+        "    column = col[0].column_letter\n" +
+        "    for cell in col:\n" +
+        "        if cell.value:\n" +
+        "            max_length = max(max_length, len(str(cell.value)))\n" +
+        "    ws.column_dimensions[column].width = min(max_length + 2, 50)\n" +
+        "\n" +
+        "wb.save('" + filename + "')\n" +
+        "print('✅ Created " + filename + "')\n";
+
       actionXML = `<actions>
 <write_code>
   <language>python</language>
   <path>create_excel_${timestamp}.py</path>
-  <content><![CDATA[from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment
-
-# Create workbook
-wb = Workbook()
-ws = wb.active
-ws.title = '${titlePython}'
-
-# Add header
-ws['A1'] = '${titlePython}'
-ws['A1'].font = Font(size=14, bold=True)
-ws['A1'].alignment = Alignment(horizontal='center')
-
-# Add content description
-ws['A3'] = 'Content'
-ws['B3'] = '${contentPython}'
-
-# Add sample data structure
-ws['A5'] = 'Item'
-ws['B5'] = 'Value'
-ws['A6'] = 'Sample 1'
-ws['B6'] = 'Data'
-
-# Save workbook
-wb.save('${filename}')
-print('✅ Created ${filename}')]]></content>
+  <content><![CDATA[${pyExcelScript}]]></content>
   <description>Create Excel spreadsheet: ${title}</description>
 </write_code>
 <terminal_run>
   <command>python3</command>
   <args>create_excel_${timestamp}.py</args>
-  <cwd>.</cwd>
 </terminal_run>
 </actions>`;
     } else {
