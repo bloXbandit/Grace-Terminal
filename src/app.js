@@ -25,6 +25,20 @@ app.use(wrapContext);
 // error handler 
 onerror(app)
 
+// CORS middleware to allow ngrok and external access
+app.use(async (ctx, next) => {
+  ctx.set('Access-Control-Allow-Origin', '*');
+  ctx.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  ctx.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  
+  if (ctx.method === 'OPTIONS') {
+    ctx.status = 200;
+    return;
+  }
+  
+  await next();
+});
+
 // middlewares
 app.use(koaBody({
   multipart: true

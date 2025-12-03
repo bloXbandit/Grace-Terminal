@@ -107,7 +107,21 @@ export const useChatStore = defineStore('chat', {
     async initConversation(conversationId) {
       console.log('initConversation');
       await this.resetChatInfo()
+      
+      // CRITICAL: Check if conversation changed during async operation
+      if (this.conversationId !== conversationId) {
+        console.warn('[initConversation] Conversation changed during reset, aborting');
+        return; // Don't assign wrong messages!
+      }
+      
       let res = await chat.messageList(conversationId);
+      
+      // CRITICAL: Check if conversation changed during async operation
+      if (this.conversationId !== conversationId) {
+        console.warn('[initConversation] Conversation changed during load, aborting');
+        return; // Don't assign wrong messages!
+      }
+      
       if (!Array.isArray(res)) {
         console.warn('[initConversation] Invalid response, initializing empty list', res);
         res = [];

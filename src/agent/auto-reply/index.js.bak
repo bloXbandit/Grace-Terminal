@@ -13,6 +13,7 @@ const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
 const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = require('@src/utils/fileAnalyzer');
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
+const { getUltraDocPrompt } = require('@src/agent/seal/PromptLoader');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
@@ -384,7 +385,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // Action verbs: create, make, generate, write, build, produce, draft
   // File types: word doc/document, docx, excel, spreadsheet, pdf document/file, pdf, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word document|word doc|excel file|spreadsheet|pdf document|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:document|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (simpleFileGenPattern) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
@@ -426,6 +427,14 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
 
     const { title, topics } = normalizeTitle(rawTitle);
 
+    // Determine desired detail level from user request (short by default)
+    let detailLevel = 'short';
+    if (/(detailed|in[- ]depth|comprehensive|full guide|deep dive|long[- ]form|very long|book|chapter)/i.test(goal)) {
+      detailLevel = 'long';
+    } else if (/(outline|summary|brief|short|one page|1-page|single page|bullets?|bullet points?|quick)/i.test(goal)) {
+      detailLevel = 'short';
+    }
+
     // Extract author if present
     const authorMatch = goal.match(/(?:with|by)\s+author\s+["']?([^"']+?)["']?(?:\s|$)/i);
     let author = authorMatch ? authorMatch[1].trim() : null;
@@ -463,108 +472,19 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     // CRITICAL: LLM-based content generation for ultra (DOCX and XLSX)
     // Uses a single LLM call to return structured schema (title + sections/rows)
     // If schema cannot be trusted, fall back to full agentic planner instead of deterministic templates
-    
-    // NEW: Detect list intent for better schema selection
-    const detectListIntent = (goal) => {
-      const listPatterns = [
-        /list of\s+(all\s+)?\d+\s+\w+/i,           // "list of 50 states"
-        /list of\s+all\s+\w+/i,                    // "list of all presidents"
-        /all\s+\d+\s+\w+/i,                        // "all 50 states"
-        /all\s+\w+\s+(states|presidents|countries)/i, // "all US states"
-        /each\s+\w+/i,                             // "each state"
-        /bullet\s*(?:points|items)?/i,              // "bullet points"
-        /bulleted\s+list/i,                         // "bulleted list"
-        /line\s+items?/i                            // "line items"
-      ];
-      return listPatterns.some(pattern => pattern.test(goal));
-    };
-
-    const isListRequest = detectListIntent(goal);
-    console.log('[AutoReply] 🎯 Intent detected:', isListRequest ? 'LIST' : 'ESSAY', 'for goal:', goal.substring(0, 80));
-
-    // NEW: Detect style profile based on user phrasing (plain, bullets, numbered, formal)
-    const detectStyleProfile = (goal, isList) => {
-      const lower = (goal || '').toLowerCase();
-
-      // Explicit plain / no-format hints
-      const plainPatterns = [
-        /plain black text/,
-        /plain text list/,
-        /simple list/,
-        /no formatting/,
-        /no colors?,? no bold/,
-        /no colours?,? no bold/,
-        /black and white only/,
-        /no color/,
-        /no colours?/
-      ];
-
-      // Bullet list hints
-      const bulletPatterns = [
-        /as bullet points?/,
-        /as bullets?/,
-        /bulleted list/,
-        /bullet list/
-      ];
-
-      // Numbered / ordered list hints
-      const numberedPatterns = [
-        /numbered list/,
-        /ordered list/,
-        /as 1\./
-      ];
-
-      // Formal / professional report hints (mainly for essays)
-      const formalPatterns = [
-        /formal report/,
-        /professional (document|format)/,
-        /executive (summary|style)/
-      ];
-
-      const matchesAny = (patterns) => patterns.some((p) => p.test(lower));
-
-      if (isList) {
-        if (matchesAny(bulletPatterns)) return 'bullet_list';
-        if (matchesAny(numberedPatterns)) return 'numbered_list';
-        if (matchesAny(plainPatterns)) return 'plain_list';
-        // default list style
-        return 'accent_list';
-      }
-
-      // Essay / non-list styles
-      if (matchesAny(plainPatterns)) return 'plain_essay';
-      if (matchesAny(formalPatterns)) return 'formal_report';
-      // default essay style
-      return 'formal_report';
-    };
-
-    const styleProfile = detectStyleProfile(goal, isListRequest);
-    console.log('[AutoReply] 🎨 Style profile:', styleProfile, 'for goal:', goal.substring(0, 80));
-
     let schema = null;
     if (isWordDoc || isPDF) {
       const llmStart = Date.now();
       try {
-        const call = require('@src/utils/llm');
-        
-        // DYNAMIC: Choose prompt based on intent
-        const prompt = isListRequest ? `You are generating a LIST document. Return ONLY valid JSON in this exact format:
-{
-  "title": "Document Title",
-  "sections": [
-    { "heading": "Item 1", "body": "" },
-    { "heading": "Item 2", "body": "" },
-    { "heading": "Item 3", "body": "" },
-    ...
-  ]
-}
-
-Each section represents one list item. Use the heading for the item name. Keep body empty or very short. Include ALL items requested.
+        let prompt = await getUltraDocPrompt(goal, topics, detailLevel);
+        if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+          prompt = `You are writing the actual content of a document. Do NOT describe what you will do or mention tools, files, Python, or docx.
 
 User goal: "${goal}"
 Topics: ${topics.join(', ')}
+Detail level: ${detailLevel}
 
-Generate the complete list now (JSON only):` : `You are writing the actual content of a document. Do NOT describe what you will do or mention tools, files, Python, or docx. Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON in this exact format:
 {
   "title": "Document Title",
   "sections": [
@@ -575,12 +495,21 @@ Generate the complete list now (JSON only):` : `You are writing the actual conte
   ]
 }
 
-User goal: "${goal}"
-Topics: ${topics.join(', ')}
+Rules:
+- If detail level is "short":
+  - Use 2–3 sections total (including introduction and conclusion).
+  - Each body should be 1–2 short paragraphs (about 3–6 sentences total).
+- If detail level is "long":
+  - Use 4–6 sections total.
+  - Each body should be 3–5 paragraphs with more explanation and nuance.
 
 Write the document content now (JSON only):`;
 
-        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        const rawResponse = await call(prompt, conversation_id, 'assistant', {
+          temperature: 0.5,
+          max_tokens: 1200,
+          _ultra_model_id: 'qwen-turbo-2025-04-28'
+        });
         const llmEnd = Date.now();
         console.log('[AutoReply] ULTRA timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
 
@@ -631,13 +560,6 @@ Write the document content now (JSON only):`;
                 else if (typeof s.name === 'string') heading = s.name;
                 else heading = `Section ${idx + 1}`;
 
-                // LIST MODE: For list-intent docs, keep only headings and force empty bodies so we never dump JSON
-                if (isListRequest) {
-                  heading = heading.trim();
-                  if (!heading) return null;
-                  return { heading, body: '' };
-                }
-
                 // Body fallbacks: body/content/text/paragraphs/description, arrays joined
                 let body = null;
                 if (typeof s.body === 'string') body = s.body;
@@ -676,7 +598,9 @@ Write the document content now (JSON only):`;
               if (rawResponse) return rawResponse;
               try {
                 return JSON.stringify(parsed, null, 2);
-              } catch { return String(parsed); }
+              } catch (err) {
+                return String(parsed);
+              }
             })();
 
             schema = {
@@ -739,12 +663,6 @@ Write the document content now (JSON only):`;
     if (isExcel) {
       const llmStart = Date.now();
       try {
-        const call = require('@src/utils/llm');
-        
-        // NEW: Detect if user wants ALL items vs examples
-        const isAllItemsRequest = /all\s+\w+/i.test(goal) || /every\s+\w+/i.test(goal) || /complete\s+(?:list|set)/i.test(goal);
-        console.log('[AutoReply] 🎯 Excel intent detected:', isAllItemsRequest ? 'ALL_ITEMS' : 'SAMPLE', 'for goal:', goal.substring(0, 80));
-        
         const prompt = `You are generating data for an Excel spreadsheet. Return ONLY valid JSON in this exact format:
 {
   "title": "Spreadsheet Title",
@@ -759,10 +677,13 @@ Write the document content now (JSON only):`;
 User goal: "${goal}"
 Topics: ${topics.join(', ')}
 
-${isAllItemsRequest ? `IMPORTANT: The user is asking for ALL items (e.g., "all presidents", "all 50 states"). Include EVERY item requested, even if that is 50+ rows. Do not truncate the list.` : `Generate realistic sample data with 10-20 rows showing examples.`}
-Use appropriate column headers. JSON only:`;
+Generate realistic data with 5-10 rows. Use appropriate column headers. JSON only:`;
 
-        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        const rawResponse = await call(prompt, conversation_id, 'assistant', {
+          temperature: 0.5,
+          max_tokens: 1200,
+          _ultra_model_id: 'qwen-turbo-2025-04-28'
+        });
         const llmEnd = Date.now();
         console.log('[AutoReply] ULTRA Excel timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
 
@@ -979,7 +900,7 @@ Use appropriate column headers. JSON only:`;
         "\n" +
         "# LLM-generated UltraDocumentSchema (title + sections)\n" +
         'title = """' + titlePython + '"""\n' +
-        'sections_json = ' + JSON.stringify(sectionsJSON) + '\n' +
+        'sections_json = """' + sectionsJSON + '"""\n' +
         'import json\n' +
         'sections = json.loads(sections_json)\n' +
         "\n" +
@@ -987,9 +908,6 @@ Use appropriate column headers. JSON only:`;
         "doc.core_properties.title = sanitize_text(title)\n" +
         authorLine +
         'doc.core_properties.comments = "Generated by GRACE AI Assistant"\n' +
-        "\n" +
-        "style_profile = '" + styleProfile + "'\n" +
-        "is_list = " + (isListRequest ? "True" : "False") + "\n" +
         "\n" +
         "title_para = doc.add_paragraph()\n" +
         "title_run = title_para.add_run(sanitize_text(title))\n" +
@@ -1005,31 +923,14 @@ Use appropriate column headers. JSON only:`;
         "    body = sanitize_text(section.get('body', ''))\n" +
         "    if not heading:\n" +
         "        continue\n" +
-        "    if is_list:\n" +
-        "        if style_profile == 'bullet_list':\n" +
-        "            para = doc.add_paragraph(heading, style='List Bullet')\n" +
-        "        elif style_profile == 'numbered_list':\n" +
-        "            para = doc.add_paragraph(heading, style='List Number')\n" +
-        "        elif style_profile == 'plain_list':\n" +
-        "            para = doc.add_paragraph(heading)\n" +
-        "        else:\n" +
-        "            para = doc.add_paragraph()\n" +
-        "            run = para.add_run(heading)\n" +
-        "            run.bold = True\n" +
-        "            run.font.size = Pt(13)\n" +
-        "            run.font.color.rgb = RGBColor(31, 73, 125)\n" +
-        "            para.paragraph_format.space_before = Pt(18)\n" +
-        "            para.paragraph_format.space_after = Pt(6)\n" +
-        "    else:\n" +
-        "        para = doc.add_paragraph()\n" +
-        "        run = para.add_run(heading)\n" +
-        "        run.bold = True\n" +
-        "        run.font.size = Pt(13)\n" +
-        "        if style_profile == 'formal_report':\n" +
-        "            run.font.color.rgb = RGBColor(31, 73, 125)\n" +
-        "        para.paragraph_format.space_before = Pt(18)\n" +
-        "        para.paragraph_format.space_after = Pt(6)\n" +
-        "    if body and not is_list:\n" +
+        "    heading_para = doc.add_paragraph()\n" +
+        "    heading_run = heading_para.add_run(heading)\n" +
+        "    heading_run.bold = True\n" +
+        "    heading_run.font.size = Pt(13)\n" +
+        "    heading_run.font.color.rgb = RGBColor(31, 73, 125)\n" +
+        "    heading_para.paragraph_format.space_before = Pt(18)\n" +
+        "    heading_para.paragraph_format.space_after = Pt(6)\n" +
+        "    if body:\n" +
         "        body_para = doc.add_paragraph()\n" +
         "        body_para.add_run(smart_truncate(body))\n" +
         "        body_para.paragraph_format.space_after = Pt(10)\n" +

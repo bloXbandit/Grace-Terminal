@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
   
   // CRITICAL: Abort SSE connection when component unmounts
   console.log('[ChatPanel] Unmounting - aborting SSE');
-  if (chatStore.abortController) {
+  if (chatStore.abortController && typeof chatStore.abortController.abort === 'function') {
     chatStore.abortController.abort();
     chatStore.abortController = null;
   }

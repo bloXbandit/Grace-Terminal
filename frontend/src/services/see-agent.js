@@ -48,7 +48,7 @@ let pending = false;
 
 async function sendMessage(question, conversationId, files, mcp_server_ids = [], workMode = "auto") {
     // Abort any existing SSE connection before starting new one
-    if (chatStore.abortController) {
+    if (chatStore.abortController && typeof chatStore.abortController.abort === 'function') {
         console.log('[SSE] Aborting previous SSE connection');
         chatStore.abortController.abort();
     }

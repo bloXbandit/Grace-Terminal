@@ -291,7 +291,7 @@ const handleChatClick = async (chat) => {
   closeCollapse();
   closeOtherWindows();
   // CRITICAL: Abort any running SSE before navigation
-  if (chatStore.abortController) {
+  if (chatStore.abortController && typeof chatStore.abortController.abort === 'function') {
     console.log('[Navigation] Aborting SSE connection');
     chatStore.abortController.abort();
     chatStore.abortController = null;
