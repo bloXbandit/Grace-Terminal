@@ -168,8 +168,10 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
         console.log('[AutoReply] ✅ Request relates to files - proceeding with file context');
       
       // CRITICAL: Fast-path for CONTENT BREAKDOWN follow-ups (no planning overhead)
-      // Catches: "what's in it?", "show me the content", "lmk contents", "what does it contain"
-      const contentBreakdownQuery = goal.match(/what'?s? in (it|the|this|that|the file|the document)|show me (the content|what'?s in|the details)|break(down|) (it|the file|the document|this)|lmk (what'?s in|contents?|the contents?)|tell me (what'?s in|the contents?|contents?)|what (does it|it) contains?|what'?s? (the )?contents?/i);
+      // Catches: "what's in it?", "show me the content", "lmk contents", "what does it contain",
+      // doc-analysis phrasings like "analyze this word doc" or "lmk what it's about",
+      // and lightweight overview requests like "check this pdf" or "look into this document".
+      const contentBreakdownQuery = goal.match(/what'?s? in (it|the|this|that|the file|the document)|show me (the content|what'?s in|the details)|break(down|) (it|the file|the document|this)|lmk (what'?s in|contents?|the contents?)|tell me (what'?s in|the contents?|contents?)|what (does it|it) contains?|what'?s? (the )?contents?|analy[sz]e (this|the) (document|file|pdf|docx|word doc|word document)|what (is|s|does) (this|it|the document|the file) (about|regarding)|check (this|the) (document|file|pdf|docx|word doc|word document)|look into (this|the) (document|file|pdf|docx|word doc|word document)|peep (this|the) (document|file|pdf|docx|word doc|word document)/i);
       
       // CRITICAL FIX: Check BOTH recent messages AND current upload
       // On initial conversation start, messages is [], so we must check files.length > 0
@@ -180,10 +182,102 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       if (contentBreakdownQuery && hasRecentFileMessage) {
         console.log('[AutoReply] ⚡ Fast-path: Content breakdown request detected - streaming analysis');
         const { generateStreamingBreakdown } = require('@src/utils/fileAnalyzer');
-        
-        // Stream the detailed content analysis
-        const breakdown = await generateStreamingBreakdown(analyses[0], onTokenStream);
-        
+        const call = require('@src/utils/llm');
+
+        // STEP 1: Try to resolve a specific file by name/descriptor in the goal text
+        const goalLower = (goal || '').toLowerCase();
+        let analysis = null;
+
+        if (files && files.length > 0 && analyses && analyses.length > 0) {
+          const candidates = files.map((f) => {
+            const fid = f.id || f.dataValues?.id;
+            const rawName = (f.name || f.filename || '').toLowerCase();
+            const nameOnly = rawName.replace(/.*\//, ''); // strip any path
+            const base = nameOnly.replace(/\.[a-z0-9]+$/, '');
+            const normalizedBase = base.replace(/[_\-]+/g, ' ').trim();
+            return {
+              file: f,
+              id: fid,
+              name: nameOnly,
+              base: normalizedBase,
+              analysis: f._analysis
+            };
+          });
+
+          // Match by explicit filename or base name appearing in the goal text
+          const nameMatches = candidates.filter(c => {
+            if (!c.base || c.base.length < 4) return false; // avoid tiny/ambiguous tokens
+            return goalLower.includes(c.base);
+          });
+
+          if (nameMatches.length === 1 && nameMatches[0].analysis) {
+            analysis = nameMatches[0].analysis;
+            console.log('[AutoReply] 📎 Using analysis matched by name/base:', nameMatches[0].name);
+          } else if (nameMatches.length > 1) {
+            // Multiple files mentioned explicitly – avoid guessing in fast-path
+            console.log('[AutoReply] ⚠️ Multiple files matched by name in goal; skipping content-breakdown fast-path');
+            return null;
+          }
+        }
+
+        // STEP 2: If no explicit name match, prefer the most recently uploaded file for this message
+        if (!analysis && newlyUploadedFileIds && newlyUploadedFileIds.length > 0 && files && files.length > 0) {
+          const newestId = newlyUploadedFileIds[newlyUploadedFileIds.length - 1];
+          const newestFile = files.find(f => {
+            const fid = f.id || f.dataValues?.id;
+            return fid === newestId;
+          });
+          if (newestFile && newestFile._analysis) {
+            analysis = newestFile._analysis;
+            console.log('[AutoReply] 📎 Using analysis for newest uploaded file:', newestFile.name || newestFile.filename);
+          }
+        }
+
+        // STEP 3: Simple fallback: first available analysis if we still couldn't resolve
+        if (!analysis && analyses && analyses.length > 0) {
+          analysis = analyses[0];
+          console.log('[AutoReply] 📎 Using analysis[0] as fallback for content breakdown');
+        }
+
+        let breakdown;
+
+        // For text-based docs (PDF, DOCX, DOC, TXT, MD), use a small LLM summary instead of raw content dump
+        if (analysis && typeof analysis.content === 'string' && (
+          analysis.extension === '.pdf' ||
+          analysis.extension === '.docx' ||
+          analysis.extension === '.doc' ||
+          analysis.extension === '.txt' ||
+          analysis.extension === '.md'
+        )) {
+          const rawContent = analysis.content || '';
+          const cleanedSnippet = rawContent.substring(0, 2000);
+
+          const prompt = `You are summarizing a document for the user.
+
+Document filename: ${analysis.filename}
+Extracted content (may be truncated):
+"""
+${cleanedSnippet}
+"""
+
+In 3-5 short sentences, explain what this document is about and what main topics it covers.
+Be conversational, clear, and direct. Do not use markdown or bullet points.
+Do NOT quote the full text; just describe it at a high level.`;
+
+          try {
+            breakdown = await call(prompt, conversation_id, 'assistant', { temperature: 0.35, max_tokens: 400 });
+            if (typeof onTokenStream === 'function' && breakdown) {
+              onTokenStream(breakdown);
+            }
+          } catch (err) {
+            console.log('[AutoReply] ⚠️ LLM summary for file breakdown failed, falling back to structured breakdown:', err.message);
+            breakdown = await generateStreamingBreakdown(analysis, onTokenStream);
+          }
+        } else {
+          // Non-text / structured files still use the existing structured breakdown
+          breakdown = await generateStreamingBreakdown(analysis, onTokenStream);
+        }
+
         return {
           handledBySpecialist: true,
           specialist: 'general_chat',
@@ -385,8 +479,13 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   // File types: word doc/document, docx, excel, spreadsheet, pdf document/file, pdf, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
   const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+
+  // IMPORTANT: If the user explicitly asks to "do research" AND draft a doc, route to full agentic flow
+  // Example: "do some research and draft a brief word document about AVICI token"
+  const researchAndDocPattern = goal.match(/(do|perform|conduct)\s+some?\s*research.*\b(and|then)\b.*\b(draft|write|create|prepare|build|generate|make)\b.*\b(word doc|word document|document|report|spreadsheet|excel (?:file)?|excel spreadsheet|xlsx|pdf (?:file)?|pdf document)\b/i);
+  const wantsResearchThenDoc = !!researchAndDocPattern;
   
-  if (simpleFileGenPattern) {
+  if (simpleFileGenPattern && !wantsResearchThenDoc) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
     console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
     
