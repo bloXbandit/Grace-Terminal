@@ -123,19 +123,71 @@ class ConversationContext {
 
   /**
    * Load files from database (synced with filesystem via FileRegistry later)
+   * CRITICAL FIX: Query both File and FileVersion tables to get all documents
+   * - File table: manually uploaded files
+   * - FileVersion table: files created by Python scripts in agentic flow
    */
   async _loadFiles() {
-    const files = await File.findAll({
-      where: { conversation_id: this.conversationId },
-      order: [['create_at', 'DESC']]
-    });
-    
-    return files.map(f => ({
-      file_name: f.name,
-      file_path: f.url,
-      file_type: path.extname(f.name),
-      created_at: f.create_at
-    }));
+    try {
+      // Load manually uploaded files from File table
+      const manualFiles = await File.findAll({
+        where: { conversation_id: this.conversationId },
+        order: [['create_at', 'DESC']]
+      });
+
+      // Load script-generated files from FileVersion table
+      const FileVersion = require('@src/models/FileVersion');
+      const scriptFiles = await FileVersion.findAll({
+        where: { 
+          conversation_id: this.conversationId,
+          active: true  // Only get active versions
+        },
+        order: [['create_at', 'DESC']]
+      });
+
+      console.log(`[ConversationContext] Found ${manualFiles.length} manual files and ${scriptFiles.length} script files`);
+
+      // Combine and deduplicate files (prefer script files if duplicate names)
+      const allFiles = [];
+      const seenNames = new Set();
+
+      // Add script files first (they're more recent)
+      scriptFiles.forEach(f => {
+        const fileName = f.filename || f.name;
+        if (!seenNames.has(fileName)) {
+          allFiles.push({
+            file_name: fileName,
+            file_path: f.filepath,
+            file_type: require('path').extname(fileName),
+            created_at: f.create_at,
+            source: 'script'
+          });
+          seenNames.add(fileName);
+        }
+      });
+
+      // Add manual files (avoiding duplicates)
+      manualFiles.forEach(f => {
+        const fileName = f.name;
+        if (!seenNames.has(fileName)) {
+          allFiles.push({
+            file_name: fileName,
+            file_path: f.url,
+            file_type: require('path').extname(fileName),
+            created_at: f.create_at,
+            source: 'manual'
+          });
+          seenNames.add(fileName);
+        }
+      });
+
+      console.log(`[ConversationContext] Total unique files for context: ${allFiles.length}`);
+      return allFiles;
+
+    } catch (error) {
+      console.error('[ConversationContext] File loading failed:', error);
+      return [];
+    }
   }
 
   /**

@@ -214,7 +214,8 @@ class DockerRuntime {
     const uuid = uuidv4();
     // action running message
     const tool = tools[type];
-    if (tool && tool.getActionDescription) {
+    const suppressMetaRevisionChatter = context && context.taskType === 'metadata_revision';
+    if (tool && tool.getActionDescription && !suppressMetaRevisionChatter) {
       const description = await tool.getActionDescription(params);
       const value = {
         uuid: uuid,
@@ -269,6 +270,11 @@ class DockerRuntime {
         if (action.params.origin_cwd) {
           // Convert grace-app path to runtime sandbox path
           let cwd = action.params.origin_cwd;
+          // Some callers still send /app/workspace/Conversation_<id6> (missing user_<id> prefix).
+          // In the sandbox, workspace is mounted at /workspace and is always user-scoped.
+          if (cwd.startsWith('/app/workspace/Conversation_')) {
+            cwd = cwd.replace('/app/workspace/Conversation_', `/app/workspace/user_${this.user_id}/Conversation_`);
+          }
           if (cwd.startsWith('/app/workspace/')) {
             cwd = cwd.replace('/app/workspace/', '/workspace/');
           }
@@ -288,7 +294,7 @@ class DockerRuntime {
             action.params.args.includes('FPDF()')
           );
         
-        if (isPythonDocGeneration && context.onTokenStream) {
+        if (isPythonDocGeneration && context.onTokenStream && !suppressMetaRevisionChatter) {
           console.log('[Runtime] 📄 Sending heartbeat for document generation');
           const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
           
@@ -312,6 +318,13 @@ class DockerRuntime {
         }
         
         result = await this._call_docker_action(action, uuid);
+
+        // UI CLEANLINESS: metadata_revision scripts often print debug text that is not useful to users.
+        // Keep execution the same, but don't stream terminal stdout/stderr back to UI.
+        if (suppressMetaRevisionChatter && result && result.status === 'success') {
+          result.content = '';
+          result.stderr = '';
+        }
         
         // NOTE: Do NOT send "Document created successfully" here
         // The file delivery message will be sent by code-act after file is detected

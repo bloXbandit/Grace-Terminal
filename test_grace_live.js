@@ -4,7 +4,7 @@
  * Tests real-time API calls and monitors request/response formats
  */
 
-const axios = require('axios');
+const axios = require('axios').default;
 const { v4: uuidv4 } = require('uuid');
 
 const GRACE_URL = 'http://localhost:5005';
@@ -135,6 +135,18 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
+    },
+    {
+      name: 'Document Revision - Author',
+      goal: 'add my name as the author on the doc',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /.*_updated\.docx$/i,
+        location: '/workspace'
+      }
     },
     {
       name: 'Hype Williams Music Video',
@@ -614,14 +626,38 @@ class GraceTester {
         lastActivityTime = Date.now();
         chunkCount++;
         
-        buffer += chunk.toString();
+        const chunkStr = chunk.toString();
+        buffer += chunkStr;
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep incomplete line in buffer
+        
+        // DEBUG: Log raw chunks to understand format
+        console.log(`[DEBUG] Raw chunk (${chunkCount}):`, chunkStr.substring(0, 200));
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const base64Data = line.slice(6).trim();
+              console.log(`[DEBUG] Base64 data:`, base64Data.substring(0, 50));
+              
+              // Decode base64 first
+              const decodedData = Buffer.from(base64Data, 'base64').toString('utf8');
+              console.log(`[DEBUG] Decoded data:`, decodedData.substring(0, 100));
+              
+              // Check if decoded data is JSON or plain text
+              let data;
+              if (decodedData.trim().startsWith('{') || decodedData.trim().startsWith('[')) {
+                // Parse as JSON
+                data = JSON.parse(decodedData);
+              } else {
+                // Treat as plain text content
+                data = {
+                  content: decodedData,
+                  status: 'success',
+                  meta: { action_type: 'auto_reply' }
+                };
+              }
+              
               messages.push(data);
               
               // Log message type

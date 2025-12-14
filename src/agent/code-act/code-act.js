@@ -492,10 +492,15 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           }
           
           // Build summary message with file information
+          // Hide implementation artifacts (.py) and internal bookkeeping (todo.md)
           let summaryMessage = 'Task completed successfully.';
           if (context.generate_files && context.generate_files.length > 0) {
-            const fileNames = context.generate_files.map(fp => path.basename(fp));
-            summaryMessage = `Successfully created ${context.generate_files.length} file(s): ${fileNames.join(', ')}`;
+            const fileNames = context.generate_files
+              .map(fp => path.basename(fp))
+              .filter(name => name && !name.endsWith('.py') && name !== 'todo.md');
+            if (fileNames.length > 0) {
+              summaryMessage = `Successfully created ${fileNames.length} file(s): ${fileNames.join(', ')}`;
+            }
           }
           
           // Create finish action object

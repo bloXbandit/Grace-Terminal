@@ -182,7 +182,6 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       if (contentBreakdownQuery && hasRecentFileMessage) {
         console.log('[AutoReply] ⚡ Fast-path: Content breakdown request detected - streaming analysis');
         const { generateStreamingBreakdown } = require('@src/utils/fileAnalyzer');
-        const call = require('@src/utils/llm');
 
         // STEP 1: Try to resolve a specific file by name/descriptor in the goal text
         const goalLower = (goal || '').toLowerCase();
@@ -484,8 +483,75 @@ Do NOT quote the full text; just describe it at a high level.`;
   // Example: "do some research and draft a brief word document about AVICI token"
   const researchAndDocPattern = goal.match(/(do|perform|conduct)\s+some?\s*research.*\b(and|then)\b.*\b(draft|write|create|prepare|build|generate|make)\b.*\b(word doc|word document|document|report|spreadsheet|excel (?:file)?|excel spreadsheet|xlsx|pdf (?:file)?|pdf document)\b/i);
   const wantsResearchThenDoc = !!researchAndDocPattern;
+
+  // IMPORTANT: If the user is asking to EDIT an existing document, skip Ultra and go to full agentic
+  // Patterns that indicate editing existing docs, not creating new ones
+  const docRevisionPattern = goal.match(/(add|change|update|modify|remove|delete|insert|append|edit|set)\s+(.+?)\s+(to|in|on|at|for|as|with)\s+(the\s+)?(doc|document|word\s+doc|excel\s+file|pdf\s+file|spreadsheet|file)|on\s+(the\s+)?(doc|document|word\s+doc|excel\s+file|pdf\s+file|spreadsheet|file)|to\s+(the\s+)?(doc|document|word\s+doc|excel\s+file|pdf\s+file|spreadsheet|file)|in\s+(the\s+)?(doc|document|word\s+doc|excel\s+file|pdf\s+file|spreadsheet|file)/i);
+  const isDocRevision = !!docRevisionPattern;
+
+  // CRITICAL FIX: Fast-path for simple metadata revisions (author, title, etc.)
+  // These don't need full agentic planning - can use lightweight execution
+  console.log('[AutoReply] DEBUG: Checking goal for metadata revision:', goal);
+  const simpleMetadataRevisionPattern = goal.match(/(add|set|change|update|make)\s+(.+?)\s+(as|to|as the|for the)\s+(author|title|subject|owner)\s+(on|in|to|for)\s+(the\s+)?(doc|document|word\s+doc|file)/i);
+  const isSimpleMetadataRevision = !!simpleMetadataRevisionPattern;
+  console.log('[AutoReply] DEBUG: Metadata revision pattern result:', isSimpleMetadataRevision, simpleMetadataRevisionPattern);
   
-  if (simpleFileGenPattern && !wantsResearchThenDoc) {
+  if (isSimpleMetadataRevision) {
+    console.log('[AutoReply] ⚡⚡ METADATA Fast-path: Simple metadata revision detected');
+    
+    // Extract metadata type and value from the pattern
+    const metadataType = simpleMetadataRevisionPattern[4].toLowerCase(); // author, title, etc.
+    const metadataValue = simpleMetadataRevisionPattern[2].trim(); // "Kenny Grey", etc.
+    
+    console.log(`[AutoReply] Metadata revision: ${metadataType} = "${metadataValue}"`);
+    
+    // Generate Python script to modify existing document metadata
+    const timestamp = Date.now();
+    const conversationDir = conversation_id.substring(0, 6); // Use same pattern as AgenticAgent
+    
+    const actionXML = `<actions>
+<write_code>
+<args>update_metadata_${timestamp}.py</args>
+<kwargs>
+{
+  "language": "python",
+  "path": "update_metadata_${timestamp}.py",
+  "content": "import sys\\nimport os\\nsys.path.append('/usr/local/lib/python3.11/site-packages')\\nfrom docx import Document\\nimport glob\\nimport re\\n\\ndef find_recent_docx():\\n    # Find the most recent .docx file in the CONVERSATION workspace\\n    conversation_dir = '/app/workspace/user_1/Conversation_${conversationDir}'\\n    print(f'🔍 Searching for documents in: {conversation_dir}')\\n\\n    if not os.path.exists(conversation_dir):\\n        print(f'❌ Conversation directory not found: {conversation_dir}')\\n        return None\\n\\n    docx_files = []\\n    for root, dirs, files in os.walk(conversation_dir):\\n        for file in files:\\n            if file.endswith('.docx') and not file.endswith('_updated.docx'):\\n                full_path = os.path.join(root, file)\\n                mtime = os.path.getmtime(full_path)\\n                docx_files.append((mtime, full_path, file))\\n\\n    if not docx_files:\\n        print('❌ No .docx files found to update in conversation directory')\\n        return None\\n\\n    # Return most recent file\\n    docx_files.sort(reverse=True)\\n    return docx_files[0][1], docx_files[0][2]\\n\\ntry:\\n    result = find_recent_docx()\\n    if not result:\\n        print('❌ No document found for metadata update')\\n        exit(1)\\n\\n    original_path, original_name = result\\n    print(f'📄 Found document: {original_name}')\\n    print(f'📍 Full path: {original_path}')\\n\\n    doc = Document(original_path)\\n\\n    if '${metadataType}' == 'author':\\n        # Remove any existing visible Author lines to avoid duplicates\\n        for p in list(doc.paragraphs):\\n            if p.text.strip().lower().startswith('author:'):\\n                p._element.getparent().remove(p._element)\\n\\n        # Find title paragraph (Title/Heading) to insert below, else use first paragraph\\n        title_idx = None\\n        for i, p in enumerate(doc.paragraphs):\\n            style_name = getattr(p.style, 'name', '')\\n            if style_name in ['Title', 'Heading 1', 'Heading 2']:\\n                title_idx = i\\n                break\\n        if title_idx is None:\\n            title_idx = 0\\n\\n        author_para = doc.add_paragraph(f'Author: ${metadataValue}')\\n        title_para = doc.paragraphs[title_idx]\\n        title_para._element.addnext(author_para._element)\\n\\n        # Set document metadata author as well\\n        doc.core_properties.author = '${metadataValue}'\\n\\n    # Save as updated version (always)\\n    name_without_ext = os.path.splitext(original_name)[0]\\n    updated_name = f'{name_without_ext}_updated.docx'\\n    updated_path = os.path.join(os.path.dirname(original_path), updated_name)\\n    doc.save(updated_path)\\n    print(f'✅ Updated document saved as: {updated_name}')\\n\\nexcept Exception as e:\\n    print(f'❌ Error updating document: {str(e)}')\\n    import traceback\\n    traceback.print_exc()\\n    exit(1)\\n",
+  "description": "Update document metadata (${metadataType} to ${metadataValue})"
+}
+</kwargs>
+</write_code>
+<terminal_run>
+<args>python3</args>
+<kwargs>
+{
+  "command": "python3 update_metadata_${timestamp}.py"
+}
+</kwargs>
+</terminal_run>
+</actions>`;
+
+    console.log('[AutoReply] Pre-generated metadata revision XML:', actionXML.substring(0, 250));
+    
+    // Validate XML before returning
+    if (!actionXML || actionXML.length < 50 || !actionXML.includes('<actions>') || !actionXML.includes('<write_code>') || !actionXML.includes('<terminal_run>')) {
+      console.log('[AutoReply] ⚠️ Invalid metadata revision XML - falling back to specialist routing');
+      return null;
+    }
+    
+    // Return pre-generated action for direct execution
+    return {
+      needsExecution: true,
+      specialistResponse: null,
+      specialist: 'data_generation',
+      taskType: 'metadata_revision',
+      skipPlanning: true,
+      directExecution: true,
+      preGeneratedAction: actionXML
+    };
+  }
+  
+  if (simpleFileGenPattern && !wantsResearchThenDoc && !isDocRevision && !isSimpleMetadataRevision) {
     console.log('[AutoReply] ⚡⚡ ULTRA Fast-path: Simple single-file generation detected');
     console.log('[AutoReply] Pattern matched:', simpleFileGenPattern[0]);
     
@@ -644,8 +710,6 @@ Do NOT quote the full text; just describe it at a high level.`;
     if (isWordDoc || isPDF) {
       const llmStart = Date.now();
       try {
-        const call = require('@src/utils/llm');
-        
         // DYNAMIC: Choose prompt based on intent
         const prompt = isListRequest ? `You are generating a LIST document. Return ONLY valid JSON in this exact format:
 {
@@ -838,8 +902,6 @@ Write the document content now (JSON only):`;
     if (isExcel) {
       const llmStart = Date.now();
       try {
-        const call = require('@src/utils/llm');
-        
         // NEW: Detect if user wants ALL items vs examples
         const isAllItemsRequest = /all\s+\w+/i.test(goal) || /every\s+\w+/i.test(goal) || /complete\s+(?:list|set)/i.test(goal);
         console.log('[AutoReply] 🎯 Excel intent detected:', isAllItemsRequest ? 'ALL_ITEMS' : 'SAMPLE', 'for goal:', goal.substring(0, 80));
@@ -1617,6 +1679,7 @@ const auto_reply_server = async (goal, conversation_id) => {
 };
 
 const auto_reply_local = async (goal, conversation_id) => {
+  console.log('[AutoReply] DEBUG: auto_reply function called with goal:', goal);
   // Call the model to get a response in English based on the goal
   const prompt = await resolveAutoReplyPrompt(goal);
   const auto_reply = await call(prompt, conversation_id);

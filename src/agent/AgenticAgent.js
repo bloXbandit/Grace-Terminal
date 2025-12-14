@@ -77,6 +77,16 @@ class AgenticAgent {
   async _publishMessage(options) {
     const { uuid, action_type, status, content, json, task_id, meta_content, filepath } = options;
     
+    // CRITICAL FIX: Throttle progress and task messages to reduce UI noise
+    if ((action_type === 'progress' || action_type === 'task') && status === 'running') {
+      const now = Date.now();
+      if (now - this.lastProgressTime < this.PROGRESS_THROTTLE_MS) {
+        console.log(`[AgenticAgent] Throttled ${action_type} message to reduce UI noise`);
+        return; // Skip this message
+      }
+      this.lastProgressTime = now;
+    }
+    
     // CRITICAL: Convert content to string before Message.format
     const ResponseValidator = require('@src/utils/responseValidator');
     let safeContent = content;
@@ -101,6 +111,12 @@ class AgenticAgent {
       
       // Remove XML query tags: <query>...</query>
       safeContent = safeContent.replace(/<query>[\s\S]*?<\/query>/gi, '').trim();
+      
+      // Remove execute_code blocks: <execute_code>...</execute_code>
+      safeContent = safeContent.replace(/<execute_code>[\s\S]*?<\/execute_code>/gi, '').trim();
+      
+      // Remove markdown code blocks: ```python...``` and ```...```
+      safeContent = safeContent.replace(/```[\w]*\n[\s\S]*?```/gi, '').trim();
       
       // Remove inline Python commands: python3 -c "..."
       safeContent = safeContent.replace(/python3?\s+-c\s+["'][\s\S]+?["']/g, '').trim();
@@ -324,15 +340,18 @@ class AgenticAgent {
     if (this.skipPlanning) {
       console.log('[AgenticAgent] ⚡⚡ Skipping planning phase (ultra-fast-path enabled)');
       console.log('[AgenticAgent] Creating simple single-task plan for direct execution');
-      
+
       // Create a minimal plan with just one task
-      const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
-      await sendProgressMessage(
-        this.onTokenStream,
-        this.context.conversation_id,
-        'On it! Creating your document now...',
-        'progress'
-      );
+      // UI CLEANLINESS: For metadata_revision fast-path, suppress progress chatter
+      if (this.context.taskType !== 'metadata_revision') {
+        const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+        await sendProgressMessage(
+          this.onTokenStream,
+          this.context.conversation_id,
+          'On it! Creating your document now...',
+          'progress'
+        );
+      }
       
       // Set up a simple task for the task manager
       // CRITICAL: Include preGeneratedAction if available (bypasses thinking LLM call)
@@ -386,14 +405,61 @@ class AgenticAgent {
     }
     const filesToProcess = Array.from(filesSet);
     
-    // CRITICAL FIX: Only show files created/modified in this session
-    // This prevents old files from previous sessions showing up in the UI
-    const newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime);
-    console.log(`[AgenticAgent] Session started at ${this.sessionStartTime.toISOString()}, found ${newFiles.length} new files`);
-
+    // CRITICAL FIX: Scan workspace for newly created document files from Python scripts
+    // Only for agentic flows that need document delivery (not Ultra)
+    const fs = require('fs').promises;
+    const path = require('path');
+    
     // Skip versioning if code-act already handled it (ultra-fast-path)
     // Check if any task has preGeneratedAction indicating ultra-fast-path
     const hasPreGeneratedAction = tasks.some(task => task.preGeneratedAction);
+    
+    if (!hasPreGeneratedAction) {
+      try {
+        // Check if this is a document revision task (avoid unnecessary scanning)
+        const isDocumentRevision = tasks.some(task => 
+          task.description && task.description.toLowerCase().includes('document') &&
+          (task.description.toLowerCase().includes('update') || 
+           task.description.toLowerCase().includes('modify') || 
+           task.description.toLowerCase().includes('author') ||
+           task.description.toLowerCase().includes('revision'))
+        );
+        
+        if (isDocumentRevision) {
+          // CRITICAL FIX: Use correct workspace path with user_1 prefix
+          // Documents are saved to /app/workspace/user_1/Conversation_XXXXXX/ not /app/workspace/Conversation_XXXXXX/
+          const workspacePath = `/app/workspace/user_1/Conversation_${this.context.conversation_id.substring(0, 6)}`;
+          const allFiles = await fs.readdir(workspacePath);
+          const documentFiles = allFiles.filter(file => 
+            file.endsWith('.docx') || file.endsWith('.xlsx') || file.endsWith('.pdf')
+          );
+          
+          // Convert back to Set to ensure deduplication
+          const filesToProcessSet = new Set(filesToProcess);
+          
+          for (const docFile of documentFiles) {
+            const fullPath = path.join(workspacePath, docFile);
+            const stats = await fs.stat(fullPath);
+            
+            // Only include document files created/modified during this session
+            if (stats.mtime >= this.sessionStartTime) {
+              filesToProcessSet.add(fullPath);
+              console.log(`[AgenticAgent] Added session-created document file to delivery: ${docFile}`);
+            }
+          }
+          
+          // Update filesToProcess with scanned documents
+          filesToProcess.splice(0, filesToProcess.length, ...Array.from(filesToProcessSet));
+        }
+      } catch (error) {
+        console.error('[AgenticAgent] Failed to scan workspace for document files:', error);
+        // Continue with original filesToProcess
+      }
+    }
+    
+    // CRITICAL FIX: Only show files created/modified in this session
+    // This prevents old files from previous sessions showing up in the UI
+    const newFiles = await getFilesMetadata(filesToProcess, this.sessionStartTime);
     
     if (!hasPreGeneratedAction) {
       // Only create versions for full agentic flow (not ultra tasks)

@@ -29,7 +29,14 @@ class ResponseValidator {
     content = content.replace(/\/workspace\/[^\s]+/g, '');
     content = content.replace(/\/app\/workspace\/[^\s]+/g, '');
     
-    // Remove XML tags that might leak through
+    // Remove any raw XML action blocks that might leak through
+    content = content.replace(/<actions>[\s\S]*?<\/actions>/gi, '');
+
+    // Remove specialist headers that sometimes precede leaked XML
+    content = content.replace(/\bdata_generation\b[\s\S]*?\b<actions>\b/gi, '');
+    content = content.replace(/\bmetadata_revision\b/gi, '');
+
+    // Remove any remaining simple XML tags
     content = content.replace(/<\/?[a-z_]+>/gi, '');
     
     return content.trim();
