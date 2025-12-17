@@ -13,6 +13,7 @@ const { shouldUseSpecialist } = require('@src/agent/specialists/helper');
 const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = require('@src/utils/fileAnalyzer');
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
+const { getProfile } = require('@src/services/userProfile');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
@@ -492,7 +493,8 @@ Do NOT quote the full text; just describe it at a high level.`;
   // CRITICAL FIX: Fast-path for simple metadata revisions (author, title, etc.)
   // These don't need full agentic planning - can use lightweight execution
   console.log('[AutoReply] DEBUG: Checking goal for metadata revision:', goal);
-  const simpleMetadataRevisionPattern = goal.match(/(add|set|change|update|make)\s+(.+?)\s+(as|to|as the|for the)\s+(author|title|subject|owner)\s+(on|in|to|for)\s+(the\s+)?(doc|document|word\s+doc|file)/i);
+  const simpleMetadataRevisionPattern = goal.match(/(add|set|put|change|update|make)\s+(.+?)\s+(?:as|to|as the|for the)\s+(author|title|subject|owner)(?:\s+(?:on|in|to|for)\s+(?:the\s+)?(?:doc|document|word\s+doc|file))?/i);
+
   const isSimpleMetadataRevision = !!simpleMetadataRevisionPattern;
   console.log('[AutoReply] DEBUG: Metadata revision pattern result:', isSimpleMetadataRevision, simpleMetadataRevisionPattern);
   
@@ -500,8 +502,53 @@ Do NOT quote the full text; just describe it at a high level.`;
     console.log('[AutoReply] ⚡⚡ METADATA Fast-path: Simple metadata revision detected');
     
     // Extract metadata type and value from the pattern
-    const metadataType = simpleMetadataRevisionPattern[4].toLowerCase(); // author, title, etc.
-    const metadataValue = simpleMetadataRevisionPattern[2].trim(); // "Kenny Grey", etc.
+    const metadataType = simpleMetadataRevisionPattern[3].toLowerCase(); // author, title, etc.
+    let metadataValue = simpleMetadataRevisionPattern[2].trim(); // "Kenny Grey", etc.
+    if (metadataType === 'author') {
+      const normalized = (metadataValue || '').toLowerCase().trim();
+      const isPlaceholderAuthor =
+        normalized === 'me' ||
+        normalized === 'myself' ||
+        normalized === 'mine' ||
+        normalized === 'my name' ||
+        normalized === 'my full name' ||
+        normalized === 'my actual name' ||
+        normalized.includes('my name');
+
+      if (isPlaceholderAuthor) {
+        let resolvedName = null;
+        if (profileContext && typeof profileContext === 'string' && profileContext.toLowerCase().includes('name:')) {
+          const nameMatch = profileContext.match(/(?:^|\n)\s*-?\s*name:\s*([^\n]+)/i);
+          if (nameMatch && nameMatch[1]) {
+            const candidate = nameMatch[1].trim();
+            if (candidate && !candidate.toLowerCase().includes('my name')) {
+              resolvedName = candidate;
+            }
+          }
+        }
+        if (!resolvedName) {
+          try {
+            const profile = await getProfile(user_id, 'name');
+            const candidate = profile?.value || profile?.dataValues?.value;
+            if (candidate && typeof candidate === 'string' && !candidate.toLowerCase().includes('my name')) {
+              resolvedName = candidate.trim();
+            }
+          } catch (e) {
+          }
+        }
+
+        if (resolvedName) {
+          metadataValue = resolvedName;
+        } else {
+          return {
+            handledBySpecialist: true,
+            specialist: 'general_chat',
+            taskType: 'general_chat',
+            result: 'What name should I put as the author? (Example: "Kenny Grey")'
+          };
+        }
+      }
+    }
     
     console.log(`[AutoReply] Metadata revision: ${metadataType} = "${metadataValue}"`);
     
@@ -511,23 +558,107 @@ Do NOT quote the full text; just describe it at a high level.`;
     
     const actionXML = `<actions>
 <write_code>
-<args>update_metadata_${timestamp}.py</args>
-<kwargs>
-{
-  "language": "python",
-  "path": "update_metadata_${timestamp}.py",
-  "content": "import sys\\nimport os\\nsys.path.append('/usr/local/lib/python3.11/site-packages')\\nfrom docx import Document\\nimport glob\\nimport re\\n\\ndef find_recent_docx():\\n    # Find the most recent .docx file in the CONVERSATION workspace\\n    conversation_dir = '/app/workspace/user_1/Conversation_${conversationDir}'\\n    print(f'🔍 Searching for documents in: {conversation_dir}')\\n\\n    if not os.path.exists(conversation_dir):\\n        print(f'❌ Conversation directory not found: {conversation_dir}')\\n        return None\\n\\n    docx_files = []\\n    for root, dirs, files in os.walk(conversation_dir):\\n        for file in files:\\n            if file.endswith('.docx') and not file.endswith('_updated.docx'):\\n                full_path = os.path.join(root, file)\\n                mtime = os.path.getmtime(full_path)\\n                docx_files.append((mtime, full_path, file))\\n\\n    if not docx_files:\\n        print('❌ No .docx files found to update in conversation directory')\\n        return None\\n\\n    # Return most recent file\\n    docx_files.sort(reverse=True)\\n    return docx_files[0][1], docx_files[0][2]\\n\\ntry:\\n    result = find_recent_docx()\\n    if not result:\\n        print('❌ No document found for metadata update')\\n        exit(1)\\n\\n    original_path, original_name = result\\n    print(f'📄 Found document: {original_name}')\\n    print(f'📍 Full path: {original_path}')\\n\\n    doc = Document(original_path)\\n\\n    if '${metadataType}' == 'author':\\n        # Remove any existing visible Author lines to avoid duplicates\\n        for p in list(doc.paragraphs):\\n            if p.text.strip().lower().startswith('author:'):\\n                p._element.getparent().remove(p._element)\\n\\n        # Find title paragraph (Title/Heading) to insert below, else use first paragraph\\n        title_idx = None\\n        for i, p in enumerate(doc.paragraphs):\\n            style_name = getattr(p.style, 'name', '')\\n            if style_name in ['Title', 'Heading 1', 'Heading 2']:\\n                title_idx = i\\n                break\\n        if title_idx is None:\\n            title_idx = 0\\n\\n        author_para = doc.add_paragraph(f'Author: ${metadataValue}')\\n        title_para = doc.paragraphs[title_idx]\\n        title_para._element.addnext(author_para._element)\\n\\n        # Set document metadata author as well\\n        doc.core_properties.author = '${metadataValue}'\\n\\n    # Save as updated version (always)\\n    name_without_ext = os.path.splitext(original_name)[0]\\n    updated_name = f'{name_without_ext}_updated.docx'\\n    updated_path = os.path.join(os.path.dirname(original_path), updated_name)\\n    doc.save(updated_path)\\n    print(f'✅ Updated document saved as: {updated_name}')\\n\\nexcept Exception as e:\\n    print(f'❌ Error updating document: {str(e)}')\\n    import traceback\\n    traceback.print_exc()\\n    exit(1)\\n",
-  "description": "Update document metadata (${metadataType} to ${metadataValue})"
-}
-</kwargs>
+  <language>python</language>
+  <path>update_metadata_${timestamp}.py</path>
+  <content><![CDATA[import sys
+import os
+sys.path.append('/usr/local/lib/python3.11/site-packages')
+from docx import Document
+import glob
+import re
+
+def find_recent_docx():
+    # Find the most recent .docx file in the CONVERSATION workspace
+    conversation_dir = os.getcwd()
+    print(f'🔍 Searching for documents in: {conversation_dir}')
+    
+    docx_files = []
+    for root, dirs, files in os.walk(conversation_dir):
+        for file in files:
+            if file.endswith('.docx') and not file.endswith('_updated.docx'):
+                full_path = os.path.join(root, file)
+                mtime = os.path.getmtime(full_path)
+                docx_files.append((mtime, full_path, file))
+    if not docx_files:
+        print('❌ No .docx files found to update in conversation directory')
+        return None
+    # Return most recent file
+    docx_files.sort(reverse=True)
+    return docx_files[0][1], docx_files[0][2]
+
+try:
+    result = find_recent_docx()
+    if not result:
+        print('❌ No document found for metadata update')
+        exit(1)
+    
+    original_path, original_name = result
+    print(f'📄 Found document: {original_name}')
+    print(f'📍 Full path: {original_path}')
+    
+    # Load the document
+    doc = Document(original_path)
+    
+    # Update metadata based on type
+    metadata_type = '${metadataType}'
+    metadata_value = '${metadataValue}'
+    
+    if metadata_type == 'author':
+        for p in list(doc.paragraphs):
+            if p.text.strip().lower().startswith('author:'):
+                p._element.getparent().remove(p._element)
+
+        title_idx = None
+        for i, p in enumerate(doc.paragraphs):
+            style_name = getattr(p.style, 'name', '')
+            if style_name in ['Title', 'Heading 1', 'Heading 2']:
+                title_idx = i
+                break
+        if title_idx is None:
+            title_idx = 0 if len(doc.paragraphs) > 0 else None
+
+        author_para = doc.add_paragraph(f'Author: {metadata_value}')
+        if title_idx is not None and len(doc.paragraphs) > title_idx:
+            title_para = doc.paragraphs[title_idx]
+            title_para._element.addnext(author_para._element)
+
+        doc.core_properties.author = metadata_value
+        print(f'✅ Author set to: {metadata_value}')
+    elif metadata_type == 'title':
+        doc.core_properties.title = metadata_value
+        print(f'✅ Title set to: {metadata_value}')
+    elif metadata_type == 'subject':
+        doc.core_properties.subject = metadata_value
+        print(f'✅ Subject set to: {metadata_value}')
+    elif metadata_type == 'owner':
+        doc.core_properties.creator = metadata_value
+        print(f'✅ Owner set to: {metadata_value}')
+    
+    # Save as updated version
+    name_without_ext = os.path.splitext(original_name)[0]
+    updated_name = f'{name_without_ext}_updated.docx'
+    updated_path = os.path.join(os.path.dirname(original_path), updated_name)
+    
+    doc.save(updated_path)
+    print(f'✅ Updated document saved as: {updated_name}')
+    
+    # Verify the update
+    updated_doc = Document(updated_path)
+    if metadata_type == 'author':
+        verified_author = updated_doc.core_properties.author
+        print(f'✅ Verified author: {verified_author}')
+    
+except Exception as e:
+    print(f'❌ Error updating document: {str(e)}')
+    import traceback
+    traceback.print_exc()
+    exit(1)
+]]></content>
+  <description>Update document metadata (${metadataType} to ${metadataValue})</description>
 </write_code>
 <terminal_run>
-<args>python3</args>
-<kwargs>
-{
-  "command": "python3 update_metadata_${timestamp}.py"
-}
-</kwargs>
+  <command>python3</command>
+  <args>update_metadata_${timestamp}.py</args>
 </terminal_run>
 </actions>`;
 
