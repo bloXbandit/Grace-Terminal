@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.21",
+    "@koa/multer": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.13.0",
     "@octokit/rest": "^20.0.2",
     "@playwright/test": "^1.52.0",
@@ -30,6 +31,7 @@
     "dotenv": "^16.5.0",
     "e2b": "^2.1.5",
     "fast-xml-parser": "^4.5.3",
+    "form-data": "^4.0.5",
     "jsonwebtoken": "^9.0.2",
     "koa": "^2.7.0",
     "koa-body": "^6.0.1",
