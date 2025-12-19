@@ -97,6 +97,7 @@ router.post("/run", async (ctx, next) => {
   const { request, response } = ctx;
   const body = request.body || {};
   let { question, conversation_id, fileIds, mcp_server_ids = [], model_id, agent_id, mode = 'auto' } = body;
+  const isVoiceTask = ctx.headers['x-voice-task'] === 'true';
 
   // Get default model if not provided
   if (!model_id) {
@@ -302,16 +303,18 @@ router.post("/run", async (ctx, next) => {
   }
 
   // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
-  try {
-    await Promise.race([
-      extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
-      )
-    ]);
-    console.log('[Task] Profile extraction completed successfully');
-  } catch (err) {
-    console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
+  if (!isVoiceTask) {
+    try {
+      await Promise.race([
+        extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+        )
+      ]);
+      console.log('[Task] Profile extraction completed successfully');
+    } catch (err) {
+      console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
+    }
   }
 
   // 根据mode参数确定处理方式
@@ -322,6 +325,26 @@ router.post("/run", async (ctx, next) => {
       console.log(`[AUTO Mode] 📎 File upload detected (${files.length} file(s)) - forcing agent mode`);
       intent = 'agent';
     } else {
+      const q = (question || '').trim();
+
+      // VOICE FAST-PATH:
+      // For voice turns, avoid the extra LLM intent-detection roundtrip for short/trivial utterances.
+      // This is a major source of perceived latency (intent-detection happens before chat streaming).
+      // We only fall back to LLM intent detection when the text looks like a command/task request.
+      if (isVoiceTask) {
+        const looksLikeCommand = /\b(make|create|generate|build|write|run|execute|open|edit|fix|debug|refactor|install|deploy|docker|git|commit|push|pull|search|download|summarize|analyze|plan)\b/i.test(q);
+        const isVeryShort = q.length > 0 && q.length <= 24;
+        const wordCount = q.length ? q.split(/\s+/).filter(Boolean).length : 0;
+
+        if ((isVeryShort || wordCount <= 3) && !looksLikeCommand) {
+          intent = 'chat';
+          console.log(`[AUTO Mode] 🎤 Voice fast-path: skipping intent detection (q="${q}") -> chat`);
+        }
+      }
+
+      if (intent) {
+        // intent already decided by voice fast-path
+      } else {
       // 自动选择：使用意图识别
       console.log('自动模式：开始意图识别...');
       try {
@@ -351,6 +374,7 @@ router.post("/run", async (ctx, next) => {
         console.error('意图识别失败，默认使用agent模式:', error);
         intent = 'agent';
       }
+      }
     }
   } else {
     // 用户指定模式
@@ -372,7 +396,8 @@ router.post("/run", async (ctx, next) => {
   const commonParams = {
     conversation_id, question, newFiles, feedbackOptions,
     onTokenStream, stream, context, agent_id, ctx,
-    profileContext // CRITICAL: Pass profile context to all modes
+    profileContext, // CRITICAL: Pass profile context to all modes
+    isVoiceTask
   };
 
   // 执行对应的模式
@@ -943,7 +968,7 @@ async function executeTwinsMode(params, dir_path) {
 
 // 通用Chat执行函数
 async function runChatPhase(params, isTwinsMode) {
-  const { conversation_id, question, newFiles, onTokenStream, stream, agent_id, feedbackOptions, profileContext } = params;
+  const { conversation_id, question, newFiles, onTokenStream, stream, agent_id, feedbackOptions, profileContext, isVoiceTask } = params;
 
   // 准备上下文消息
   let messagesContext = []
@@ -955,7 +980,13 @@ async function runChatPhase(params, isTwinsMode) {
   })
 
   if (messages.length > 0) {
-    messagesContext = getMessagesContextByTime(messages)
+    if (isVoiceTask) {
+      // Voice turns should feel "live". Keep a short recent window to reduce prompt size/latency.
+      const recent = messages.slice(-12);
+      messagesContext = getMessagesContextByTime(recent)
+    } else {
+      messagesContext = getMessagesContextByTime(messages)
+    }
   }
 
   // CRITICAL FIX: Use MASTER_SYSTEM_PROMPT + profileContext for consistent capabilities across all modes
@@ -1042,6 +1073,11 @@ ${profileContext || ''}${fileContext}`
     temperature: 0.7,
     messages: messagesContext,
     signal: abortController.signal
+  }
+
+  if (isVoiceTask) {
+    // Keep voice responses concise to reduce generation time.
+    options.max_tokens = 220
   }
 
   chat_completion(question, options, conversation_id, onTokenStream).then(async (content) => {

@@ -29,6 +29,7 @@ const modules = [
   'membership_plan',
   'recharge_product',
   'dev_mode',
+  'voice',
 ];
 
 for (const module of modules) {

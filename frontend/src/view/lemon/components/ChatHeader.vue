@@ -143,7 +143,10 @@ let abortController = null
 const SILENCE_THRESHOLD = 0.01 // Energy threshold for silence
 const SILENCE_DURATION = 500 // ms of silence before auto-stop (reduced from 1200ms)
 const MIN_RECORDING_DURATION = 800 // ms minimum recording
+const MAX_RECORDING_DURATION = 6000 // ms max recording before forced processing
 const MIN_BLOB_SIZE = 5000 // bytes minimum to send to Whisper
+const POST_TTS_COOLDOWN = 800 // ms cooldown after TTS before rearming
+const BARGE_IN_GRACE_PERIOD = 600 // ms grace period after TTS starts
 
 const handleVoiceToggle = () => {
   console.log('[Voice] Button clicked, state:', voiceState.value)
@@ -164,8 +167,14 @@ const startVoiceSession = async () => {
     isVoiceSessionActive.value = true
     emitter.emit('voice-status', { status: 'listening' })
     
-    // Get microphone stream and preserve it
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // Get microphone stream with echo cancellation and noise suppression
+    micStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { 
+        echoCancellation: true, 
+        noiseSuppression: true, 
+        autoGainControl: true 
+      } 
+    })
     
     // Setup MediaRecorder
     mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
@@ -266,6 +275,13 @@ const startVADLoop = () => {
   
   const checkSilence = () => {
     if (voiceState.value !== 'LISTENING') return
+
+    // Fallback: if we never reach "silence" (noise floor / echo), force a turn to process.
+    if (recordingStartTime && Date.now() - recordingStartTime > MAX_RECORDING_DURATION) {
+      console.log('[Voice] Max recording duration reached, stopping recording')
+      stopRecordingForProcessing()
+      return
+    }
     
     analyser.getByteFrequencyData(dataArray)
     
@@ -312,6 +328,8 @@ const stopRecordingForProcessing = () => {
 
 const processAudio = async (audioBlob) => {
   try {
+    const turnId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    const tTurnStart = performance.now()
     console.log('[Voice] Processing audio blob, size:', audioBlob.size)
     
     // Check minimum blob size to avoid Whisper decode errors
@@ -349,6 +367,7 @@ const processAudio = async (audioBlob) => {
     const formData = new FormData()
     formData.append('audio', audioBlob, 'recording.webm')
     
+    const tSttStart = performance.now()
     console.log('[Voice] Sending to transcribe endpoint')
     const transcribeResponse = await fetch('/api/voice/transcribe', {
       method: 'POST',
@@ -364,8 +383,14 @@ const processAudio = async (audioBlob) => {
     }
     
     const responseData = await transcribeResponse.json()
+    const tSttEnd = performance.now()
     console.log('[Voice] Transcription response:', responseData)
     const { text } = responseData
+
+    console.log(`[Voice] Turn ${turnId} STT ms:`, Math.round(tSttEnd - tSttStart))
+    
+    // Show transcribed text to user for confirmation
+    emitter.emit('voice-transcription', { text, timestamp: Date.now() })
     
     if (!text || text.trim().length === 0) {
       // Continue listening if no text
@@ -386,6 +411,7 @@ const processAudio = async (audioBlob) => {
     abortController = new AbortController()
     
     // Step 2: Send to agent
+    const tAgentStart = performance.now()
     const agentResponse = await fetch('/api/agent/run', {
       method: 'POST',
       headers: {
@@ -401,6 +427,9 @@ const processAudio = async (audioBlob) => {
       }),
       signal: abortController.signal
     })
+
+    const tAgentHeaders = performance.now()
+    console.log(`[Voice] Turn ${turnId} agent headers ms:`, Math.round(tAgentHeaders - tAgentStart))
     
     // Step 3: Get response and synthesize
     if (!agentResponse.ok) {
@@ -417,6 +446,7 @@ const processAudio = async (audioBlob) => {
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
       let lastAssistantContent = ''
+      let tAgentFirstToken = null
 
       while (true) {
         const { value, done } = await reader.read()
@@ -440,6 +470,11 @@ const processAudio = async (audioBlob) => {
             decoded = atob(b64)
           } catch (e) {
             continue
+          }
+
+          if (tAgentFirstToken === null && decoded && decoded.trim().length > 0) {
+            tAgentFirstToken = performance.now()
+            console.log(`[Voice] Turn ${turnId} agent TTFT ms:`, Math.round(tAgentFirstToken - tAgentStart))
           }
 
           // Some tokens are JSON-stringified Message objects; others can be plain text.
@@ -468,6 +503,8 @@ const processAudio = async (audioBlob) => {
         }
       }
 
+      const tAgentDone = performance.now()
+      console.log(`[Voice] Turn ${turnId} agent total ms:`, Math.round(tAgentDone - tAgentStart))
       messageToSpeak = (lastAssistantContent || messageToSpeak || '').trim()
     } else {
       // Fallback: non-SSE response
@@ -509,6 +546,7 @@ const processAudio = async (audioBlob) => {
     }
     
     // Step 4: Synthesize speech
+    const tTtsStart = performance.now()
     const synthesizeResponse = await fetch('/api/voice/synthesize', {
       method: 'POST',
       headers: {
@@ -524,6 +562,8 @@ const processAudio = async (audioBlob) => {
     
     if (synthesizeResponse.ok) {
       const audioBlob = await synthesizeResponse.blob()
+      const tTtsEnd = performance.now()
+      console.log(`[Voice] Turn ${turnId} TTS ms:`, Math.round(tTtsEnd - tTtsStart))
       const audioUrl = URL.createObjectURL(audioBlob)
       currentAudio = new Audio(audioUrl)
       
@@ -531,6 +571,7 @@ const processAudio = async (audioBlob) => {
       emitter.emit('voice-status', { status: 'speaking' })
       
       currentAudio.onplay = () => {
+        console.log(`[Voice] Turn ${turnId} first audio ms:`, Math.round(performance.now() - tTurnStart))
         voiceState.value = 'SPEAKING'
         emitter.emit('voice-status', { status: 'speaking' })
       }
@@ -540,14 +581,19 @@ const processAudio = async (audioBlob) => {
         currentAudio = null
         abortController = null
         
-        // Auto-rearm for next turn
-        console.log('[Voice] Speech finished, rearming for next turn')
-        voiceState.value = 'LISTENING'
-        emitter.emit('voice-status', { status: 'listening' })
-        audioChunks = []
-        recordingStartTime = Date.now()
-        mediaRecorder.start(100)
-        startVADLoop()
+        // Post-TTS cooldown before rearming to avoid echo
+        console.log('[Voice] Speech finished, waiting cooldown before rearming')
+        setTimeout(() => {
+          if (!isVoiceSessionActive.value) return
+          
+          console.log('[Voice] Cooldown finished, rearming for next turn')
+          voiceState.value = 'LISTENING'
+          emitter.emit('voice-status', { status: 'listening' })
+          audioChunks = []
+          recordingStartTime = Date.now()
+          mediaRecorder.start(100)
+          startVADLoop()
+        }, POST_TTS_COOLDOWN)
       }
       
       currentAudio.onerror = (error) => {
@@ -626,6 +672,13 @@ const setupBargeInDetection = () => {
   const dataArray = new Uint8Array(analyser.frequencyBinCount)
   let speechDetected = false
   let speechFrameCount = 0
+  let gracePeriodElapsed = false
+  
+  // Wait grace period before enabling detection
+  setTimeout(() => {
+    gracePeriodElapsed = true
+    console.log('[Voice] Barge-in grace period elapsed, detection enabled')
+  }, BARGE_IN_GRACE_PERIOD)
   
   const checkForSpeech = () => {
     if (voiceState.value !== 'SPEAKING') {
@@ -634,14 +687,20 @@ const setupBargeInDetection = () => {
       return
     }
     
+    // Don't check for barge-in during grace period
+    if (!gracePeriodElapsed) {
+      requestAnimationFrame(checkForSpeech)
+      return
+    }
+    
     analyser.getByteFrequencyData(dataArray)
     const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
     const normalizedEnergy = average / 255
     
     // Much higher threshold for barge-in to avoid false positives
-    if (normalizedEnergy > 0.2) { // 20x higher than silence threshold (less sensitive)
+    if (normalizedEnergy > 0.3) { // 30x higher than silence threshold (even less sensitive)
       speechFrameCount++
-      if (speechFrameCount > 20 && !speechDetected) { // Require 20 consecutive frames (more strict)
+      if (speechFrameCount > 25 && !speechDetected) { // Require 25 consecutive frames (very strict)
         speechDetected = true
         console.log('[Voice] Barge-in detected, interrupting playback')
         handleBargeIn()
