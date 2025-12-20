@@ -265,8 +265,8 @@ const completeCodeAct = async (task = {}, context = {}) => {
         content = actionXML;
       }
       
-      // If no pre-generated action, use LLM thinking
-      if (!action) {
+      // If no pre-generated action, use LLM thinking (skip for Ultra fast-path)
+      if (!action && !context.task?.preGeneratedAction) {
         // 1. LLM thinking
         context.depth = depth || 1;
         content = await thinking(requirement, context);
@@ -276,6 +276,8 @@ const completeCodeAct = async (task = {}, context = {}) => {
         // try to parse action directly avoid llm don't continue
         const actions = await resolveActions(content);
         action = actions[0];
+      } else if (context.task?.preGeneratedAction && !action) {
+        console.log('[CodeAct] Ultra fast-path: Using preGeneratedAction, skipping thinking()');
       }
       const messages = await memory.getMessages();
       if (!action) {

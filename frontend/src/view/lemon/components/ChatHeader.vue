@@ -138,15 +138,38 @@ let silenceTimer = null
 let recordingStartTime = null
 let currentAudio = null
 let abortController = null
-
+let audioQueue = []
+let isPlayingAudio = false
+let sentenceBuffer = ''
+let ttsChain = Promise.resolve()
+let firstAudioPending = false
+let activeTurnId = null
+let agentStreamDone = false
+let pendingTtsCount = 0
+let rearmTimeout = null
+let bargeInRafId = null
+let bargeInGraceTimeout = null
+let vadRafId = null
+let voiceSessionStartedAt = null
+let lastPlaybackEndedAt = 0
+ 
 // VAD settings
 const SILENCE_THRESHOLD = 0.01 // Energy threshold for silence
-const SILENCE_DURATION = 500 // ms of silence before auto-stop (reduced from 1200ms)
-const MIN_RECORDING_DURATION = 800 // ms minimum recording
-const MAX_RECORDING_DURATION = 6000 // ms max recording before forced processing
-const MIN_BLOB_SIZE = 5000 // bytes minimum to send to Whisper
+const SILENCE_DURATION = 250 // ms of silence before auto-stop (reduced from 1200ms)
+const MIN_RECORDING_DURATION = 400 // ms minimum recording (reduced for short utterances)
+const MAX_RECORDING_DURATION = 9000 // ms max recording before forced processing
+const MIN_BLOB_SIZE = 2000 // bytes minimum to send to Whisper (reduced)
 const POST_TTS_COOLDOWN = 800 // ms cooldown after TTS before rearming
 const BARGE_IN_GRACE_PERIOD = 600 // ms grace period after TTS starts
+const VOICE_START_WARMUP_MS = 2200
+const FIRST_CHUNK_MIN_CHARS = 36
+// Speech-start gating settings
+const SPEECH_THRESHOLD = 0.02 // Energy threshold to detect speech start
+const SPEECH_CONSECUTIVE_FRAMES = 3 // Number of consecutive frames above threshold to trigger speech start
+
+// Audio optimization settings
+const TARGET_SAMPLE_RATE = 16000 // Target sample rate for STT
+const SHORT_UTTERANCE_DURATION = 1200 // ms threshold for short utterance optimization
 
 const handleVoiceToggle = () => {
   console.log('[Voice] Button clicked, state:', voiceState.value)
@@ -175,6 +198,8 @@ const startVoiceSession = async () => {
         autoGainControl: true 
       } 
     })
+
+    voiceSessionStartedAt = Date.now()
     
     // Setup MediaRecorder
     mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
@@ -188,6 +213,7 @@ const startVoiceSession = async () => {
     }
     
     mediaRecorder.onstop = async () => {
+      if (!isVoiceSessionActive.value) return
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
       await processAudio(audioBlob)
     }
@@ -240,6 +266,26 @@ const endVoiceSession = () => {
     clearTimeout(silenceTimer)
     silenceTimer = null
   }
+
+  if (rearmTimeout) {
+    clearTimeout(rearmTimeout)
+    rearmTimeout = null
+  }
+
+  if (bargeInGraceTimeout) {
+    clearTimeout(bargeInGraceTimeout)
+    bargeInGraceTimeout = null
+  }
+
+  if (bargeInRafId) {
+    cancelAnimationFrame(bargeInRafId)
+    bargeInRafId = null
+  }
+
+  if (vadRafId) {
+    cancelAnimationFrame(vadRafId)
+    vadRafId = null
+  }
   
   // Stop current audio playback
   if (currentAudio) {
@@ -248,11 +294,45 @@ const endVoiceSession = () => {
     URL.revokeObjectURL(currentAudio.src)
     currentAudio = null
   }
+
+  // Revoke any queued audio URLs
+  if (audioQueue && audioQueue.length > 0) {
+    for (const item of audioQueue) {
+      if (item && item.url) {
+        URL.revokeObjectURL(item.url)
+      }
+    }
+  }
   
   // Cancel any pending requests
   if (abortController) {
     abortController.abort()
     abortController = null
+  }
+  
+  // Clear streaming state
+  audioQueue = []
+  isPlayingAudio = false
+  sentenceBuffer = ''
+  ttsChain = Promise.resolve()
+  firstAudioPending = false
+
+  activeTurnId = null
+  agentStreamDone = false
+  pendingTtsCount = 0
+
+  if (rearmTimeout) {
+    clearTimeout(rearmTimeout)
+    rearmTimeout = null
+  }
+
+  if (bargeInGraceTimeout) {
+    clearTimeout(bargeInGraceTimeout)
+    bargeInGraceTimeout = null
+  }
+  if (bargeInRafId) {
+    cancelAnimationFrame(bargeInRafId)
+    bargeInRafId = null
   }
   
   // Reset state
@@ -272,14 +352,47 @@ const endVoiceSession = () => {
 const startVADLoop = () => {
   const dataArray = new Uint8Array(analyser.frequencyBinCount)
   let silenceStartTime = null
+  let speechStarted = false // Track if speech has been detected
+  let consecutiveSpeechFrames = 0 // Count consecutive frames above speech threshold
+  let peakEnergy = 0 // Track peak energy for short utterance detection
+  let energyHistory = [] // Keep track of recent energy levels
+  
+  // Adaptive noise floor variables
+  let noiseFloor = null
+  let lastSpeechAt = null
+  const NOISE_FLOOR_ALPHA = 0.98 // EMA smoothing factor
+  const MIN_SILENCE_THRESHOLD = 0.008
+  const MAX_SILENCE_THRESHOLD = 0.05
+  const SILENCE_MARGIN = 0.01
+  const SPEECH_MARGIN = 0.02
+  const TRAILING_SILENCE_DURATION = 500 // ms to wait after last speech
+  const STUCK_DETECTOR_THRESHOLD = 3500 // ms after which we check for stuck recording
   
   const checkSilence = () => {
     if (voiceState.value !== 'LISTENING') return
 
     // Fallback: if we never reach "silence" (noise floor / echo), force a turn to process.
     if (recordingStartTime && Date.now() - recordingStartTime > MAX_RECORDING_DURATION) {
-      console.log('[Voice] Max recording duration reached, stopping recording')
-      stopRecordingForProcessing()
+      if (speechStarted) {
+        console.log('[Voice] Max recording duration reached with speech detected, stopping recording')
+        stopRecordingForProcessing()
+      } else {
+        console.log('[Voice] Max recording duration reached without speech, rearming')
+        // No speech detected, just rearm without processing
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop()
+        }
+        // Reset and restart
+        silenceStartTime = null
+        speechStarted = false
+        consecutiveSpeechFrames = 0
+        recordingStartTime = Date.now()
+        setTimeout(() => {
+          if (voiceState.value === 'LISTENING' && mediaRecorder && mediaRecorder.state === 'inactive') {
+            mediaRecorder.start(100)
+          }
+        }, 100)
+      }
       return
     }
     
@@ -289,28 +402,129 @@ const startVADLoop = () => {
     const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
     const normalizedEnergy = average / 255
     
-    if (normalizedEnergy < SILENCE_THRESHOLD) {
-      if (!silenceStartTime) {
-        silenceStartTime = Date.now()
-      } else if (Date.now() - silenceStartTime > SILENCE_DURATION) {
-        // Check minimum recording duration
-        if (Date.now() - recordingStartTime > MIN_RECORDING_DURATION) {
-          stopRecordingForProcessing()
-        } else {
-          // Too short, reset and continue listening
-          console.log('[Voice] Recording too short, continuing...')
-          silenceStartTime = null
+    // Track peak energy and recent history for short utterance detection
+    peakEnergy = Math.max(peakEnergy, normalizedEnergy)
+    energyHistory.push(normalizedEnergy)
+    if (energyHistory.length > 10) energyHistory.shift() // Keep last 10 samples
+    
+    // Adaptive noise floor estimation (before speech starts)
+    if (!speechStarted) {
+      if (noiseFloor === null) {
+        noiseFloor = normalizedEnergy
+      } else {
+        noiseFloor = NOISE_FLOOR_ALPHA * noiseFloor + (1 - NOISE_FLOOR_ALPHA) * normalizedEnergy
+      }
+    }
+    
+    // Calculate dynamic silence threshold
+    const dynamicSilenceThreshold = Math.min(Math.max(noiseFloor + SILENCE_MARGIN, MIN_SILENCE_THRESHOLD), MAX_SILENCE_THRESHOLD)
+    
+    // Speech-start gating: only consider silence after we've detected speech
+    if (!speechStarted) {
+      if (normalizedEnergy > SPEECH_THRESHOLD) {
+        consecutiveSpeechFrames++
+        if (consecutiveSpeechFrames >= SPEECH_CONSECUTIVE_FRAMES) {
+          speechStarted = true
+          console.log('[Voice] Speech started detected')
+        }
+      } else {
+        consecutiveSpeechFrames = 0
+      }
+      // Don't check for silence until speech has started
+      silenceStartTime = null
+      lastSpeechAt = null
+    } else {
+      // After speech has started, track last speech time for better end-of-utterance detection
+      if (normalizedEnergy > dynamicSilenceThreshold + SPEECH_MARGIN) {
+        lastSpeechAt = Date.now()
+      }
+      
+      // Stuck detector: if we've been recording for a while and energy is flat, force stop
+      // But only if we've actually had real speech energy (to avoid noise blobs)
+      const recordingDuration = Date.now() - recordingStartTime
+      if (recordingDuration > STUCK_DETECTOR_THRESHOLD && energyHistory.length >= 5) {
+        // Check if energy has been relatively flat
+        const energyVariance = Math.max(...energyHistory) - Math.min(...energyHistory)
+        if (energyVariance < 0.02) { // Very flat energy
+          // Only trigger stuck detector if we've had real speech energy
+          if (peakEnergy > (SPEECH_THRESHOLD * 1.5)) {
+            console.log('[Voice] Stuck detector triggered: flat energy for extended period')
+            stopRecordingForProcessing()
+            return
+          } else {
+            // No real speech detected, just rearm without processing
+            console.log('[Voice] Stuck detector: no real speech, rearming')
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+              mediaRecorder.stop()
+            }
+            // Reset and restart
+            silenceStartTime = null
+            speechStarted = false
+            consecutiveSpeechFrames = 0
+            recordingStartTime = Date.now()
+            setTimeout(() => {
+              if (voiceState.value === 'LISTENING' && mediaRecorder && mediaRecorder.state === 'inactive') {
+                mediaRecorder.start(100)
+              }
+            }, 100)
+            return
+          }
         }
       }
-    } else {
-      // Speech detected, reset silence timer
-      silenceStartTime = null
+      
+      // Check for trailing silence based on last speech time
+      if (lastSpeechAt && (Date.now() - lastSpeechAt > TRAILING_SILENCE_DURATION)) {
+        // Check minimum recording duration
+        const recordingDuration = Date.now() - recordingStartTime
+        
+        // For short, clear utterances, allow earlier stop
+        const isShortClearUtterance = recordingDuration < SHORT_UTTERANCE_DURATION && 
+                                    peakEnergy > (SPEECH_THRESHOLD * 2) && 
+                                    energyHistory.length >= 5 &&
+                                    energyHistory.slice(-3).every(e => e < dynamicSilenceThreshold)
+        
+        if (recordingDuration > MIN_RECORDING_DURATION || isShortClearUtterance) {
+          console.log('[Voice] Trailing silence detected, stopping recording (short utterance:', isShortClearUtterance, ')')
+          stopRecordingForProcessing()
+        }
+      } else if (normalizedEnergy < dynamicSilenceThreshold) {
+        // Fallback to energy-based silence detection
+        if (!silenceStartTime) {
+          silenceStartTime = Date.now()
+        } else if (Date.now() - silenceStartTime > SILENCE_DURATION) {
+          // Check minimum recording duration
+          const recordingDuration = Date.now() - recordingStartTime
+          
+          // For short, clear utterances, allow earlier stop
+          const isShortClearUtterance = recordingDuration < SHORT_UTTERANCE_DURATION && 
+                                      peakEnergy > (SPEECH_THRESHOLD * 2) && 
+                                      energyHistory.length >= 5 &&
+                                      energyHistory.slice(-3).every(e => e < dynamicSilenceThreshold)
+          
+          if (recordingDuration > MIN_RECORDING_DURATION || isShortClearUtterance) {
+            console.log('[Voice] Energy-based silence detected, stopping recording (short utterance:', isShortClearUtterance, ')')
+            stopRecordingForProcessing()
+          } else {
+            // Too short, reset and continue listening
+            console.log('[Voice] Recording too short, continuing...')
+            silenceStartTime = null
+          }
+        }
+      } else {
+        // Speech detected, reset silence timer
+        silenceStartTime = null
+      }
     }
     
     // Continue VAD loop
-    requestAnimationFrame(checkSilence)
+    vadRafId = requestAnimationFrame(checkSilence)
   }
-  
+
+  if (vadRafId) {
+    cancelAnimationFrame(vadRafId)
+    vadRafId = null
+  }
+
   checkSilence()
 }
 
@@ -326,14 +540,112 @@ const stopRecordingForProcessing = () => {
   }
 }
 
+// Preprocess audio blob to optimize for STT
+const preprocessAudioBlob = async (audioBlob) => {
+  try {
+    // For short utterances, we can skip preprocessing to reduce latency
+    const recordingDuration = Date.now() - recordingStartTime
+    if (recordingDuration <= SHORT_UTTERANCE_DURATION) {
+      console.log('[Voice] Short utterance detected, skipping preprocessing for speed')
+      return audioBlob
+    }
+    
+    // For longer recordings, apply preprocessing
+    console.log('[Voice] Preprocessing audio blob for optimization')
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    
+    // Decode audio data
+    const arrayBuffer = await audioBlob.arrayBuffer()
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+    
+    // Downsample to target sample rate if needed
+    const sourceSampleRate = audioBuffer.sampleRate
+    const targetSampleRate = TARGET_SAMPLE_RATE
+    
+    if (sourceSampleRate <= targetSampleRate) {
+      // Already at or below target rate, no downsampling needed
+      await audioContext.close()
+      return audioBlob
+    }
+    
+    // Create offline context for resampling
+    const duration = audioBuffer.duration
+    const offlineContext = new OfflineAudioContext(1, duration * targetSampleRate, targetSampleRate)
+    
+    // Create buffer source
+    const source = offlineContext.createBufferSource()
+    source.buffer = audioBuffer
+    
+    // Connect and render
+    source.connect(offlineContext.destination)
+    source.start(0)
+    
+    const renderedBuffer = await offlineContext.startRendering()
+    await audioContext.close()
+    
+    // Convert back to blob
+    const wavBlob = bufferToWave(renderedBuffer)
+    console.log('[Voice] Audio preprocessed, original size:', audioBlob.size, 'new size:', wavBlob.size)
+    
+    return wavBlob
+  } catch (error) {
+    console.warn('[Voice] Audio preprocessing failed, using original blob:', error)
+    return audioBlob
+  }
+}
+
+// Convert AudioBuffer to WAV blob
+const bufferToWave = (audioBuffer) => {
+  const length = audioBuffer.length
+  const numberOfChannels = audioBuffer.numberOfChannels
+  const sampleRate = audioBuffer.sampleRate
+  const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2)
+  const view = new DataView(arrayBuffer)
+  
+  // WAV header
+  const writeString = (offset, string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i))
+    }
+  }
+  
+  writeString(0, 'RIFF')
+  view.setUint32(4, 36 + length * numberOfChannels * 2, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, numberOfChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numberOfChannels * 2, true)
+  view.setUint16(32, numberOfChannels * 2, true)
+  view.setUint16(34, 16, true)
+  writeString(36, 'data')
+  view.setUint32(40, length * numberOfChannels * 2, true)
+  
+  // Write PCM data
+  const channelData = audioBuffer.getChannelData(0)
+  let offset = 44
+  for (let i = 0; i < length; i++) {
+    const sample = Math.max(-1, Math.min(1, channelData[i]))
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
+    offset += 2
+  }
+  
+  return new Blob([view], { type: 'audio/wav' })
+}
+
 const processAudio = async (audioBlob) => {
   try {
     const turnId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const tTurnStart = performance.now()
     console.log('[Voice] Processing audio blob, size:', audioBlob.size)
     
+    // Preprocess audio for STT optimization (downsample, trim silence)
+    const processedBlob = await preprocessAudioBlob(audioBlob)
+    
     // Check minimum blob size to avoid Whisper decode errors
-    if (audioBlob.size < MIN_BLOB_SIZE) {
+    if (processedBlob.size < MIN_BLOB_SIZE) {
       console.log('[Voice] Audio blob too small, discarding and continuing session')
       // Continue listening instead of ending session
       voiceState.value = 'LISTENING'
@@ -365,7 +677,10 @@ const processAudio = async (audioBlob) => {
     
     // Step 1: Transcribe audio
     const formData = new FormData()
-    formData.append('audio', audioBlob, 'recording.webm')
+    // Use processed blob if it's different (smaller), otherwise use original
+    const blobToSend = processedBlob.size < audioBlob.size ? processedBlob : audioBlob
+    const fileName = blobToSend.type.includes('wav') ? 'recording.wav' : 'recording.webm'
+    formData.append('audio', blobToSend, fileName)
     
     const tSttStart = performance.now()
     console.log('[Voice] Sending to transcribe endpoint')
@@ -389,10 +704,53 @@ const processAudio = async (audioBlob) => {
 
     console.log(`[Voice] Turn ${turnId} STT ms:`, Math.round(tSttEnd - tSttStart))
     
-    // Show transcribed text to user for confirmation
-    emitter.emit('voice-transcription', { text, timestamp: Date.now() })
+    const trimmedText = (text || '').trim()
+
+    // Spurious transcript gate: discard tiny/commonly-spurious transcripts that occur
+    // right after TTS playback or from tiny audio blobs (prevents phantom "you" loops)
+    const timeSincePlayback = Date.now() - lastPlaybackEndedAt
+    const isRightAfterPlayback = timeSincePlayback < 2000 // 2 seconds
+    const isTinyBlob = processedBlob.size < 5000 // Very small blob
+    const isShortText = trimmedText.length > 0 && trimmedText.length <= 8
+    const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao)/i.test(trimmedText)
     
-    if (!text || text.trim().length === 0) {
+    if ((isRightAfterPlayback || isTinyBlob) && isShortText && looksSpurious) {
+      console.log('[Voice] Discarding spurious STT transcript (likely phantom):', trimmedText, 
+                  'Blob size:', processedBlob.size, 'Time since playback:', timeSincePlayback + 'ms')
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+
+    // Warm-up guard: discard tiny/commonly-spurious early transcripts right after session start
+    // (helps prevent occasional first-turn hallucinated "Bye." when user is silent)
+    if (voiceSessionStartedAt && (Date.now() - voiceSessionStartedAt) < VOICE_START_WARMUP_MS) {
+      const isTiny = trimmedText.length > 0 && trimmedText.length <= 12
+      const looksSpurious = /^(bye\.?|goodbye\.?|thank you( for watching)?\.?|thanks\.?|hello\.?|hey\.?|hi\.?)/i.test(trimmedText)
+      if (isTiny || looksSpurious) {
+        console.log('[Voice] Discarding warm-up STT transcript:', trimmedText)
+        voiceState.value = 'LISTENING'
+        emitter.emit('voice-status', { status: 'listening' })
+        audioChunks = []
+        recordingStartTime = Date.now()
+        if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+          mediaRecorder.start(100)
+          startVADLoop()
+        }
+        return
+      }
+    }
+
+    // Show transcribed text to user for confirmation
+    emitter.emit('voice-transcription', { text: trimmedText, timestamp: Date.now() })
+    
+    if (!trimmedText || trimmedText.length === 0) {
       // Continue listening if no text
       voiceState.value = 'LISTENING'
       emitter.emit('voice-status', { status: 'listening' })
@@ -409,8 +767,18 @@ const processAudio = async (audioBlob) => {
     
     // Create abort controller for this turn
     abortController = new AbortController()
+
+    // Step 2: Prepare for Streaming
+    audioQueue = []
+    isPlayingAudio = false
+    sentenceBuffer = ''
+    ttsChain = Promise.resolve()
+    firstAudioPending = true
+    activeTurnId = turnId
+    agentStreamDone = false
+    pendingTtsCount = 0
     
-    // Step 2: Send to agent
+    // Step 3: Send to agent
     const tAgentStart = performance.now()
     const agentResponse = await fetch('/api/agent/run', {
       method: 'POST',
@@ -420,7 +788,7 @@ const processAudio = async (audioBlob) => {
         'X-Voice-Task': 'true' // For rate limiting
       },
       body: JSON.stringify({
-        question: text,
+        question: trimmedText,
         conversation_id: chatStore.conversationId,
         mode: 'auto',
         responseType: 'sse'
@@ -431,26 +799,85 @@ const processAudio = async (audioBlob) => {
     const tAgentHeaders = performance.now()
     console.log(`[Voice] Turn ${turnId} agent headers ms:`, Math.round(tAgentHeaders - tAgentStart))
     
-    // Step 3: Get response and synthesize
     if (!agentResponse.ok) {
       const errText = await agentResponse.text().catch(() => '')
       throw new Error(`Agent request failed (${agentResponse.status}): ${errText || 'Unknown error'}`)
     }
 
     const contentType = (agentResponse.headers.get('content-type') || '').toLowerCase()
-    let messageToSpeak = ''
+
+    // Helper to process text chunks for streaming TTS
+    const processTokenForTTS = async (textChunk) => {
+      sentenceBuffer += textChunk
+      
+      // Check for sentence endings (. ? ! followed by space or end of string)
+      // We look for .!? followed by whitespace, or newline
+      const sentenceMatch = sentenceBuffer.match(/([.!?]+)(\s+|$)/)
+      
+      if (sentenceMatch) {
+        const index = sentenceMatch.index + sentenceMatch[0].length
+        const sentence = sentenceBuffer.slice(0, index).trim()
+        sentenceBuffer = sentenceBuffer.slice(index)
+        
+        if (sentence.length > 0) {
+          const sanitized = sanitizeSpokenText(sentence)
+          if (sanitized) {
+            pendingTtsCount++
+            // Do NOT await here; serialize TTS in-order without blocking SSE reads
+            ttsChain = ttsChain
+              .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+              .finally(() => {
+                pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                maybeFinishTurn(turnId)
+              })
+          }
+        }
+      } else if (firstAudioPending && sentenceBuffer.trim().length >= FIRST_CHUNK_MIN_CHARS) {
+        // First-chunk fast-start: speak once we have a small buffer, then revert to sentence-based chunking.
+        const chunkText = sentenceBuffer.trim()
+        sentenceBuffer = ''
+        const sanitized = sanitizeSpokenText(chunkText)
+        if (sanitized) {
+          pendingTtsCount++
+          ttsChain = ttsChain
+            .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+            .finally(() => {
+              pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+              maybeFinishTurn(turnId)
+            })
+        }
+      }
+    }
 
     // /api/agent/run defaults to SSE. Its SSE payload is base64-encoded per event.
     if (contentType.includes('text/event-stream') && agentResponse.body) {
       const reader = agentResponse.body.getReader()
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
-      let lastAssistantContent = ''
       let tAgentFirstToken = null
+      let lastJsonAssistantContent = ''
 
       while (true) {
         const { value, done } = await reader.read()
-        if (done) break
+        if (done) {
+          // Process any remaining text in buffer as final chunk
+          if (sentenceBuffer.trim().length > 0) {
+            const sanitized = sanitizeSpokenText(sentenceBuffer)
+            if (sanitized) {
+              pendingTtsCount++
+              ttsChain = ttsChain
+                .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+                .finally(() => {
+                  pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                  maybeFinishTurn(turnId)
+                })
+            }
+          }
+          agentStreamDone = true
+          maybeFinishTurn(turnId)
+          break
+        }
+        
         buffer += decoder.decode(value, { stream: true })
 
         // SSE frames are separated by blank lines
@@ -474,30 +901,85 @@ const processAudio = async (audioBlob) => {
 
           if (tAgentFirstToken === null && decoded && decoded.trim().length > 0) {
             tAgentFirstToken = performance.now()
-            console.log(`[Voice] Turn ${turnId} agent TTFT ms:`, Math.round(tAgentFirstToken - tAgentStart))
+            const ttftMs = Math.round(tAgentFirstToken - tAgentStart)
+            console.log(`[Voice] Turn ${turnId} agent TTFT ms:`, ttftMs)
           }
 
-          // Some tokens are JSON-stringified Message objects; others can be plain text.
-          if (decoded.startsWith('{') && decoded.endsWith('}')) {
+          // Handle structured messages vs plain text
+          const decodedTrimmed = (decoded || '').trim()
+          if (decodedTrimmed.startsWith('{') && decodedTrimmed.endsWith('}')) {
             try {
-              const obj = JSON.parse(decoded)
-              if (obj && typeof obj.content === 'string') {
-                // Prefer the latest assistant content if present
-                if (!obj.role || obj.role === 'assistant') {
-                  lastAssistantContent = obj.content
+              const obj = JSON.parse(decodedTrimmed)
+
+              // Deliver structured agent events to UI (doc/tool execution, finish summary, etc.)
+              if (obj && obj.meta && obj.meta.action_type) {
+                try {
+                  messageFun.handleMessage(obj, chatStore.messages)
+                  
+                  // Provide TTS feedback for key events in voice mode
+                  const actionType = obj.meta.action_type
+                  let ttsMessage = null
+                  
+                  if (actionType === 'finish_summery' && obj.message) {
+                    // Task completion - speak a brief confirmation
+                    if (obj.message.includes('Created') || obj.message.includes('completed') || obj.message.includes('finished')) {
+                      ttsMessage = "Done! I've completed that for you."
+                    }
+                  } else if (actionType === 'progress' && obj.message) {
+                    // Progress updates - only speak meaningful ones
+                    const msg = obj.message.toLowerCase()
+                    if (msg.includes('creating') || msg.includes('generating') || msg.includes('building')) {
+                      ttsMessage = "Just a moment, I'm working on that..."
+                    }
+                  } else if (actionType === 'coding' && obj.message) {
+                    // Code execution feedback
+                    const msg = obj.message.toLowerCase()
+                    if (msg.includes('running') || msg.includes('executing')) {
+                      ttsMessage = "I'm executing the code now..."
+                    }
+                  }
+                  
+                  // Queue the TTS message if we have one
+                  if (ttsMessage && isVoiceSessionActive.value) {
+                    const sanitized = sanitizeSpokenText(ttsMessage)
+                    if (sanitized) {
+                      pendingTtsCount++
+                      ttsChain = ttsChain
+                        .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+                        .finally(() => {
+                          pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                          maybeFinishTurn(turnId)
+                        })
+                    }
+                  }
+                } catch (e) {}
+                continue
+              }
+              if (obj && (!obj.role || obj.role === 'assistant') && typeof obj.content === 'string') {
+                const next = obj.content
+                let delta = ''
+                if (lastJsonAssistantContent && next.startsWith(lastJsonAssistantContent)) {
+                  delta = next.slice(lastJsonAssistantContent.length)
+                } else if (!lastJsonAssistantContent) {
+                  delta = next
+                }
+                lastJsonAssistantContent = next
+                if (delta && delta.trim().length > 0) {
+                  processTokenForTTS(delta)
                 }
               }
             } catch (e) {
               // ignore
             }
           } else {
-            // Collect plain text fragments as fallback, but filter out protocol markers
+            // Plain text fragments
             if (!decoded.includes('lemon mode') && 
                 !decoded.includes('__lemon_') && 
                 !decoded.includes('PID:') && 
                 !decoded.includes('event: message') &&
                 decoded.trim().length > 0) {
-              messageToSpeak += decoded
+              // Do not await; avoid stalling the stream loop
+              processTokenForTTS(decoded)
             }
           }
         }
@@ -505,119 +987,44 @@ const processAudio = async (audioBlob) => {
 
       const tAgentDone = performance.now()
       console.log(`[Voice] Turn ${turnId} agent total ms:`, Math.round(tAgentDone - tAgentStart))
-      messageToSpeak = (lastAssistantContent || messageToSpeak || '').trim()
+      agentStreamDone = true
+      maybeFinishTurn(turnId)
+      
     } else {
       // Fallback: non-SSE response
       const responseText = await agentResponse.text()
       console.log('[Voice] Raw agent response:', responseText)
-      messageToSpeak = responseText
+      
+      let textToSpeak = responseText
       try {
         const parsed = JSON.parse(responseText)
         if (parsed && typeof parsed.content === 'string') {
-          messageToSpeak = parsed.content
+          textToSpeak = parsed.content
         }
-      } catch (e) {
-        // Keep raw text if not JSON
-      }
-      messageToSpeak = (messageToSpeak || '').trim()
-    }
-
-    console.log('[Voice] Message before sanitization:', messageToSpeak)
-    
-    // Sanitize the text to remove protocol markers
-    messageToSpeak = sanitizeSpokenText(messageToSpeak)
-    
-    console.log('[Voice] Message after sanitization:', messageToSpeak)
-
-    if (!messageToSpeak) {
-      console.log('[Voice] No valid content to speak, continuing session')
-      // Continue listening if no valid content
-      voiceState.value = 'LISTENING'
-      emitter.emit('voice-status', { status: 'listening' })
-      audioChunks = []
-      recordingStartTime = Date.now()
+      } catch (e) {}
       
-      // Only restart if we still have an active session and mediaRecorder
-      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
-        mediaRecorder.start(100)
-        startVADLoop()
+      const sanitized = sanitizeSpokenText(textToSpeak)
+      if (sanitized) {
+          pendingTtsCount++
+          ttsChain = ttsChain
+            .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+            .finally(() => {
+              pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+              maybeFinishTurn(turnId)
+            })
       }
-      return
+      agentStreamDone = true
+      maybeFinishTurn(turnId)
     }
     
-    // Step 4: Synthesize speech
-    const tTtsStart = performance.now()
-    const synthesizeResponse = await fetch('/api/voice/synthesize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Conversation-Id': chatStore.conversationId
-      },
-      body: JSON.stringify({
-        text: messageToSpeak,
-        voice: 'alloy'
-      }),
-      signal: abortController.signal
-    })
-    
-    if (synthesizeResponse.ok) {
-      const audioBlob = await synthesizeResponse.blob()
-      const tTtsEnd = performance.now()
-      console.log(`[Voice] Turn ${turnId} TTS ms:`, Math.round(tTtsEnd - tTtsStart))
-      const audioUrl = URL.createObjectURL(audioBlob)
-      currentAudio = new Audio(audioUrl)
-      
-      voiceState.value = 'SPEAKING'
-      emitter.emit('voice-status', { status: 'speaking' })
-      
-      currentAudio.onplay = () => {
-        console.log(`[Voice] Turn ${turnId} first audio ms:`, Math.round(performance.now() - tTurnStart))
-        voiceState.value = 'SPEAKING'
-        emitter.emit('voice-status', { status: 'speaking' })
-      }
-      
-      currentAudio.onended = () => {
-        URL.revokeObjectURL(audioUrl)
-        currentAudio = null
-        abortController = null
-        
-        // Post-TTS cooldown before rearming to avoid echo
-        console.log('[Voice] Speech finished, waiting cooldown before rearming')
-        setTimeout(() => {
-          if (!isVoiceSessionActive.value) return
-          
-          console.log('[Voice] Cooldown finished, rearming for next turn')
-          voiceState.value = 'LISTENING'
-          emitter.emit('voice-status', { status: 'listening' })
-          audioChunks = []
-          recordingStartTime = Date.now()
-          mediaRecorder.start(100)
-          startVADLoop()
-        }, POST_TTS_COOLDOWN)
-      }
-      
-      currentAudio.onerror = (error) => {
-        console.error('[Voice] Audio playback error:', error)
-        URL.revokeObjectURL(audioUrl)
-        currentAudio = null
-        abortController = null
-        
-        // Continue listening on error
-        voiceState.value = 'LISTENING'
-        emitter.emit('voice-status', { status: 'listening' })
-        audioChunks = []
-        recordingStartTime = Date.now()
-        mediaRecorder.start(100)
-        startVADLoop()
-      }
-      
-      await currentAudio.play()
-      
-      // Start barge-in detection during playback
-      setupBargeInDetection()
-    } else {
-      throw new Error('Speech synthesis failed')
-    }
+    // Safety check: if no audio was queued, reset (give TTS time to return)
+    setTimeout(() => {
+        if (!isPlayingAudio && audioQueue.length === 0 && voiceState.value === 'PROCESSING' && pendingTtsCount === 0) {
+             console.log('[Voice] No audio generated, restarting listener')
+             agentStreamDone = true
+             maybeFinishTurn(turnId)
+        }
+    }, 4500)
     
   } catch (error) {
     console.error('Voice processing error:', error)
@@ -641,6 +1048,140 @@ const processAudio = async (audioBlob) => {
   }
 }
 
+// Streaming TTS Helper Functions
+const queueTTSChunk = async (text, turnId, tTurnStart) => {
+  try {
+    if (!isVoiceSessionActive.value || !abortController || abortController.signal.aborted) return
+    if (activeTurnId && turnId !== activeTurnId) return
+
+    const tTtsStart = performance.now()
+    const response = await fetch('/api/voice/synthesize-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: 'alloy' }),
+      signal: abortController?.signal
+    })
+
+    if (response.ok) {
+      const blob = await response.blob()
+      if (!isVoiceSessionActive.value || !abortController || abortController.signal.aborted) return
+      const tTtsEnd = performance.now()
+      console.log(`[Voice] TTS Chunk ready (${text.length} chars) ms:`, Math.round(tTtsEnd - tTtsStart))
+
+      const isFirst = firstAudioPending
+      if (isFirst) firstAudioPending = false
+
+      audioQueue.push({ blob, url: URL.createObjectURL(blob), tTurnStart: isFirst ? tTurnStart : null })
+      playNextChunk()
+    } else {
+      const errText = await response.text().catch(() => '')
+      console.error('[Voice] TTS Chunk non-OK:', response.status, errText)
+    }
+  } catch (err) {
+    console.error('[Voice] TTS Chunk error:', err)
+  }
+}
+
+const playNextChunk = async () => {
+  if (isPlayingAudio || audioQueue.length === 0) return
+
+  isPlayingAudio = true
+  const chunk = audioQueue.shift()
+  currentAudio = new Audio(chunk.url)
+  
+  voiceState.value = 'SPEAKING'
+  emitter.emit('voice-status', { status: 'speaking' })
+
+  currentAudio.onplay = () => {
+    if (chunk.tTurnStart) {
+       // Only log this for the very first chunk of the turn
+       console.log(`[Voice] Turn first audio ms:`, Math.round(performance.now() - chunk.tTurnStart))
+    }
+  }
+
+  currentAudio.onended = () => {
+    URL.revokeObjectURL(chunk.url)
+    currentAudio = null
+    isPlayingAudio = false
+    lastPlaybackEndedAt = Date.now()
+
+    if (bargeInGraceTimeout) {
+      clearTimeout(bargeInGraceTimeout)
+      bargeInGraceTimeout = null
+    }
+    if (bargeInRafId) {
+      cancelAnimationFrame(bargeInRafId)
+      bargeInRafId = null
+    }
+
+    if (audioQueue.length > 0) {
+      playNextChunk()
+    } else {
+      maybeFinishTurn(activeTurnId)
+    }
+  }
+  
+  currentAudio.onerror = () => {
+    URL.revokeObjectURL(chunk.url)
+    isPlayingAudio = false
+    if (bargeInGraceTimeout) {
+      clearTimeout(bargeInGraceTimeout)
+      bargeInGraceTimeout = null
+    }
+    if (bargeInRafId) {
+      cancelAnimationFrame(bargeInRafId)
+      bargeInRafId = null
+    }
+    playNextChunk()
+  }
+
+  await currentAudio.play()
+  setupBargeInDetection()
+}
+
+const maybeFinishTurn = (turnId) => {
+  if (!isVoiceSessionActive.value) return
+  if (!turnId || turnId !== activeTurnId) return
+  if (!agentStreamDone) return
+  if (pendingTtsCount !== 0) return
+  if (isPlayingAudio) return
+  if (audioQueue.length !== 0) return
+  if (rearmTimeout) return
+
+  console.log('[Voice] Speech finished, waiting cooldown before rearming')
+  rearmTimeout = setTimeout(() => {
+    rearmTimeout = null
+    if (!isVoiceSessionActive.value) return
+    console.log('[Voice] Cooldown finished, rearming for next turn')
+    voiceState.value = 'LISTENING'
+    emitter.emit('voice-status', { status: 'listening' })
+    audioChunks = []
+    recordingStartTime = Date.now()
+
+    if (mediaRecorder && mediaRecorder.state === 'inactive') {
+      mediaRecorder.start(100)
+      startVADLoop()
+      return
+    }
+
+    if (!mediaRecorder && micStream) {
+      mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data)
+        }
+      }
+      mediaRecorder.onstop = async () => {
+        if (!isVoiceSessionActive.value) return
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+        await processAudio(audioBlob)
+      }
+      mediaRecorder.start(100)
+      startVADLoop()
+    }
+  }, POST_TTS_COOLDOWN)
+}
+
 // Text sanitization to remove protocol markers
 const sanitizeSpokenText = (text) => {
   if (!text || typeof text !== 'string') return ''
@@ -660,7 +1201,9 @@ const sanitizeSpokenText = (text) => {
     .trim()
   
   // If after sanitization we have no meaningful content, return empty
-  if (sanitized.length < 10) return ''
+  // Allow short meaningful replies like "Hey." but block pure punctuation/noise.
+  if (!/[A-Za-z0-9]/.test(sanitized)) return ''
+  if (sanitized.length < 2) return ''
   
   return sanitized
 }
@@ -668,6 +1211,15 @@ const sanitizeSpokenText = (text) => {
 // Barge-in: detect speech during playback
 const setupBargeInDetection = () => {
   if (!microphone || !analyser) return
+
+  if (bargeInGraceTimeout) {
+    clearTimeout(bargeInGraceTimeout)
+    bargeInGraceTimeout = null
+  }
+  if (bargeInRafId) {
+    cancelAnimationFrame(bargeInRafId)
+    bargeInRafId = null
+  }
   
   const dataArray = new Uint8Array(analyser.frequencyBinCount)
   let speechDetected = false
@@ -675,7 +1227,7 @@ const setupBargeInDetection = () => {
   let gracePeriodElapsed = false
   
   // Wait grace period before enabling detection
-  setTimeout(() => {
+  bargeInGraceTimeout = setTimeout(() => {
     gracePeriodElapsed = true
     console.log('[Voice] Barge-in grace period elapsed, detection enabled')
   }, BARGE_IN_GRACE_PERIOD)
@@ -689,7 +1241,7 @@ const setupBargeInDetection = () => {
     
     // Don't check for barge-in during grace period
     if (!gracePeriodElapsed) {
-      requestAnimationFrame(checkForSpeech)
+      bargeInRafId = requestAnimationFrame(checkForSpeech)
       return
     }
     
@@ -711,7 +1263,7 @@ const setupBargeInDetection = () => {
     }
     
     if (voiceState.value === 'SPEAKING') {
-      requestAnimationFrame(checkForSpeech)
+      bargeInRafId = requestAnimationFrame(checkForSpeech)
     }
   }
   
@@ -726,6 +1278,20 @@ const handleBargeIn = () => {
     URL.revokeObjectURL(currentAudio.src)
     currentAudio = null
   }
+
+  if (audioQueue && audioQueue.length > 0) {
+    for (const item of audioQueue) {
+      if (item && item.url) {
+        URL.revokeObjectURL(item.url)
+      }
+    }
+  }
+  audioQueue = []
+  isPlayingAudio = false
+  sentenceBuffer = ''
+  ttsChain = Promise.resolve()
+  firstAudioPending = false
+  lastPlaybackEndedAt = Date.now()
   
   // Cancel any pending requests
   if (abortController) {
@@ -740,7 +1306,7 @@ const handleBargeIn = () => {
   recordingStartTime = Date.now()
   
   // Start recording again
-  if (micStream) {
+  if (isVoiceSessionActive.value && micStream) {
     // Create new MediaRecorder with the preserved stream
     mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
     
@@ -757,7 +1323,6 @@ const handleBargeIn = () => {
     
     mediaRecorder.start(100)
     startVADLoop()
-    setupBargeInDetection() // Restart barge-in detection
   }
 }
 

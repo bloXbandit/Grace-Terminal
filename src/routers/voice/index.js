@@ -97,7 +97,8 @@ async function rateLimitMiddleware(ctx, next) {
 
 // Mount sub-routes first
 router.use('/transcribe', transcribe.routes(), transcribe.allowedMethods());
-router.use('/synthesize', synthesize.routes(), synthesize.allowedMethods());
+// Mount at root so synthesize.js can define both /synthesize and /synthesize-stream
+router.use(synthesize.routes(), synthesize.allowedMethods());
 
 // Apply rate limiting after routes are mounted
 router.use(rateLimitMiddleware);

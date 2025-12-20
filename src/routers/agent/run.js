@@ -348,22 +348,67 @@ router.post("/run", async (ctx, next) => {
       // 自动选择：使用意图识别
       console.log('自动模式：开始意图识别...');
       try {
-        // 获取上下文消息用于意图识别
-        const contextMessages = await MessageTable.findAll({
-          where: {
-            conversation_id: conversation_id
-          },
-          order: [['create_at', 'ASC']]
-        })
+        // Voice fast-path: skip intent detection for simple deterministic commands
+        if (isVoiceTask && mode === 'auto') {
+          // Match both direct and polite requests for documents
+          const simpleFileGenPattern = /^(can\s+(you\s+)?(please\s+)?(make|create|generate|write|draft)\s+(a\s+)?(word|docx?|document)\s+(about|on|regarding)?\s*(.+))$/i;
+          const match = question.trim().match(simpleFileGenPattern);
+          
+          if (match) {
+            console.log('[Voice Fast-Path] Document command detected (polite pattern), skipping intent detection -> agent mode');
+            intent = 'agent';
+          } else {
+            // For voice chat mode, use minimal context to reduce latency
+            // Only fetch last few messages instead of full history
+            const contextMessages = await MessageTable.findAll({
+              where: {
+                conversation_id: conversation_id
+              },
+              order: [['create_at', 'DESC']],
+              limit: 3  // Only get last 3 messages for voice chat
+            })
 
-        // 构建上下文格式
-        const messagesContext = contextMessages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }));
+            // 构建上下文格式
+            const messagesContext = contextMessages.map(msg => ({
+              role: msg.role,
+              content: msg.content
+            })).reverse(); // Reverse to maintain chronological order
 
-        intent = await detect_intent(question, conversation_id, messagesContext);
-        console.log('意图识别结果:', intent);
+            intent = await detect_intent(question, conversation_id, messagesContext);
+            console.log('意图识别结果:', intent);
+          }
+        } else {
+          // 获取上下文消息用于意图识别
+          // For short questions, we can use minimal context to reduce latency
+          let contextMessages = [];
+          if (question.length > 50) {  // For longer questions, get full context
+            contextMessages = await MessageTable.findAll({
+              where: {
+                conversation_id: conversation_id
+              },
+              order: [['create_at', 'ASC']]
+            });
+          } else {  // For short questions, use minimal context
+            contextMessages = await MessageTable.findAll({
+              where: {
+                conversation_id: conversation_id
+              },
+              order: [['create_at', 'DESC']],
+              limit: 3  // Only get last 3 messages for short questions
+            });
+            contextMessages = contextMessages.reverse(); // Reverse to maintain chronological order
+          }
+
+          // 构建上下文格式
+          const messagesContext = contextMessages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }));
+
+          intent = await detect_intent(question, conversation_id, messagesContext);
+          console.log('意图识别结果:', intent);
+        }
+        
         // 将结果标准化为小写
         intent = intent.toLowerCase().trim();
         if (intent !== 'chat' && intent !== 'agent') {

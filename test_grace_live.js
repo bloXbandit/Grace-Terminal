@@ -154,6 +154,23 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary']
+    },
+    {
+      name: 'Voice DOCX Generation - Polite Request',
+      goal: 'can you please make me a word document about tennis and how to play the game',
+      mode: 'auto',
+      isVoiceTask: true,
+      expectedActions: ['plan', 'write_code', 'terminal_run', 'finish_summery'],
+      breakPoints: ['intent_detection', 'mode_switch', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /tennis.*\.docx$/i,
+        location: '/workspace'
+      },
+      verifyFinishSummery: {
+        containsDocx: true,
+        metaJsonHasFile: true
+      }
     }
   ],
   auto: [
@@ -590,6 +607,15 @@ class GraceTester {
       await this.createConversation();
       
       // Send request and capture streaming response
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Add voice task header if this is a voice test
+      if (testCase.isVoiceTask) {
+        headers['X-Voice-Task'] = 'true';
+      }
+      
       const response = await axios.post(
         `${GRACE_URL}/api/agent/run`,
         {
@@ -598,6 +624,7 @@ class GraceTester {
           mode: testCase.mode
         },
         {
+          headers: headers,
           responseType: 'stream',
           timeout: 60000 // 60 second timeout
         }
