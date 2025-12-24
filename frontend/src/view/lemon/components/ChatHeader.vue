@@ -24,6 +24,11 @@
           <Microphone />
         </a-tooltip>
       </div>
+      <div class="interrupt-btn btn" v-if="isVoiceEnabled && isVoiceSessionActive" @click="handleInterruptGrace">
+        <a-tooltip title="Interrupt Grace" placement="bottom" :arrow="false">
+          <StopOutlined />
+        </a-tooltip>
+      </div>
       <div class="more-btn btn" @click="handleMore">
         <a-tooltip :title="$t('lemon.chatHeader.moreOptions')" placement="bottom" :arrow="false">
           <More />
@@ -59,7 +64,7 @@
 
 <script setup>
 import emitter from '@/utils/emitter'
-import { ShareAltOutlined, ToolOutlined } from '@ant-design/icons-vue'
+import { ShareAltOutlined, ToolOutlined, StopOutlined } from '@ant-design/icons-vue'
 import workspaceService from '@/services/workspace'
 import { useChatStore } from '@/store/modules/chat'
 import Share from '@/assets/svg/share.svg'
@@ -102,6 +107,90 @@ const handleCollect = () => {
   } else {
     chatStore.favorite()
   }
+}
+
+const handleInterruptGrace = () => {
+  console.log('[Voice] Interrupt Grace button pressed')
+
+  if (rearmTimeout) {
+    clearTimeout(rearmTimeout)
+    rearmTimeout = null
+  }
+
+  // Stop current playback
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio.currentTime = 0
+    if (currentAudio.src) {
+      URL.revokeObjectURL(currentAudio.src)
+    }
+    currentAudio = null
+  }
+
+  // Clear audio queue
+  if (audioQueue && audioQueue.length > 0) {
+    for (const item of audioQueue) {
+      if (item && item.url) {
+        URL.revokeObjectURL(item.url)
+      }
+    }
+  }
+  audioQueue = []
+  isPlayingAudio = false
+
+  // Reset streaming / TTS chain
+  sentenceBuffer = ''
+  ttsChain = Promise.resolve()
+  firstAudioPending = false
+  pendingTtsCount = 0
+  agentStreamDone = true
+  activeTurnId = null
+
+  // Cancel any pending requests (agent stream and TTS)
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+
+  // Set last playback ended time for gating
+  lastPlaybackEndedAt = Date.now()
+
+  if (!isVoiceSessionActive.value) return
+
+  voiceState.value = 'LISTENING'
+  emitter.emit('voice-status', { status: 'listening' })
+
+  // Rearm listening after a short delay
+  setTimeout(() => {
+    if (!isVoiceSessionActive.value || voiceState.value !== 'LISTENING') return
+
+    audioChunks = []
+    recordingStartTime = Date.now()
+
+    if (micStream) {
+      mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunks.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        if (!isVoiceSessionActive.value) return
+        if (audioChunks.length === 0) return
+        const nextBlob = new Blob(audioChunks, { type: 'audio/webm' })
+        await processAudio(nextBlob)
+      }
+
+      if (mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+    }
+  }, 300)
+
+  console.log('[Voice] Grace interrupted and listening re-armed')
 }
 const handleMore = () => {
   showMore.value = !showMore.value
@@ -542,56 +631,8 @@ const stopRecordingForProcessing = () => {
 
 // Preprocess audio blob to optimize for STT
 const preprocessAudioBlob = async (audioBlob) => {
-  try {
-    // For short utterances, we can skip preprocessing to reduce latency
-    const recordingDuration = Date.now() - recordingStartTime
-    if (recordingDuration <= SHORT_UTTERANCE_DURATION) {
-      console.log('[Voice] Short utterance detected, skipping preprocessing for speed')
-      return audioBlob
-    }
-    
-    // For longer recordings, apply preprocessing
-    console.log('[Voice] Preprocessing audio blob for optimization')
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-    
-    // Decode audio data
-    const arrayBuffer = await audioBlob.arrayBuffer()
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
-    
-    // Downsample to target sample rate if needed
-    const sourceSampleRate = audioBuffer.sampleRate
-    const targetSampleRate = TARGET_SAMPLE_RATE
-    
-    if (sourceSampleRate <= targetSampleRate) {
-      // Already at or below target rate, no downsampling needed
-      await audioContext.close()
-      return audioBlob
-    }
-    
-    // Create offline context for resampling
-    const duration = audioBuffer.duration
-    const offlineContext = new OfflineAudioContext(1, duration * targetSampleRate, targetSampleRate)
-    
-    // Create buffer source
-    const source = offlineContext.createBufferSource()
-    source.buffer = audioBuffer
-    
-    // Connect and render
-    source.connect(offlineContext.destination)
-    source.start(0)
-    
-    const renderedBuffer = await offlineContext.startRendering()
-    await audioContext.close()
-    
-    // Convert back to blob
-    const wavBlob = bufferToWave(renderedBuffer)
-    console.log('[Voice] Audio preprocessed, original size:', audioBlob.size, 'new size:', wavBlob.size)
-    
-    return wavBlob
-  } catch (error) {
-    console.warn('[Voice] Audio preprocessing failed, using original blob:', error)
-    return audioBlob
-  }
+  console.log('[Voice] Preprocessing dormant: sending original webm/opus for speed')
+  return audioBlob
 }
 
 // Convert AudioBuffer to WAV blob
@@ -706,15 +747,17 @@ const processAudio = async (audioBlob) => {
     
     const trimmedText = (text || '').trim()
 
+    const wordCount = trimmedText.length ? trimmedText.split(/\s+/).filter(Boolean).length : 0
+
     // Spurious transcript gate: discard tiny/commonly-spurious transcripts that occur
     // right after TTS playback or from tiny audio blobs (prevents phantom "you" loops)
     const timeSincePlayback = Date.now() - lastPlaybackEndedAt
     const isRightAfterPlayback = timeSincePlayback < 2000 // 2 seconds
     const isTinyBlob = processedBlob.size < 5000 // Very small blob
-    const isShortText = trimmedText.length > 0 && trimmedText.length <= 8
-    const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao)/i.test(trimmedText)
+    const isShortText = trimmedText.length > 0 && trimmedText.length <= 12
+    const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao|thanks for watching)/i.test(trimmedText)
     
-    if ((isRightAfterPlayback || isTinyBlob) && isShortText && looksSpurious) {
+    if ((isRightAfterPlayback || isTinyBlob) && (isShortText || looksSpurious)) {
       console.log('[Voice] Discarding spurious STT transcript (likely phantom):', trimmedText, 
                   'Blob size:', processedBlob.size, 'Time since playback:', timeSincePlayback + 'ms')
       voiceState.value = 'LISTENING'
@@ -731,8 +774,8 @@ const processAudio = async (audioBlob) => {
     // Warm-up guard: discard tiny/commonly-spurious early transcripts right after session start
     // (helps prevent occasional first-turn hallucinated "Bye." when user is silent)
     if (voiceSessionStartedAt && (Date.now() - voiceSessionStartedAt) < VOICE_START_WARMUP_MS) {
-      const isTiny = trimmedText.length > 0 && trimmedText.length <= 12
-      const looksSpurious = /^(bye\.?|goodbye\.?|thank you( for watching)?\.?|thanks\.?|hello\.?|hey\.?|hi\.?)/i.test(trimmedText)
+      const isTiny = trimmedText.length > 0 && trimmedText.length <= 15
+      const looksSpurious = /^(bye\.?|goodbye\.?|thank you( for watching)?\.?|thanks\.?|hello\.?|hey\.?|hi\.?|thanks for watching)/i.test(trimmedText)
       if (isTiny || looksSpurious) {
         console.log('[Voice] Discarding warm-up STT transcript:', trimmedText)
         voiceState.value = 'LISTENING'
@@ -747,6 +790,41 @@ const processAudio = async (audioBlob) => {
       }
     }
 
+    const lowerText = trimmedText.toLowerCase()
+    const containsUrlLike = /(https?:\/\/\S+|\bwww\.[^\s]+|\b[^\s]+\.(com|org|net|io|ai|gov|edu)\b)/i.test(trimmedText)
+    const containsLeakagePhrase = /\b(for more|visit|subscribe|like and subscribe|thanks for watching)\b/i.test(lowerText)
+    const isVerySmallBlobForLongText = processedBlob.size < 9000 && wordCount >= 6
+    const isSuspiciousPlaybackWindow = timeSincePlayback < 5000 && processedBlob.size < 14000
+    if ((containsUrlLike || containsLeakagePhrase || isVerySmallBlobForLongText) && (isSuspiciousPlaybackWindow || processedBlob.size < 12000)) {
+      console.log('[Voice] Discarding suspicious STT transcript (likely leakage):', trimmedText,
+                  'Blob size:', processedBlob.size, 'Words:', wordCount, 'Time since playback:', timeSincePlayback + 'ms')
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+
+    // Additional filter for stubborn phantom transcripts
+    if (/^(you|thanks for watching)/i.test(trimmedText) || 
+        (timeSincePlayback < 3000 && /^(u|yeah|yes|no|ok|okay)/i.test(trimmedText))) {
+      console.log('[Voice] Discarding stubborn phantom STT transcript:', trimmedText,
+                  'Time since playback:', timeSincePlayback + 'ms')
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+    
     // Show transcribed text to user for confirmation
     emitter.emit('voice-transcription', { text: trimmedText, timestamp: Date.now() })
     
@@ -806,24 +884,108 @@ const processAudio = async (audioBlob) => {
 
     const contentType = (agentResponse.headers.get('content-type') || '').toLowerCase()
 
-    // Helper to process text chunks for streaming TTS
+    // Helper to process text chunks for streaming TTS with micro-chunk dispatch
     const processTokenForTTS = async (textChunk) => {
       sentenceBuffer += textChunk
       
-      // Check for sentence endings (. ? ! followed by space or end of string)
-      // We look for .!? followed by whitespace, or newline
-      const sentenceMatch = sentenceBuffer.match(/([.!?]+)(\s+|$)/)
+      // Micro-chunk dispatch for first audio
+      if (firstAudioPending) {
+        const trimmed = sentenceBuffer.trim()
+        const minFirstChunkChars = 12
+        const softMaxFirstChunkChars = 18
+        const hardMaxFirstChunkChars = 28
+        const hasMinChars = trimmed.length >= minFirstChunkChars
+        const hasSafeBoundary = /([.!?,:;]\s|[\r\n])/.test(sentenceBuffer)
+        const hasWordBoundary = /\s/.test(sentenceBuffer) && trimmed.length >= minFirstChunkChars
+        
+        if (hasMinChars && (hasSafeBoundary || hasWordBoundary)) {
+          let cutIndex = -1
+          let cutIndexSoft = -1
+          
+          const safeRe = /([.!?,:;]\s|[\r\n])/g
+          let match
+          while ((match = safeRe.exec(sentenceBuffer)) !== null) {
+            const end = match.index + match[0].length
+            const candidate = sentenceBuffer.slice(0, end).trim()
+            if (candidate.length >= minFirstChunkChars && candidate.length <= hardMaxFirstChunkChars) {
+              cutIndex = end
+              if (candidate.length <= softMaxFirstChunkChars) {
+                cutIndexSoft = end
+              }
+            }
+          }
+
+          if (cutIndexSoft !== -1) {
+            cutIndex = cutIndexSoft
+          }
+
+          if (cutIndex === -1 && trimmed.length >= minFirstChunkChars) {
+            const limited = sentenceBuffer.slice(0, Math.min(sentenceBuffer.length, hardMaxFirstChunkChars))
+            const spaceMatch = limited.lastIndexOf(' ')
+            if (spaceMatch > 0) {
+              const end = spaceMatch + 1
+              const candidate = sentenceBuffer.slice(0, end).trim()
+              if (candidate.length >= minFirstChunkChars) {
+                cutIndex = end
+              }
+            }
+          }
+
+          if (cutIndex === -1) {
+            return
+          }
+
+          const chunkText = sentenceBuffer.slice(0, cutIndex).trim()
+          sentenceBuffer = sentenceBuffer.slice(cutIndex)
+          
+          if (chunkText.length > 0 && !isDanglingFragment(chunkText)) {
+            const sanitized = sanitizeSpokenText(chunkText)
+            if (sanitized) {
+              if (sanitized.length < minFirstChunkChars) {
+                // Sanitization can shorten text; re-buffer and wait for more content.
+                sentenceBuffer = `${chunkText} ${sentenceBuffer}`
+                return
+              }
+              console.log(`[Voice] Micro-chunk dispatch (${sanitized.length} chars):`, sanitized.substring(0, 30) + (sanitized.length > 30 ? '...' : ''))
+              // Set flag immediately to prevent multiple first chunks
+              firstAudioPending = false
+              pendingTtsCount++
+              ttsChain = ttsChain
+                .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+                .finally(() => {
+                  pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                  maybeFinishTurn(turnId)
+                })
+            }
+          }
+        }
+        return
+      }
       
-      if (sentenceMatch) {
-        const index = sentenceMatch.index + sentenceMatch[0].length
+      // After first audio: coalesce larger chunks with minimum length guard
+      const trimmed = sentenceBuffer.trim()
+      const hasLargeBuffer = trimmed.length >= 80
+      const hasSentenceBoundary = /([.!?]+)(\s+|$)/.test(sentenceBuffer)
+      const hasClauseBoundary = /([,:;]\s|[\r\n])/.test(sentenceBuffer)
+      const minCoalescedChars = 12  // Don't dispatch tiny chunks after first audio
+      
+      if (hasLargeBuffer && (hasSentenceBoundary || hasClauseBoundary)) {
+        const match = sentenceBuffer.match(/([.!?,:;]+)(\s+|[\r\n])/)
+        const index = match ? match.index + match[0].length : sentenceBuffer.length
         const sentence = sentenceBuffer.slice(0, index).trim()
         sentenceBuffer = sentenceBuffer.slice(index)
         
+        // Guard against tiny coalesced chunks: re-buffer instead of dispatching.
+        if (sentence.length > 0 && sentence.length < minCoalescedChars) {
+          sentenceBuffer = `${sentence} ${sentenceBuffer}`
+          return
+        }
+
         if (sentence.length > 0) {
           const sanitized = sanitizeSpokenText(sentence)
           if (sanitized) {
+            console.log(`[Voice] Coalesced chunk dispatch (${sanitized.length} chars)`)
             pendingTtsCount++
-            // Do NOT await here; serialize TTS in-order without blocking SSE reads
             ttsChain = ttsChain
               .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
               .finally(() => {
@@ -832,21 +994,18 @@ const processAudio = async (audioBlob) => {
               })
           }
         }
-      } else if (firstAudioPending && sentenceBuffer.trim().length >= FIRST_CHUNK_MIN_CHARS) {
-        // First-chunk fast-start: speak once we have a small buffer, then revert to sentence-based chunking.
-        const chunkText = sentenceBuffer.trim()
-        sentenceBuffer = ''
-        const sanitized = sanitizeSpokenText(chunkText)
-        if (sanitized) {
-          pendingTtsCount++
-          ttsChain = ttsChain
-            .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
-            .finally(() => {
-              pendingTtsCount = Math.max(0, pendingTtsCount - 1)
-              maybeFinishTurn(turnId)
-            })
-        }
       }
+    }
+    
+    // Helper to detect dangling fragments that shouldn't be dispatched
+    const isDanglingFragment = (text) => {
+      // Don't dispatch single letters or partial contractions
+      if (/^[A-Za-z]’?$/.test(text)) return true
+      // Don't dispatch partial words ending in apostrophe
+      if (/\w+’$/.test(text)) return true
+      // Don't dispatch trailing hyphens
+      if (text.endsWith('-')) return true
+      return false
     }
 
     // /api/agent/run defaults to SSE. Its SSE payload is base64-encoded per event.
@@ -1103,7 +1262,7 @@ const playNextChunk = async () => {
     URL.revokeObjectURL(chunk.url)
     currentAudio = null
     isPlayingAudio = false
-    lastPlaybackEndedAt = Date.now()
+    lastPlaybackEndedAt = Date.now();
 
     if (bargeInGraceTimeout) {
       clearTimeout(bargeInGraceTimeout)
@@ -1198,7 +1357,7 @@ const sanitizeSpokenText = (text) => {
     .replace(/\{[^}]*\}/g, '') // Remove JSON objects
     .replace(/^\s*[\d\W]+\s*$/gm, '') // Remove lines with only numbers/symbols
     .replace(/\n{3,}/g, '\n\n') // Reduce multiple newlines
-    .trim()
+    .trim();
   
   // If after sanitization we have no meaningful content, return empty
   // Allow short meaningful replies like "Hey." but block pure punctuation/noise.
@@ -1493,11 +1652,23 @@ defineEmits(['share'])
     }
     
     &.active {
-      background: #ff4d4f;
-      svg {
-        color: #fff;
-        animation: pulse 1.5s infinite;
-      }
+      background-color: #ff4d4f;
+      color: white;
+    }
+  }
+
+  .interrupt-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 4px;
+
+    &:hover {
+      background-color: #f0f0f0;
     }
   }
 }

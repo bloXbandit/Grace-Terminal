@@ -290,7 +290,16 @@ class AgenticAgent {
     console.log('[AgenticAgent] context.files:', this.context.files ? this.context.files.length : 0);
     console.log('[AgenticAgent] context.newlyUploadedFileIds:', this.context.newlyUploadedFileIds || []);
     console.log('[AgenticAgent] Passing files to auto_reply:', this.context.files || []);
-    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, recentMessages, this.context.profileContext, this.onTokenStream, this.context.files || [], this.context.newlyUploadedFileIds || []);
+    
+    // Add voice task indicator to recent messages for auto_reply to detect
+    const isVoiceTask = this.context.isVoiceTask;
+    let voiceAwareMessages = recentMessages;
+    if (isVoiceTask) {
+      console.log('[AgenticAgent] Adding voice task indicator for auto_reply');
+      voiceAwareMessages = [...recentMessages, { role: 'system', content: 'x-voice-task: true' }];
+    }
+    
+    const reply = await auto_reply(this.goal, this.context.conversation_id, this.context.user_id, voiceAwareMessages, this.context.profileContext, this.onTokenStream, this.context.files || [], this.context.newlyUploadedFileIds || []);
     
     // Check if specialist needs execution (don't publish object, just store for planning)
     if (reply && typeof reply === 'object' && reply.needsExecution) {

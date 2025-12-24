@@ -63,7 +63,14 @@ router.post('/synthesize', async (ctx) => {
  * POST /api/voice/synthesize-stream
  */
 router.post('/synthesize-stream', async (ctx) => {
+  const tReqStart = Date.now();
+  let tProviderStart = null;
+  let tProviderFirstByte = null;
+  
   try {
+    // Koa body parser already handled the body
+    const tBodyReceived = Date.now();
+    
     const { text, voice = 'alloy' } = ctx.request.body;
     
     if (!text) {
@@ -72,9 +79,10 @@ router.post('/synthesize-stream', async (ctx) => {
       return;
     }
 
-    // console.log('[Voice] Streaming TTS for:', text.substring(0, 50) + '...');
+    console.log(`[Voice] TTS Stream Request: body received ms: ${tBodyReceived - tReqStart}, text length: ${text.length}, chars: ${text.substring(0, 30)}...`);
 
     // Call OpenAI TTS API
+    tProviderStart = Date.now();
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -89,6 +97,9 @@ router.post('/synthesize-stream', async (ctx) => {
       })
     });
 
+    const tProviderResponse = Date.now();
+    console.log(`[Voice] TTS Provider: response headers ms: ${tProviderResponse - tProviderStart}, status: ${response.status}`);
+
     if (!response.ok) {
       const error = await response.text();
       console.error('[Voice] TTS API error:', error);
@@ -97,9 +108,16 @@ router.post('/synthesize-stream', async (ctx) => {
       return;
     }
 
+    // Track timing and stream directly
+    tProviderFirstByte = Date.now();
+    console.log(`[Voice] TTS Provider: first byte ms: ${tProviderFirstByte - tProviderStart}`);
+    
     // Stream the audio response directly to client
     ctx.type = 'audio/mpeg';
     ctx.body = response.body;
+    
+    const tStreamEnd = Date.now();
+    console.log(`[Voice] TTS Stream: total duration ms: ${tStreamEnd - tReqStart}, provider ms: ${tStreamEnd - tProviderStart}`);
     
   } catch (error) {
     console.error('[Voice] TTS streaming error:', error);

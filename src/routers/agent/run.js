@@ -291,6 +291,7 @@ router.post("/run", async (ctx, next) => {
     enableSpecialistRouting: true, // Enable routing for complex tasks
     files: newFiles, // CRITICAL: Add uploaded files for file analyzer access
     newlyUploadedFileIds: fileIds || [], // OPTIMIZATION: Track which files are new uploads (skip cache check)
+    isVoiceTask // Add voice task indicator to context
   }
 
   console.log('[Agent Router] Context created with files:', context.files ? context.files.length : 0);
@@ -327,57 +328,29 @@ router.post("/run", async (ctx, next) => {
     } else {
       const q = (question || '').trim();
 
-      // VOICE FAST-PATH:
-      // For voice turns, avoid the extra LLM intent-detection roundtrip for short/trivial utterances.
-      // This is a major source of perceived latency (intent-detection happens before chat streaming).
-      // We only fall back to LLM intent detection when the text looks like a command/task request.
+      // VOICE FAST-PATH (hard default):
+      // For voice turns, avoid *all* intent-detection LLM calls.
+      // Default to chat unless the text clearly looks like a command/task.
       if (isVoiceTask) {
         const looksLikeCommand = /\b(make|create|generate|build|write|run|execute|open|edit|fix|debug|refactor|install|deploy|docker|git|commit|push|pull|search|download|summarize|analyze|plan)\b/i.test(q);
-        const isVeryShort = q.length > 0 && q.length <= 24;
-        const wordCount = q.length ? q.split(/\s+/).filter(Boolean).length : 0;
+        const simpleFileGenPattern = /^(can\s+(you\s+)?(please\s+)?(make|create|generate|write|draft)\s+(a\s+)?(word|docx?|document)\s+(about|on|regarding)?\s*(.+))$/i;
+        const isDocCommand = simpleFileGenPattern.test(q);
 
-        if ((isVeryShort || wordCount <= 3) && !looksLikeCommand) {
+        if (looksLikeCommand || isDocCommand) {
+          intent = 'agent';
+          console.log(`[AUTO Mode] 🎤 Voice command detected, skipping intent detection -> agent (q="${q}")`);
+        } else {
           intent = 'chat';
-          console.log(`[AUTO Mode] 🎤 Voice fast-path: skipping intent detection (q="${q}") -> chat`);
+          console.log(`[AUTO Mode] 🎤 Voice default, skipping intent detection -> chat (q="${q}")`);
         }
       }
 
       if (intent) {
-        // intent already decided by voice fast-path
+        // intent decided by voice fast-path
       } else {
-      // 自动选择：使用意图识别
-      console.log('自动模式：开始意图识别...');
-      try {
-        // Voice fast-path: skip intent detection for simple deterministic commands
-        if (isVoiceTask && mode === 'auto') {
-          // Match both direct and polite requests for documents
-          const simpleFileGenPattern = /^(can\s+(you\s+)?(please\s+)?(make|create|generate|write|draft)\s+(a\s+)?(word|docx?|document)\s+(about|on|regarding)?\s*(.+))$/i;
-          const match = question.trim().match(simpleFileGenPattern);
-          
-          if (match) {
-            console.log('[Voice Fast-Path] Document command detected (polite pattern), skipping intent detection -> agent mode');
-            intent = 'agent';
-          } else {
-            // For voice chat mode, use minimal context to reduce latency
-            // Only fetch last few messages instead of full history
-            const contextMessages = await MessageTable.findAll({
-              where: {
-                conversation_id: conversation_id
-              },
-              order: [['create_at', 'DESC']],
-              limit: 3  // Only get last 3 messages for voice chat
-            })
-
-            // 构建上下文格式
-            const messagesContext = contextMessages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            })).reverse(); // Reverse to maintain chronological order
-
-            intent = await detect_intent(question, conversation_id, messagesContext);
-            console.log('意图识别结果:', intent);
-          }
-        } else {
+        // 自动选择：使用意图识别
+        console.log('自动模式：开始意图识别...');
+        try {
           // 获取上下文消息用于意图识别
           // For short questions, we can use minimal context to reduce latency
           let contextMessages = [];
@@ -407,18 +380,17 @@ router.post("/run", async (ctx, next) => {
 
           intent = await detect_intent(question, conversation_id, messagesContext);
           console.log('意图识别结果:', intent);
-        }
-        
-        // 将结果标准化为小写
-        intent = intent.toLowerCase().trim();
-        if (intent !== 'chat' && intent !== 'agent') {
-          console.log('意图识别结果异常，默认使用agent模式');
+
+          // 将结果标准化为小写
+          intent = intent.toLowerCase().trim();
+          if (intent !== 'chat' && intent !== 'agent') {
+            console.log('意图识别结果异常，默认使用agent模式');
+            intent = 'agent';
+          }
+        } catch (error) {
+          console.error('意图识别失败，默认使用agent模式:', error);
           intent = 'agent';
         }
-      } catch (error) {
-        console.error('意图识别失败，默认使用agent模式:', error);
-        intent = 'agent';
-      }
       }
     }
   } else {
@@ -1017,19 +989,27 @@ async function runChatPhase(params, isTwinsMode) {
 
   // 准备上下文消息
   let messagesContext = []
-  const messages = await MessageTable.findAll({
-    where: {
-      conversation_id: conversation_id
-    },
-    order: [['create_at', 'ASC']]
-  })
-
-  if (messages.length > 0) {
-    if (isVoiceTask) {
-      // Voice turns should feel "live". Keep a short recent window to reduce prompt size/latency.
-      const recent = messages.slice(-12);
-      messagesContext = getMessagesContextByTime(recent)
-    } else {
+  let messages = []
+  if (isVoiceTask) {
+    messages = await MessageTable.findAll({
+      where: {
+        conversation_id: conversation_id
+      },
+      order: [['create_at', 'DESC']],
+      limit: 5
+    })
+    messages = messages.reverse()
+    if (messages.length > 0) {
+      messagesContext = getMessagesContextByTime(messages)
+    }
+  } else {
+    messages = await MessageTable.findAll({
+      where: {
+        conversation_id: conversation_id
+      },
+      order: [['create_at', 'ASC']]
+    })
+    if (messages.length > 0) {
       messagesContext = getMessagesContextByTime(messages)
     }
   }
@@ -1061,7 +1041,14 @@ async function runChatPhase(params, isTwinsMode) {
     role: 'system',
     content: `${MASTER_SYSTEM_PROMPT}
 
-${profileContext || ''}${fileContext}`
+${profileContext || ''}${fileContext}${isVoiceTask ? `
+
+VOICE MODE GUIDELINES:
+- Keep responses concise and conversational (1-2 sentences maximum)
+- Avoid announcing headers or sections like "Let me break this down:"
+- Speak naturally, not like reading a document
+- Ask only one question at a time if you need clarification
+- Focus on the most important point first` : ''}`
   }
   messagesContext.unshift(sysPromptMessage)
 
@@ -1121,8 +1108,8 @@ ${profileContext || ''}${fileContext}`
   }
 
   if (isVoiceTask) {
-    // Keep voice responses concise to reduce generation time.
-    options.max_tokens = 220
+    // Keep voice responses concise to reduce generation time and improve conversational flow.
+    options.max_tokens = 150
   }
 
   chat_completion(question, options, conversation_id, onTokenStream).then(async (content) => {

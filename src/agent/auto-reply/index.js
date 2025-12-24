@@ -16,6 +16,21 @@ const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysi
 const { getProfile } = require('@src/services/userProfile');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
+  // Skip auto-reply for voice requests (500-1000ms savings)
+  // Check for voice task context in messages array (passed from AgenticAgent)
+  const isVoiceRequest = messages && messages.some(msg => 
+    msg.content && typeof msg.content === 'string' && 
+    (msg.content.includes('x-voice-task: true') || msg.content.includes('voice-task: true'))
+  );
+  
+  // Also check for voice indicator in goal (fallback)
+  const hasVoiceIndicator = goal && typeof goal === 'string' && goal.includes('[VOICE_TASK]');
+  
+  if (isVoiceRequest || hasVoiceIndicator) {
+    console.log('[AutoReply] ⚡ Skipping for voice request (500-1000ms saved)');
+    return null; // Go straight to agent
+  }
+  
   console.log('[AutoReply] Called with files:', files ? files.length : 0);
   console.log('[AutoReply] Newly uploaded files:', newlyUploadedFileIds ? newlyUploadedFileIds.length : 0);
   console.log('[AutoReply] Files array:', JSON.stringify(files.map(f => ({ name: f.name || f.filename, filepath: f.filepath })), null, 2));

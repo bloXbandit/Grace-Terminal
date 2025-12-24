@@ -40,9 +40,21 @@ app.use(async (ctx, next) => {
 });
 
 // middlewares
-app.use(koaBody({
+const koaBodyMiddleware = koaBody({
   multipart: true
-}))
+})
+
+app.use(async (ctx, next) => {
+  if (ctx.method === 'POST' && ctx.path === '/api/voice/transcribe') {
+    const tParseStart = Date.now()
+    return koaBodyMiddleware(ctx, async () => {
+      ctx.state.voiceMultipartParseMs = Date.now() - tParseStart
+      return next()
+    })
+  }
+
+  return koaBodyMiddleware(ctx, next)
+})
 app.use(json())
 app.use(logger())
 
