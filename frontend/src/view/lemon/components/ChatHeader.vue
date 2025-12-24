@@ -241,9 +241,18 @@ let bargeInGraceTimeout = null
 let vadRafId = null
 let voiceSessionStartedAt = null
 let lastPlaybackEndedAt = 0
- 
+
+// STT anti-loop state
+let suspiciousTranscriptCount = 0
+let lastSuspiciousResetTime = 0
+
+// Voice STT hard-gating constants
+const MIN_STT_DURATION_MS = 300 // Minimum recording duration before calling STT
+const POST_TTS_STT_BLOCK_MS = 1000 // Block STT for this long after TTS playback ends
+const TWO_HIT_THRESHOLD = 2 // Require this many non-suspicious recordings after phantom
+
 // VAD settings
-const SILENCE_THRESHOLD = 0.01 // Energy threshold for silence
+const SILENCE_THRESHOLD = 0.021 // Energy threshold for silence
 const SILENCE_DURATION = 250 // ms of silence before auto-stop (reduced from 1200ms)
 const MIN_RECORDING_DURATION = 400 // ms minimum recording (reduced for short utterances)
 const MAX_RECORDING_DURATION = 9000 // ms max recording before forced processing
@@ -398,6 +407,10 @@ const endVoiceSession = () => {
     abortController.abort()
     abortController = null
   }
+  
+  // Reset STT anti-loop state
+  suspiciousTranscriptCount = 0
+  lastSuspiciousResetTime = 0
   
   // Clear streaming state
   audioQueue = []
@@ -716,6 +729,62 @@ const processAudio = async (audioBlob) => {
       return
     }
     
+    // Pre-STT hard-gating checks to reduce phantom API calls
+    const recordingDuration = Date.now() - recordingStartTime
+    const timeSincePlayback = Date.now() - lastPlaybackEndedAt
+    const isWithinPostPlaybackBlock = timeSincePlayback < POST_TTS_STT_BLOCK_MS
+    const isTooShort = recordingDuration < MIN_STT_DURATION_MS
+    
+    // Skip STT if recording is too short
+    if (isTooShort) {
+      console.log(`[Voice] STT skipped: reason=too_short duration=${recordingDuration}ms size=${processedBlob.size}`)
+      // Continue listening
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+    
+    // Skip STT if within post-playback block window
+    if (isWithinPostPlaybackBlock) {
+      console.log(`[Voice] STT skipped: reason=post_playback_block time_since_playback=${timeSincePlayback}ms`)
+      // Continue listening
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+    
+    // Two-hit anti-loop: check if we're in a suspicious streak
+    const now = Date.now()
+    if (suspiciousTranscriptCount >= TWO_HIT_THRESHOLD && (now - lastSuspiciousResetTime) < 10000) {
+      console.log(`[Voice] STT skipped: reason=anti_loop suspicious_count=${suspiciousTranscriptCount}`)
+      // Require one more non-suspicious recording before allowing STT
+      // Continue listening without calling STT
+      voiceState.value = 'LISTENING'
+      emitter.emit('voice-status', { status: 'listening' })
+      audioChunks = []
+      recordingStartTime = Date.now()
+      
+      if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(100)
+        startVADLoop()
+      }
+      return
+    }
+    
     // Step 1: Transcribe audio
     const formData = new FormData()
     // Use processed blob if it's different (smaller), otherwise use original
@@ -751,15 +820,20 @@ const processAudio = async (audioBlob) => {
 
     // Spurious transcript gate: discard tiny/commonly-spurious transcripts that occur
     // right after TTS playback or from tiny audio blobs (prevents phantom "you" loops)
-    const timeSincePlayback = Date.now() - lastPlaybackEndedAt
     const isRightAfterPlayback = timeSincePlayback < 2000 // 2 seconds
     const isTinyBlob = processedBlob.size < 5000 // Very small blob
     const isShortText = trimmedText.length > 0 && trimmedText.length <= 12
     const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao|thanks for watching)/i.test(trimmedText)
     
-    if ((isRightAfterPlayback || isTinyBlob) && (isShortText || looksSpurious)) {
+    // Track suspicious transcripts for two-hit anti-loop
+    const isSuspicious = (isRightAfterPlayback || isTinyBlob) && (isShortText || looksSpurious)
+    
+    if (isSuspicious) {
+      suspiciousTranscriptCount++
+      lastSuspiciousResetTime = now
       console.log('[Voice] Discarding spurious STT transcript (likely phantom):', trimmedText, 
-                  'Blob size:', processedBlob.size, 'Time since playback:', timeSincePlayback + 'ms')
+                  'Blob size:', processedBlob.size, 'Time since playback:', timeSincePlayback + 'ms',
+                  'Suspicious count:', suspiciousTranscriptCount)
       voiceState.value = 'LISTENING'
       emitter.emit('voice-status', { status: 'listening' })
       audioChunks = []
@@ -769,6 +843,12 @@ const processAudio = async (audioBlob) => {
         startVADLoop()
       }
       return
+    } else {
+      // Reset suspicious counter on good transcript
+      if (suspiciousTranscriptCount > 0) {
+        console.log(`[Voice] Resetting suspicious transcript count: ${suspiciousTranscriptCount} -> 0`)
+        suspiciousTranscriptCount = 0
+      }
     }
 
     // Warm-up guard: discard tiny/commonly-spurious early transcripts right after session start
