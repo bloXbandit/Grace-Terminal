@@ -98,12 +98,72 @@ router.post("/run", async (ctx, next) => {
   const body = request.body || {};
   let { question, conversation_id, fileIds, mcp_server_ids = [], model_id, agent_id, mode = 'auto' } = body;
   const isVoiceTask = ctx.headers['x-voice-task'] === 'true';
+  const hadConversationId = !!conversation_id;
+  const tReqStart = Date.now();
+
+  // VOICE LATENCY OPT: initialize SSE stream + flush headers immediately.
+  // This reduces the time-to-headers observed by the frontend, while the server
+  // continues doing DB/context work before the first token.
+  body.responseType = body.responseType || "sse";
+  const { stream, onTokenStream } = handleStream(body.responseType, response);
+  if (!conversation_id) {
+    conversation_id = uuid.v4();
+  }
+  if (isVoiceTask) {
+    // Koa buffers the response until the middleware returns. For voice, we want
+    // the browser to receive SSE headers immediately, so we bypass Koa's response
+    // handling and write to the raw Node response.
+    ctx.respond = false;
+    try {
+      ctx.res.statusCode = 200;
+      ctx.res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      ctx.res.setHeader('Cache-Control', 'no-cache');
+      ctx.res.setHeader('Connection', 'keep-alive');
+      // This header can help reduce buffering in some proxies.
+      ctx.res.setHeader('X-Accel-Buffering', 'no');
+    } catch (e) {}
+    try {
+      stream.pipe(ctx.res);
+    } catch (e) {}
+
+    console.log('[VoicePerf] stream_init_ms=', Date.now() - tReqStart, 'conversation_id=', conversation_id);
+    try {
+      if (ctx.res && typeof ctx.res.flushHeaders === 'function') {
+        ctx.res.flushHeaders();
+      }
+    } catch (e) {}
+    try {
+      // SSE comment/ping frame to force headers over the wire.
+      ctx.res.write(':\n\n');
+    } catch (e) {}
+  }
 
   // Get default model if not provided
   if (!model_id) {
     const DefaultModelSetting = require('@src/models/DefaultModelSetting');
     const defaultSetting = await DefaultModelSetting.findOne({ where: { setting_type: 'assistant' } });
     model_id = defaultSetting?.model_id || 22; // Fallback to GPT-5 Pro (model 22)
+  }
+
+  // If client did not provide a conversation_id, we must create a new conversation
+  // BEFORE attempting updates/streaming persistence.
+  const userId = ctx.state.user?.id || 1;
+  const existingConversation = await Conversation.findOne({ where: { conversation_id } });
+  if (!existingConversation) {
+    const title = 'Conversation_' + conversation_id.slice(0, 6);
+    await Conversation.create({
+      conversation_id: conversation_id,
+      content: question,
+      title: title,
+      status: 'running',
+      modeType: 'task',
+      user_id: userId,
+      model_id: model_id
+    });
+  }
+
+  if (isVoiceTask) {
+    console.log('[VoicePerf] conversation_ready_ms=', Date.now() - tReqStart);
   }
 
   await Conversation.update({ model_id, status: "running" }, { where: { conversation_id } })
@@ -179,7 +239,8 @@ router.post("/run", async (ctx, next) => {
   
   // STEP 2: Load ALL files for this conversation (for agent context)
   // This gives agent persistent file access across all messages
-  if (conversation_id) {
+  const hasNewUploads = Array.isArray(fileIds) && fileIds.length > 0;
+  if (conversation_id && (!isVoiceTask || hasNewUploads)) {
     files = await File.findAll({
       where: { conversation_id: conversation_id },
       order: [['create_at', 'DESC']] // Newest first
@@ -188,24 +249,15 @@ router.post("/run", async (ctx, next) => {
     console.log('[Agent Router] Files:', files.map(f => ({ id: f.id, name: f.name, url: f.url })));
   } else {
     files = [];
-    console.log('[Agent Router] No conversation_id yet, no files loaded');
+    if (!conversation_id) {
+      console.log('[Agent Router] No conversation_id yet, no files loaded');
+    } else {
+      console.log('[Agent Router] Voice turn without new uploads - skipping conversation file load');
+    }
   }
-  if (!conversation_id) {
-    conversation_id = uuid.v4();
-    const title = 'Conversation_' + conversation_id.slice(0, 6);
-    const newConversation = await Conversation.create({
-      conversation_id: conversation_id,
-      content: question,
-      title: title,
-      status: 'running',
-      modeType: 'task',
-      user_id: ctx.state.user.id,
-      model_id: model_id  // Use the default model we just looked up
-    });
+  if (!body.conversation_id) {
+    body.conversation_id = conversation_id;
   }
-
-  body.responseType = body.responseType || "sse";
-  const { stream, onTokenStream } = handleStream(body.responseType, response);
 
   // Check for mode commands (/dev, /normal, /dev status)
   const modeCommandResult = await modeCommandHandler.handleCommand(question, conversation_id);
@@ -223,7 +275,9 @@ router.post("/run", async (ctx, next) => {
     await new Promise(resolve => setImmediate(resolve));
     await Message.saveToDB(msg, conversation_id);
     await Conversation.update({ status: 'done' }, { where: { conversation_id } });
-    ctx.body = stream;
+    if (!isVoiceTask) {
+      ctx.body = stream;
+    }
     stream.end();
     return;
   }
@@ -266,12 +320,20 @@ router.post("/run", async (ctx, next) => {
   console.log('[Agent Router] newFiles created:', newFiles.length);
   console.log('[Agent Router] newFiles:', JSON.stringify(newFiles.map(f => ({ name: f.name, filepath: f.filepath })), null, 2));
 
+  if (isVoiceTask) {
+    console.log('[VoicePerf] files_ready_ms=', Date.now() - tReqStart, 'newFiles=', newFiles.length);
+  }
+
   // Get user profile context (non-invasive)
   let profileContext = '';
   try {
     profileContext = await getProfileContext(ctx.state.user.id);
   } catch (err) {
     console.error('Profile context error (non-critical):', err);
+  }
+
+  if (isVoiceTask) {
+    console.log('[VoicePerf] profile_context_ms=', Date.now() - tReqStart, 'len=', (profileContext || '').length);
   }
 
   // Initialize Multi-Agent Coordinator (ONLY for Task/Auto modes)
@@ -292,6 +354,10 @@ router.post("/run", async (ctx, next) => {
     files: newFiles, // CRITICAL: Add uploaded files for file analyzer access
     newlyUploadedFileIds: fileIds || [], // OPTIMIZATION: Track which files are new uploads (skip cache check)
     isVoiceTask // Add voice task indicator to context
+  }
+
+  if (isVoiceTask) {
+    console.log('[VoicePerf] context_ready_ms=', Date.now() - tReqStart);
   }
 
   console.log('[Agent Router] Context created with files:', context.files ? context.files.length : 0);
@@ -610,8 +676,10 @@ router.post("/run", async (ctx, next) => {
     });
   }
 
-  ctx.body = stream;
-  ctx.status = 200;
+  if (!isVoiceTask) {
+    ctx.body = stream;
+    ctx.status = 200;
+  }
 });
 
 /**
@@ -1044,11 +1112,15 @@ async function runChatPhase(params, isTwinsMode) {
 ${profileContext || ''}${fileContext}${isVoiceTask ? `
 
 VOICE MODE GUIDELINES:
-- Keep responses concise and conversational (1-2 sentences maximum)
-- Avoid announcing headers or sections like "Let me break this down:"
-- Speak naturally, not like reading a document
-- Ask only one question at a time if you need clarification
-- Focus on the most important point first` : ''}`
+-- Keep responses concise and conversational (1-2 sentences maximum)
+-- Avoid announcing headers or sections like "Let me break this down:"
+-- Speak naturally, not like reading a document
+-- Paraphrase; do not repeat or enumerate long capability lists
+-- If asked "what can you do?", answer with a short friendly summary + ask what they want to do next
+-- Do not read markdown syntax or headings; respond as normal speech
+Ask only one question at a time if you need clarification
+- Focus on the most important point first`
+ : ''}`
   }
   messagesContext.unshift(sysPromptMessage)
 

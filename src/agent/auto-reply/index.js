@@ -16,19 +16,26 @@ const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysi
 const { getProfile } = require('@src/services/userProfile');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
-  // Skip auto-reply for voice requests (500-1000ms savings)
-  // Check for voice task context in messages array (passed from AgenticAgent)
+  // Detect voice requests for optimized routing
   const isVoiceRequest = messages && messages.some(msg => 
     msg.content && typeof msg.content === 'string' && 
     (msg.content.includes('x-voice-task: true') || msg.content.includes('voice-task: true'))
   );
-  
-  // Also check for voice indicator in goal (fallback)
   const hasVoiceIndicator = goal && typeof goal === 'string' && goal.includes('[VOICE_TASK]');
+  const isVoice = isVoiceRequest || hasVoiceIndicator;
   
-  if (isVoiceRequest || hasVoiceIndicator) {
-    console.log('[AutoReply] ⚡ Skipping for voice request (500-1000ms saved)');
+  // CRITICAL: Check for Ultra doc pattern BEFORE skipping for voice
+  // Voice requests for doc generation should still use Ultra fast-path
+  const simpleFileGenPatternForVoice = goal && goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  
+  if (isVoice && !simpleFileGenPatternForVoice) {
+    // Voice request but NOT a doc generation request - skip auto_reply for speed
+    console.log('[AutoReply] ⚡ Skipping for voice request (not doc gen) - 500-1000ms saved');
     return null; // Go straight to agent
+  }
+  
+  if (isVoice && simpleFileGenPatternForVoice) {
+    console.log('[AutoReply] 🎤 Voice doc request detected - using Ultra fast-path');
   }
   
   console.log('[AutoReply] Called with files:', files ? files.length : 0);

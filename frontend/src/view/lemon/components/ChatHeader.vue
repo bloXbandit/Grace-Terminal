@@ -242,9 +242,16 @@ let vadRafId = null
 let voiceSessionStartedAt = null
 let lastPlaybackEndedAt = 0
 
+// VAD snapshot for STT gating / self-heal
+let vadLastSpeechAt = null
+let vadPeakEnergy = 0
+let vadDynamicSpeechThreshold = 0
+
 // STT anti-loop state
 let suspiciousTranscriptCount = 0
 let lastSuspiciousResetTime = 0
+let emptyTranscriptCount = 0
+let lastEmptyTranscriptAt = 0
 
 // Voice STT hard-gating constants
 const MIN_STT_DURATION_MS = 300 // Minimum recording duration before calling STT
@@ -264,6 +271,10 @@ const FIRST_CHUNK_MIN_CHARS = 36
 // Speech-start gating settings
 const SPEECH_THRESHOLD = 0.02 // Energy threshold to detect speech start
 const SPEECH_CONSECUTIVE_FRAMES = 3 // Number of consecutive frames above threshold to trigger speech start
+
+// Adaptive speech-start tuning (helps when mic gain/noise floor varies)
+const SPEECH_THRESHOLD_FLOOR = 0.012 // Never require more than this minimum energy to consider speech
+const SPEECH_START_MARGIN = 0.018 // How far above noise floor we require before declaring speech
 
 // Audio optimization settings
 const TARGET_SAMPLE_RATE = 16000 // Target sample rate for STT
@@ -411,6 +422,13 @@ const endVoiceSession = () => {
   // Reset STT anti-loop state
   suspiciousTranscriptCount = 0
   lastSuspiciousResetTime = 0
+  emptyTranscriptCount = 0
+  lastEmptyTranscriptAt = 0
+
+  // Reset VAD snapshot
+  vadLastSpeechAt = null
+  vadPeakEnergy = 0
+  vadDynamicSpeechThreshold = 0
   
   // Clear streaming state
   audioQueue = []
@@ -449,6 +467,43 @@ const endVoiceSession = () => {
   microphone = null
   audioChunks = []
   recordingStartTime = null
+}
+
+// Soft-restart the recorder/VAD without re-requesting microphone permissions.
+// This is used to self-heal when we get stuck in repeated empty STT results.
+const softRestartListening = (reason) => {
+  if (!isVoiceSessionActive.value) return
+  if (!micStream || !mediaRecorder) return
+  if (voiceState.value !== 'LISTENING') return
+
+  console.log('[Voice] Soft restart listening:', reason)
+
+  try {
+    if (vadRafId) {
+      cancelAnimationFrame(vadRafId)
+      vadRafId = null
+    }
+  } catch (e) {}
+
+  try {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop()
+    }
+  } catch (e) {}
+
+  audioChunks = []
+  recordingStartTime = Date.now()
+
+  setTimeout(() => {
+    if (!isVoiceSessionActive.value) return
+    if (!mediaRecorder || mediaRecorder.state !== 'inactive') return
+    try {
+      mediaRecorder.start(100)
+      startVADLoop()
+    } catch (e) {
+      console.error('[Voice] Soft restart failed:', e)
+    }
+  }, 120)
 }
 
 const startVADLoop = () => {
@@ -520,10 +575,22 @@ const startVADLoop = () => {
     
     // Calculate dynamic silence threshold
     const dynamicSilenceThreshold = Math.min(Math.max(noiseFloor + SILENCE_MARGIN, MIN_SILENCE_THRESHOLD), MAX_SILENCE_THRESHOLD)
+
+    // Calculate dynamic speech threshold for speech-start gating.
+    // This prevents cases where a low-gain mic requires yelling, while still rejecting room noise.
+    const dynamicSpeechThreshold = Math.max(
+      SPEECH_THRESHOLD_FLOOR,
+      Math.min(SPEECH_THRESHOLD, noiseFloor + SPEECH_START_MARGIN)
+    )
+
+    // Update shared VAD snapshot for STT gating / self-heal
+    vadDynamicSpeechThreshold = dynamicSpeechThreshold
+    vadPeakEnergy = peakEnergy
+    vadLastSpeechAt = lastSpeechAt
     
     // Speech-start gating: only consider silence after we've detected speech
     if (!speechStarted) {
-      if (normalizedEnergy > SPEECH_THRESHOLD) {
+      if (normalizedEnergy > dynamicSpeechThreshold) {
         consecutiveSpeechFrames++
         if (consecutiveSpeechFrames >= SPEECH_CONSECUTIVE_FRAMES) {
           speechStarted = true
@@ -549,7 +616,7 @@ const startVADLoop = () => {
         const energyVariance = Math.max(...energyHistory) - Math.min(...energyHistory)
         if (energyVariance < 0.02) { // Very flat energy
           // Only trigger stuck detector if we've had real speech energy
-          if (peakEnergy > (SPEECH_THRESHOLD * 1.5)) {
+          if (peakEnergy > (dynamicSpeechThreshold * 2) && lastSpeechAt) {
             console.log('[Voice] Stuck detector triggered: flat energy for extended period')
             stopRecordingForProcessing()
             return
@@ -581,7 +648,7 @@ const startVADLoop = () => {
         
         // For short, clear utterances, allow earlier stop
         const isShortClearUtterance = recordingDuration < SHORT_UTTERANCE_DURATION && 
-                                    peakEnergy > (SPEECH_THRESHOLD * 2) && 
+                                    peakEnergy > (dynamicSpeechThreshold * 2) && 
                                     energyHistory.length >= 5 &&
                                     energyHistory.slice(-3).every(e => e < dynamicSilenceThreshold)
         
@@ -599,7 +666,7 @@ const startVADLoop = () => {
           
           // For short, clear utterances, allow earlier stop
           const isShortClearUtterance = recordingDuration < SHORT_UTTERANCE_DURATION && 
-                                      peakEnergy > (SPEECH_THRESHOLD * 2) && 
+                                      peakEnergy > (dynamicSpeechThreshold * 2) && 
                                       energyHistory.length >= 5 &&
                                       energyHistory.slice(-3).every(e => e < dynamicSilenceThreshold)
           
@@ -632,6 +699,27 @@ const startVADLoop = () => {
 
 const stopRecordingForProcessing = () => {
   if (voiceState.value !== 'LISTENING') return
+
+  // If we never saw real speech energy, don't send to STT.
+  // This prevents long empty-transcript streaks when VAD false-triggers.
+  const hasRealSpeech = !!vadLastSpeechAt && (vadPeakEnergy > (Math.max(vadDynamicSpeechThreshold || 0, SPEECH_THRESHOLD_FLOOR) * 2))
+  if (!hasRealSpeech) {
+    console.log('[Voice] No real speech detected in segment, rearming without STT')
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop()
+    }
+    audioChunks = []
+    recordingStartTime = Date.now()
+    if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+      setTimeout(() => {
+        if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive' && voiceState.value === 'LISTENING') {
+          mediaRecorder.start(100)
+          startVADLoop()
+        }
+      }, 120)
+    }
+    return
+  }
   
   console.log('[Voice] Silence detected, stopping recording')
   voiceState.value = 'PROCESSING'
@@ -730,10 +818,13 @@ const processAudio = async (audioBlob) => {
     }
     
     // Pre-STT hard-gating checks to reduce phantom API calls
+    if (!recordingStartTime) {
+      recordingStartTime = Date.now()
+    }
     const recordingDuration = Date.now() - recordingStartTime
     const timeSincePlayback = Date.now() - lastPlaybackEndedAt
     const isWithinPostPlaybackBlock = timeSincePlayback < POST_TTS_STT_BLOCK_MS
-    const isTooShort = recordingDuration < MIN_STT_DURATION_MS
+    const isTooShort = recordingDuration < MIN_STT_DURATION_MS && processedBlob.size < 40000
     
     // Skip STT if recording is too short
     if (isTooShort) {
@@ -822,11 +913,10 @@ const processAudio = async (audioBlob) => {
     // right after TTS playback or from tiny audio blobs (prevents phantom "you" loops)
     const isRightAfterPlayback = timeSincePlayback < 2000 // 2 seconds
     const isTinyBlob = processedBlob.size < 5000 // Very small blob
-    const isShortText = trimmedText.length > 0 && trimmedText.length <= 12
-    const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao|thanks for watching)/i.test(trimmedText)
+    const looksSpurious = /^(you|your|u|yeah|yes|no|ok|okay|uh|um|uhh|umm|oh|ah|eh|heh|lol|lmao|lmfao|thanks for watching)$/i.test(trimmedText)
     
     // Track suspicious transcripts for two-hit anti-loop
-    const isSuspicious = (isRightAfterPlayback || isTinyBlob) && (isShortText || looksSpurious)
+    const isSuspicious = (isRightAfterPlayback || isTinyBlob) && looksSpurious
     
     if (isSuspicious) {
       suspiciousTranscriptCount++
@@ -890,8 +980,8 @@ const processAudio = async (audioBlob) => {
     }
 
     // Additional filter for stubborn phantom transcripts
-    if (/^(you|thanks for watching)/i.test(trimmedText) || 
-        (timeSincePlayback < 3000 && /^(u|yeah|yes|no|ok|okay)/i.test(trimmedText))) {
+    if (/^(you|thanks for watching)$/i.test(trimmedText) || 
+        (timeSincePlayback < 3000 && /^(u|yeah|yes|no|ok|okay)$/i.test(trimmedText))) {
       console.log('[Voice] Discarding stubborn phantom STT transcript:', trimmedText,
                   'Time since playback:', timeSincePlayback + 'ms')
       voiceState.value = 'LISTENING'
@@ -909,7 +999,29 @@ const processAudio = async (audioBlob) => {
     emitter.emit('voice-transcription', { text: trimmedText, timestamp: Date.now() })
     
     if (!trimmedText || trimmedText.length === 0) {
-      // Continue listening if no text
+      const now = Date.now()
+      if (!lastEmptyTranscriptAt || (now - lastEmptyTranscriptAt) > 4000) {
+        emptyTranscriptCount = 0
+      }
+      emptyTranscriptCount++
+      lastEmptyTranscriptAt = now
+
+      const backoffMs = emptyTranscriptCount >= 3 ? 2000 : 700
+      console.log(`[Voice] Empty STT transcript, rearming with backoff=${backoffMs}ms count=${emptyTranscriptCount}`)
+
+      // Self-heal: if we get stuck in a long empty-transcript streak, restart recorder/VAD.
+      if (emptyTranscriptCount >= 8) {
+        emptyTranscriptCount = 0
+        lastEmptyTranscriptAt = 0
+        voiceState.value = 'LISTENING'
+        emitter.emit('voice-status', { status: 'listening' })
+        audioChunks = []
+        recordingStartTime = Date.now()
+        softRestartListening('empty_stt_streak')
+        return
+      }
+
+      // Continue listening if no text (with backoff to avoid rapid loops)
       voiceState.value = 'LISTENING'
       emitter.emit('voice-status', { status: 'listening' })
       audioChunks = []
@@ -917,10 +1029,19 @@ const processAudio = async (audioBlob) => {
       
       // Only restart if we still have an active session and mediaRecorder
       if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
-        mediaRecorder.start(100)
-        startVADLoop()
+        setTimeout(() => {
+          if (isVoiceSessionActive.value && mediaRecorder && mediaRecorder.state === 'inactive') {
+            mediaRecorder.start(100)
+            startVADLoop()
+          }
+        }, backoffMs)
       }
       return
+    }
+
+    if (emptyTranscriptCount > 0) {
+      emptyTranscriptCount = 0
+      lastEmptyTranscriptAt = 0
     }
     
     // Create abort controller for this turn
@@ -965,20 +1086,29 @@ const processAudio = async (audioBlob) => {
     const contentType = (agentResponse.headers.get('content-type') || '').toLowerCase()
 
     // Helper to process text chunks for streaming TTS with micro-chunk dispatch
+    let firstTokenWallTime = null
+    const FIRST_CHUNK_MAX_WAIT_MS = 450
+
     const processTokenForTTS = async (textChunk) => {
       sentenceBuffer += textChunk
+
+      if (firstTokenWallTime === null && sentenceBuffer.trim().length > 0) {
+        firstTokenWallTime = Date.now()
+      }
       
       // Micro-chunk dispatch for first audio
       if (firstAudioPending) {
         const trimmed = sentenceBuffer.trim()
-        const minFirstChunkChars = 12
-        const softMaxFirstChunkChars = 18
-        const hardMaxFirstChunkChars = 28
+        const minFirstChunkChars = 22
+        const softMaxFirstChunkChars = 22
+        const hardMaxFirstChunkChars = 44
         const hasMinChars = trimmed.length >= minFirstChunkChars
         const hasSafeBoundary = /([.!?,:;]\s|[\r\n])/.test(sentenceBuffer)
         const hasWordBoundary = /\s/.test(sentenceBuffer) && trimmed.length >= minFirstChunkChars
+
+        const waitedLongEnough = firstTokenWallTime !== null && (Date.now() - firstTokenWallTime) >= FIRST_CHUNK_MAX_WAIT_MS
         
-        if (hasMinChars && (hasSafeBoundary || hasWordBoundary)) {
+        if (hasMinChars && (hasSafeBoundary || hasWordBoundary || waitedLongEnough)) {
           let cutIndex = -1
           let cutIndexSoft = -1
           
@@ -999,15 +1129,38 @@ const processAudio = async (audioBlob) => {
             cutIndex = cutIndexSoft
           }
 
+          // If no good sentence/clause boundary within the soft limit, prefer a clean word boundary
+          // around the target length to avoid clipping the last word.
           if (cutIndex === -1 && trimmed.length >= minFirstChunkChars) {
-            const limited = sentenceBuffer.slice(0, Math.min(sentenceBuffer.length, hardMaxFirstChunkChars))
-            const spaceMatch = limited.lastIndexOf(' ')
-            if (spaceMatch > 0) {
+            const target = Math.min(sentenceBuffer.length, softMaxFirstChunkChars)
+            const slice = sentenceBuffer.slice(0, target)
+            let spaceMatch = slice.lastIndexOf(' ')
+            let attempts = 0
+            while (spaceMatch > 0 && attempts < 6) {
               const end = spaceMatch + 1
               const candidate = sentenceBuffer.slice(0, end).trim()
-              if (candidate.length >= minFirstChunkChars) {
+              if (candidate.length >= minFirstChunkChars && !isDanglingFragment(candidate)) {
                 cutIndex = end
+                break
               }
+              attempts++
+              spaceMatch = slice.lastIndexOf(' ', Math.max(0, spaceMatch - 1))
+            }
+          }
+
+          if (cutIndex === -1 && trimmed.length >= minFirstChunkChars) {
+            const limited = sentenceBuffer.slice(0, Math.min(sentenceBuffer.length, hardMaxFirstChunkChars))
+            let spaceMatch = limited.lastIndexOf(' ')
+            let attempts = 0
+            while (spaceMatch > 0 && attempts < 8) {
+              const end = spaceMatch + 1
+              const candidate = sentenceBuffer.slice(0, end).trim()
+              if (candidate.length >= minFirstChunkChars && !isDanglingFragment(candidate)) {
+                cutIndex = end
+                break
+              }
+              attempts++
+              spaceMatch = limited.lastIndexOf(' ', Math.max(0, spaceMatch - 1))
             }
           }
 
@@ -1047,7 +1200,7 @@ const processAudio = async (audioBlob) => {
       const hasLargeBuffer = trimmed.length >= 80
       const hasSentenceBoundary = /([.!?]+)(\s+|$)/.test(sentenceBuffer)
       const hasClauseBoundary = /([,:;]\s|[\r\n])/.test(sentenceBuffer)
-      const minCoalescedChars = 12  // Don't dispatch tiny chunks after first audio
+      const minCoalescedChars = 20  // Don't dispatch tiny chunks after first audio
       
       if (hasLargeBuffer && (hasSentenceBoundary || hasClauseBoundary)) {
         const match = sentenceBuffer.match(/([.!?,:;]+)(\s+|[\r\n])/)
@@ -1064,6 +1217,11 @@ const processAudio = async (audioBlob) => {
         if (sentence.length > 0) {
           const sanitized = sanitizeSpokenText(sentence)
           if (sanitized) {
+            // Sanitization can shorten text; avoid dispatching tiny chunks.
+            if (sanitized.length < minCoalescedChars) {
+              sentenceBuffer = `${sentence} ${sentenceBuffer}`
+              return
+            }
             console.log(`[Voice] Coalesced chunk dispatch (${sanitized.length} chars)`)
             pendingTtsCount++
             ttsChain = ttsChain
@@ -1085,6 +1243,31 @@ const processAudio = async (audioBlob) => {
       if (/\w+’$/.test(text)) return true
       // Don't dispatch trailing hyphens
       if (text.endsWith('-')) return true
+
+      // Avoid first chunks that end mid-thought without punctuation
+      if (!/[.!?]$/.test(text)) {
+        const lastWord = (text.trim().split(/\s+/).pop() || '').toLowerCase()
+
+        // Avoid tiny word fragments that often happen mid-word in streaming (e.g. 'yo' then later 'u').
+        // Allow a small set of valid short words.
+        if (lastWord.length > 0 && lastWord.length <= 2) {
+          const allowedShort = new Set(['i', 'a', 'an', 'am', 'we', 'he', 'me', 'my', 'no', 'ok', 'to', 'of', 'in', 'on', 'at'])
+          if (!allowedShort.has(lastWord)) return true
+        }
+
+        if ([
+          'what', 'which', 'who', 'when', 'where', 'why', 'how',
+          'that', 'this', 'these', 'those',
+          'to', 'and', 'but', 'or', 'so', 'because',
+          'a', 'an', 'the',
+          'is', 'am', 'are', 'was', 'were', 'be', 'been', 'being',
+          'do', 'does', 'did', 'have', 'has', 'had',
+          'will', 'would', 'can', 'could', 'should', 'may', 'might', 'must',
+          'on', 'in', 'at', 'for', 'with', 'from', 'about', 'regarding'
+        ].includes(lastWord)) {
+          return true
+        }
+      }
       return false
     }
 
@@ -1098,18 +1281,26 @@ const processAudio = async (audioBlob) => {
 
       while (true) {
         const { value, done } = await reader.read()
+
         if (done) {
           // Process any remaining text in buffer as final chunk
           if (sentenceBuffer.trim().length > 0) {
             const sanitized = sanitizeSpokenText(sentenceBuffer)
             if (sanitized) {
-              pendingTtsCount++
-              ttsChain = ttsChain
-                .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
-                .finally(() => {
-                  pendingTtsCount = Math.max(0, pendingTtsCount - 1)
-                  maybeFinishTurn(turnId)
-                })
+              const minCoalescedChars = 12
+              const hasPriorAudio = !firstAudioPending || pendingTtsCount > 0 || audioQueue.length > 0
+              // Avoid choppy tiny tail chunks at end-of-stream when we've already spoken content.
+              if (hasPriorAudio && sanitized.length < minCoalescedChars) {
+                sentenceBuffer = ''
+              } else {
+                pendingTtsCount++
+                ttsChain = ttsChain
+                  .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+                  .finally(() => {
+                    pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                    maybeFinishTurn(turnId)
+                  })
+              }
             }
           }
           agentStreamDone = true
@@ -1422,11 +1613,12 @@ const maybeFinishTurn = (turnId) => {
 }
 
 // Text sanitization to remove protocol markers
-const sanitizeSpokenText = (text) => {
-  if (!text || typeof text !== 'string') return ''
+function sanitizeSpokenText(text) {
+  if (!text) return ''
+  let sanitized = String(text)
   
   // Remove known protocol markers and patterns
-  let sanitized = text
+  sanitized = sanitized
     .replace(/__lemon_out_end__[^]*?__/gi, '') // Remove lemon end markers
     .replace(/event:\s*message/gi, '') // Remove SSE event markers
     .replace(/data:\s*/gi, '') // Remove SSE data markers
@@ -1437,7 +1629,41 @@ const sanitizeSpokenText = (text) => {
     .replace(/\{[^}]*\}/g, '') // Remove JSON objects
     .replace(/^\s*[\d\W]+\s*$/gm, '') // Remove lines with only numbers/symbols
     .replace(/\n{3,}/g, '\n\n') // Reduce multiple newlines
-    .trim();
+    .trim()
+
+  // Strip/normalize markdown so TTS doesn't read formatting ("star star", etc.)
+  sanitized = sanitized
+    .replace(/\*\*(.*?)\*\*/g, '$1') // bold
+    .replace(/\*(.*?)\*/g, '$1') // italics
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1') // inline/code fences fragments
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '') // headings
+    .replace(/^\s*[-*+]\s+/gm, '') // unordered bullets
+    .replace(/^\s*\d+\.\s+/gm, '') // ordered bullets
+    .replace(/\[(.*?)\]\((.*?)\)/g, '$1') // markdown links
+    .replace(/\s*\*\s*/g, ' ') // stray asterisks
+
+  // Remove emojis  // Strip emoji and other symbols that TTS often reads awkwardly.
+  // Keep basic punctuation.
+  sanitized = sanitized
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // flags
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '') // emoji blocks
+    .replace(/[\u{2600}-\u{26FF}]/gu, '') // misc symbols
+    .replace(/[\u{2700}-\u{27BF}]/gu, '') // dingbats
+
+  // Strip common mojibake sequences that show up when UTF-8 emoji bytes are mis-decoded.
+  // Example: "ð" etc.
+  sanitized = sanitized
+    .replace(/[\u00C0-\u00FF]{2,}/g, (m) => {
+      // If it's mostly mojibake markers, drop it.
+      if (/^[\u00C0-\u00FF]+$/.test(m) && /[\u00D0-\u00FF]/.test(m)) return ''
+      return m
+    })
+    .replace(/[ðÐ][\u0080-\u00BF]{1,4}/g, '')
+  sanitized = sanitized
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim()
   
   // If after sanitization we have no meaningful content, return empty
   // Allow short meaningful replies like "Hey." but block pure punctuation/noise.
