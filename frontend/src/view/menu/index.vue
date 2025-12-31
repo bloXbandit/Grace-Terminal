@@ -10,9 +10,9 @@
             <Edit />
             <span class="truncate">New Agent</span>
           </div>
-          <div class="menu-button store-button" :class="{ active: isStorePage }" @click="toStore">
-            <Store />
-            <span class="truncate">Agent Store</span>
+          <div class="menu-button assistant-button" :class="{ active: isAssistantPage }" @click="toAssistant">
+            <AssistantIcon />
+            <span class="truncate">My Assistant</span>
           </div>
         </div>
         <AgentList />
@@ -106,6 +106,16 @@ import Edit from '@/assets/svg/menu-edit.svg'
 import Store from '@/assets/svg/store.svg'
 import Case from '@/assets/svg/case.svg'
 
+// Assistant icon - using a simple inline SVG component
+const AssistantIcon = {
+  template: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 16v-4"/>
+    <path d="M12 8h.01"/>
+    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+  </svg>`
+}
+
 import { useChatStore } from '@/store/modules/chat'
 import { useUserStore } from '@/store/modules/user.js'
 import emitter from '@/utils/emitter'
@@ -158,6 +168,10 @@ const tour = async () => {
 
 // 处理鼠标进入事件
 const handleMouseEnter = () => {
+  if (profileHideTimeout) {
+    clearTimeout(profileHideTimeout)
+    profileHideTimeout = null
+  }
   showProfile.value = true;
   
   // 如果第一步引导正在进行中，关闭它
@@ -168,7 +182,14 @@ const handleMouseEnter = () => {
 
 // 处理鼠标离开事件
 const handleMouseLeave = () => {
-  showProfile.value = false;
+  if (profileHideTimeout) {
+    clearTimeout(profileHideTimeout)
+    profileHideTimeout = null
+  }
+  profileHideTimeout = setTimeout(() => {
+    profileHideTimeout = null
+    showProfile.value = false
+  }, 160)
 }
 
 
@@ -178,7 +199,8 @@ const visible = ref(false)
 const isShowMenu = ref(false)
 const chats = ref([])
 const showProfile = ref(false)
-const isStorePage = ref(false)
+let profileHideTimeout = null
+const isAssistantPage = ref(false)
 const isCollapsed = ref(false)
 
 
@@ -250,12 +272,12 @@ function changeMode(modeType) {
   router.push('/grace')
 }
 
-function toStore() {
+function toAssistant() {
   if (isMobile.value && isShowMenu.value) {
     isShowMenu.value = false
     emitter.emit('mobileMenuStateChange', false)
   }
-  window.open('https://app.lemonai.ai/store', '_blank')
+  router.push('/assistant')
 }
 
 function closeMenu() {

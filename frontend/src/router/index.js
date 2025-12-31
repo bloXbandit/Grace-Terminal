@@ -37,6 +37,12 @@ const routes = [
     name: "demo",
     component: () => import(/* webpackChunkName: "demo" */ "@/view/demo/index.vue"),
     meta: { verify: true }
+  },
+  {
+    path: "/assistant",
+    name: "assistant",
+    component: () => import("@/view/assistant/index.vue"),
+    meta: { verify: true }
   },{
     path: "/pricing",
     name: "pricing",

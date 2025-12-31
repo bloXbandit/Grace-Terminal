@@ -109,8 +109,12 @@ const thinking_local = async (requirement, context = {}) => {
   );
   
   // CRITICAL: For retries/reflection, use code-focused model (GPT-OSS), not reasoning model
-  const isRetryOrReflection = context.retryCount > 0 || 
-    (prompt && /error|failed|traceback|modulenotfound/i.test(prompt));
+  // IMPORTANT: Do NOT infer "retry" from generic words like "error" that may appear in templates.
+  // Only route to GPT-OSS when we have an explicit retry/reflection signal.
+  const hasRetryCount = Number.isInteger(context.retryCount) && context.retryCount > 0;
+  const hasReflection = typeof context.reflection === 'string' && context.reflection.trim().length > 0;
+  const hasLastError = typeof context.lastError === 'string' && context.lastError.trim().length > 0;
+  const isRetryOrReflection = hasRetryCount || hasReflection || hasLastError;
   
   console.log(`[Thinking] Routing decision: retryCount=${context.retryCount}, isRetry=${isRetryOrReflection}, isSimple=${isSimpleExecution}`);
   

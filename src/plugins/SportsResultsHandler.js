@@ -1,12 +1,37 @@
 const { format } = require('date-fns');
 
+const DEFAULT_TZ = 'America/New_York';
+
+function getTzYMD(date, timeZone = DEFAULT_TZ) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const map = {};
+  for (const p of parts) {
+    if (p.type !== 'literal') map[p.type] = p.value;
+  }
+  return { year: Number(map.year), month: Number(map.month), day: Number(map.day) };
+}
+
+function tzNowDateUTC(timeZone = DEFAULT_TZ) {
+  const { year, month, day } = getTzYMD(new Date(), timeZone);
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+}
+
+function formatInTz(date, timeZone = DEFAULT_TZ, options = {}) {
+  return new Intl.DateTimeFormat('en-US', { timeZone, ...options }).format(date);
+}
+
 /**
  * Specialized handler for sports results that ensures clean, direct display in chat
  */
 class SportsResultsHandler {
   constructor() {
     this.sportsPatterns = {
-      nfl: /\b(nfl|football|nfl scores?|nfl results?|nfl games?|monday night football|sunday night football|thursday night football|mnf|snf|tnf)\b/i,
+      nfl: /\b(nfl|nfl scores?|nfl results?|nfl games?|football scores?|football results?|football games?|monday night football|sunday night football|thursday night football|mnf|snf|tnf)\b/i,
       nba: /\b(nba|basketball|nba scores?|nba results?|nba games?)\b/i,
       mlb: /\b(mlb|baseball|mlb scores?|mlb results?|mlb games?)\b/i,
       nhl: /\b(nhl|hockey|nhl scores?|nhl results?|nhl games?)\b/i
@@ -30,10 +55,11 @@ class SportsResultsHandler {
       dateRange: null
     };
     
-    const now = new Date();
+    // Use America/New_York calendar date for all relative computations
+    const now = tzNowDateUTC(DEFAULT_TZ);
     
     // Detect temporal phrases and compute target dates
-    if (/\b(last|yesterday|previous|that passed|that just passed|earlier this week|was)\b/.test(lower)) {
+    if (/\b(last|yesterday|previous|past|this past|that passed|that just passed|earlier this week|was)\b/.test(lower)) {
       intent.wantPast = true;
     }
     if (/\b(next week|next game|upcoming|tonight|later today)\b/.test(lower)) {
@@ -75,28 +101,28 @@ class SportsResultsHandler {
     if (/\blast week\b/.test(lower)) {
       const startOfLastWeek = this.getStartOfWeek(now, -1); // Last week
       const endOfLastWeek = new Date(startOfLastWeek);
-      endOfLastWeek.setDate(endOfLastWeek.getDate() + 6); // Sunday
+      endOfLastWeek.setUTCDate(endOfLastWeek.getUTCDate() + 6); // Sunday
       intent.dateRange = { start: startOfLastWeek, end: endOfLastWeek };
     } else if (/\bthis week\b/.test(lower)) {
       const startOfThisWeek = this.getStartOfWeek(now, 0); // This week
       const endOfThisWeek = new Date(startOfThisWeek);
-      endOfThisWeek.setDate(endOfThisWeek.getDate() + 6); // Sunday
+      endOfThisWeek.setUTCDate(endOfThisWeek.getUTCDate() + 6); // Sunday
       intent.dateRange = { start: startOfThisWeek, end: endOfThisWeek };
     } else if (/\bnext week\b/.test(lower)) {
       const startOfNextWeek = this.getStartOfWeek(now, 1); // Next week
       const endOfNextWeek = new Date(startOfNextWeek);
-      endOfNextWeek.setDate(endOfNextWeek.getDate() + 6); // Sunday
+      endOfNextWeek.setUTCDate(endOfNextWeek.getUTCDate() + 6); // Sunday
       intent.dateRange = { start: startOfNextWeek, end: endOfNextWeek };
     }
     
     // Simple relative days
     if (/\byesterday\b/.test(lower)) {
       const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       intent.targetDate = yesterday;
     } else if (/\btomorrow\b/.test(lower)) {
       const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
       intent.targetDate = tomorrow;
     } else if (/\btoday\b|\btonight\b/.test(lower)) {
       intent.targetDate = new Date(now);
@@ -108,26 +134,26 @@ class SportsResultsHandler {
   // Helper: Get last occurrence of a weekday (0=Sunday, 1=Monday, etc.)
   getLastWeekday(date, weekday) {
     const result = new Date(date);
-    const currentDay = result.getDay();
+    const currentDay = result.getUTCDay();
     const daysAgo = (currentDay - weekday + 7) % 7 || 7; // If same day, go back 7 days
-    result.setDate(result.getDate() - daysAgo);
+    result.setUTCDate(result.getUTCDate() - daysAgo);
     return result;
   }
   
   // Helper: Get this week's occurrence of a weekday
   getThisWeekday(date, weekday) {
     const result = new Date(date);
-    const currentDay = result.getDay();
+    const currentDay = result.getUTCDay();
     const daysDiff = weekday - currentDay;
-    result.setDate(result.getDate() + daysDiff);
+    result.setUTCDate(result.getUTCDate() + daysDiff);
     return result;
   }
   
   // Helper: Get start of week (Sunday) with week offset
   getStartOfWeek(date, weekOffset = 0) {
     const result = new Date(date);
-    const currentDay = result.getDay();
-    result.setDate(result.getDate() - currentDay + (weekOffset * 7));
+    const currentDay = result.getUTCDay();
+    result.setUTCDate(result.getUTCDate() - currentDay + (weekOffset * 7));
     return result;
   }
 
@@ -135,20 +161,58 @@ class SportsResultsHandler {
    * Check if a query is a sports results request
    */
   isSportsQuery(query) {
-    return Object.keys(this.sportsPatterns).some(sport => 
-      this.sportsPatterns[sport].test(query)
-    );
+    const q = query || '';
+    const lower = q.toLowerCase();
+
+    // Guardrail: avoid hijacking creative / asset-generation prompts that mention sports words.
+    // Example false positive: "Generate a hero image ... football field grid ... PNG".
+    const looksCreative = /\b(generate|create|design|make)\b/i.test(q) && /\b(image|png|jpg|jpeg|svg|gif|video|logo|banner|hero|mockup|ui|website|landing)\b/i.test(q);
+    const looksLikeScoreQuestion = /\b(score|scores|result|results|final|game|games|standings)\b/i.test(q);
+    if (looksCreative && !looksLikeScoreQuestion) {
+      return false;
+    }
+
+    // Primary keyword patterns
+    if (Object.keys(this.sportsPatterns).some(sport => this.sportsPatterns[sport].test(q))) {
+      return true;
+    }
+
+    // Secondary: NFL matchup/score queries that omit "NFL" but mention teams.
+    // Examples:
+    // - "what were the scores of the eagles vs bills game"
+    // - "eagles bills score"
+    // Secondary: NFL matchup/score queries that omit "NFL" but mention teams.
+    const mentionsScorey = /\b(score|scores|result|results|final|game)\b/i.test(q);
+    const mentionsVs = /\bvs\b|\bv\.?\b|\bagainst\b/i.test(q);
+    if (mentionsScorey && (mentionsVs || /\b(played|play)\b/i.test(q))) {
+      const hits = this.nflTeams ? this.nflTeams.filter(t => lower.includes(t)).length : 0;
+      if (hits >= 1) return true;
+    }
+
+    return false;
   }
 
   /**
    * Get the sport type from the query
    */
   getSportType(query) {
+    const q = query || '';
+    const lower = q.toLowerCase();
+
     for (const [sport, pattern] of Object.entries(this.sportsPatterns)) {
       if (pattern.test(query)) {
         return sport;
       }
     }
+
+    // Heuristic mapping for NFL matchup queries
+    const looksLikeScoreQuestion = /\b(score|scores|result|results|final|game)\b/i.test(q);
+    const mentionsVs = /\bvs\b|\bv\.?\b|\bagainst\b/i.test(q);
+    if (looksLikeScoreQuestion && (mentionsVs || /\b(played|play)\b/i.test(q))) {
+      const hits = this.nflTeams ? this.nflTeams.filter(t => lower.includes(t)).length : 0;
+      if (hits >= 1) return 'nfl';
+    }
+
     return null;
   }
 
@@ -270,9 +334,9 @@ class SportsResultsHandler {
         
         // Parse game date
         const gameDate = event.date ? new Date(event.date) : new Date();
-        const dayOfWeek = format(gameDate, 'EEE');
-        const monthDay = format(gameDate, 'M/d');
-        const fullDate = format(gameDate, 'EEEE, MMMM d, yyyy');
+        const dayOfWeek = formatInTz(gameDate, DEFAULT_TZ, { weekday: 'short' });
+        const monthDay = formatInTz(gameDate, DEFAULT_TZ, { month: 'numeric', day: 'numeric' });
+        const fullDate = formatInTz(gameDate, DEFAULT_TZ, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         
         games.push({
           home_team: homeTeam.team.displayName,

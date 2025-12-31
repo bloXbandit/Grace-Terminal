@@ -109,6 +109,48 @@ router.post("/run", async (ctx, next) => {
   if (!conversation_id) {
     conversation_id = uuid.v4();
   }
+
+  // STREAMING UX: Emit a provisional mode immediately so the frontend creates the assistant bubble
+  // before any DB/profile/intent/LLM work happens. We'll send the final mode again once intent is known.
+  // Default provisional mode to 'chat' (safe for casual turns). If the user forces agent mode, reflect that.
+  try {
+    if (mode !== 'twins') {
+      const provisionalMode = (String(mode || '').toLowerCase() === 'agent') ? 'agent' : 'chat';
+      const provisionalModeNotification = `__lemon_mode__${JSON.stringify({ mode: provisionalMode, provisional: true })}\n\n`;
+      onTokenStream(provisionalModeNotification);
+    }
+  } catch (e) {
+    // best-effort
+  }
+
+  // STREAMING UX: for non-voice SSE requests, attach the stream to the response immediately
+  // so the frontend receives early progress tokens (otherwise Koa may buffer until the handler returns).
+  if (!isVoiceTask) {
+    ctx.body = stream;
+    ctx.status = 200;
+  }
+
+  // STREAMING UX: Only send an immediate progress message for task-like turns.
+  // For casual chat ("hey"), avoid noisy status text.
+  try {
+    const q = (question || '').trim();
+    const forcedAgent = String(mode || '').toLowerCase() === 'agent';
+    const hasUploads = Array.isArray(fileIds) && fileIds.length > 0;
+    const looksLikeTask = /\b(make|create|generate|build|write|draft|run|execute|open|edit|fix|debug|refactor|install|deploy|docker|git|commit|push|pull|search|download|summarize|analyze|plan)\b/i.test(q);
+    const shouldShowProgress = forcedAgent || hasUploads || looksLikeTask;
+    if (shouldShowProgress) {
+      const startMsg = Message.format({
+        status: 'running',
+        action_type: 'progress',
+        content: 'on it!, working on this now',
+        task_id: conversation_id
+      });
+      onTokenStream(startMsg);
+    }
+  } catch (e) {
+    // best-effort
+  }
+
   if (isVoiceTask) {
     // Koa buffers the response until the middleware returns. For voice, we want
     // the browser to receive SSE headers immediately, so we bypass Koa's response
@@ -369,21 +411,6 @@ router.post("/run", async (ctx, next) => {
     })));
   }
 
-  // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
-  if (!isVoiceTask) {
-    try {
-      await Promise.race([
-        extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
-        )
-      ]);
-      console.log('[Task] Profile extraction completed successfully');
-    } catch (err) {
-      console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
-    }
-  }
-
   // 根据mode参数确定处理方式
   let intent;
   if (mode === 'auto') {
@@ -475,6 +502,22 @@ router.post("/run", async (ctx, next) => {
   const modeNotification = `__lemon_mode__${JSON.stringify({ mode: intent })}\n\n`;
   onTokenStream(modeNotification);
 
+  // PERF: Only run synchronous profile extraction for agent-mode tasks.
+  // Casual chat should not pay the 0-2s latency cost.
+  if (!isVoiceTask && intent === 'agent') {
+    try {
+      await Promise.race([
+        extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+        )
+      ]);
+      console.log('[Task] Profile extraction completed successfully');
+    } catch (err) {
+      console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
+    }
+  }
+
   // 提取公共参数
   const commonParams = {
     conversation_id, question, newFiles, feedbackOptions,
@@ -494,17 +537,20 @@ router.post("/run", async (ctx, next) => {
     // Agent mode: Process feedback first, then execute task
     console.log('[Agent Mode] Using agent mode for task execution');
 
-    // Agent mode: Synchronously process feedback (ensure memory is updated before task execution)
+    // Agent mode: Process feedback asynchronously (do NOT block task execution)
     if (ENABLE_KNOWLEDGE === "ON") {
-      try {
-        await handle_feedback(feedbackOptions);
-        // 更新条目数
-        const knowledge_count = await Knowledge.count({ where: { agent_id: agent_id } });
-        await Agent.update({ knowledge_count }, { where: { id: agent_id } });
-        console.log('[Agent Mode] Feedback processing complete, starting task execution');
-      } catch (error) {
-        console.error('[Agent Mode] Feedback processing failed:', error);
-      }
+      setTimeout(() => {
+        Promise.resolve()
+          .then(async () => {
+            await handle_feedback(feedbackOptions);
+            const knowledge_count = await Knowledge.count({ where: { agent_id: agent_id } });
+            await Agent.update({ knowledge_count }, { where: { id: agent_id } });
+            console.log('[Agent Mode] Feedback processing complete (async)');
+          })
+          .catch((error) => {
+            console.error('[Agent Mode] Feedback processing failed (async):', error);
+          });
+      }, 0);
     }
 
     // Agent mode stream close handling (includes screenshot logic)

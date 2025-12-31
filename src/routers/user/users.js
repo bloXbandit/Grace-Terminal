@@ -4,7 +4,7 @@ const forwardRequest = require('@src/utils/sub_server_forward_request')
 
 router.get("/userinfo",async (ctx) => {
   // DEV MODE: Return user from auth middleware directly
-  if (ctx.state.user && !ctx.headers.authorization) {
+  if (ctx.state.user) {
     ctx.body = {
       user: ctx.state.user,
       token: 'dev-token',

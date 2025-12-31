@@ -60,7 +60,8 @@ class FileRegistry {
         fsFiles = allFiles.filter(f => 
           f.endsWith('.docx') || f.endsWith('.xlsx') || f.endsWith('.pdf') ||
           f.endsWith('.pptx') || f.endsWith('.csv') || f.endsWith('.txt') ||
-          f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')
+          f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') ||
+          f.endsWith('.mp4')
         );
       } catch (error) {
         // Directory doesn't exist yet - that's okay

@@ -756,6 +756,14 @@ Be direct. Return ONLY Python markdown blocks. No XML, no <finish>, no .py files
     systemPrompt: 'You are a skilled roleplayer. Embody characters authentically, maintain consistency, and create engaging dialogue. Be immersive and character-driven.'
   },
 
+  // Photo/Video Generation
+  photo_video_generation: {
+    primary: 'openrouter/openai/sora-2-pro',
+    fallback: 'openrouter/google/gemini-3-pro',
+    description: 'Generate and edit photos and videos using Sora-2-Pro and Gemini-3-Pro',
+    systemPrompt: 'You are a creative media specialist with access to Sora-2-Pro for video generation and Gemini-3-Pro for photo editing. Create stunning visual content based on user requests. For video generation, use Sora-2-Pro to create high-quality videos from text descriptions. For photo editing, use Gemini-3-Pro to enhance, modify, or create images. Focus on delivering visually impressive results that match the user\'s creative vision. Use appropriate tools to save and deliver the final media files.'
+  },
+
   // General conversation (Grace's default) - ENHANCED WITH TOOL ACCESS
   general_chat: {
     primary: 'openrouter/openai/gpt-5-pro',

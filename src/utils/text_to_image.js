@@ -64,7 +64,6 @@ class TextToImageService {
                 throw new Error(`API Error ${error.response.status}: ${errorMessage}`);
             } else if (error.request) {
                 // 请求发送但没有收到响应
-                console.error(`Request config:`, error.config);
                 console.error(`Request code:`, error.code);
                 
                 // 检查是否是网络连接问题

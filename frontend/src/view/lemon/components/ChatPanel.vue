@@ -38,6 +38,7 @@ const route = useRoute();
 import Welcome from "./Welcome.vue";
 import AgentWelcome from "./AgentWelcome.vue";
 import chat from "@/utils/chat";
+import chatService from "@/services/chat";
 const { chatInfo, mode } = storeToRefs(chatStore);
 
 // 编辑器 coding 模式
@@ -76,6 +77,17 @@ watch(
 
     if (id) {
       chatStore.conversationId = id;
+      try {
+        const convo = await chatService.get(id);
+        if (convo) {
+          chatStore.chat = convo;
+          if (convo.model_id) {
+            chatStore.model_id = convo.model_id;
+          }
+        }
+      } catch (e) {
+        console.error('[ChatPanel] Failed to load conversation details', e);
+      }
       await chatStore.initConversation(id);
     } else {
       chatStore.resetCurrentConversation();

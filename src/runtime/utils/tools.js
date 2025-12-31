@@ -43,6 +43,12 @@ const write_code = async (action, uuid, user_id) => {
     // For Python scripts, return minimal message that won't show in UI
     successMessage = ''; // Empty message = won't appear in UI stream
   }
+
+  // Also suppress internal workflow artifacts that are not useful to show in chat UI
+  // (e.g. todo lists / scratch files written during execution).
+  if (/\/todo\.md$/i.test(filepath)) {
+    successMessage = '';
+  }
   
   return {
     uuid,

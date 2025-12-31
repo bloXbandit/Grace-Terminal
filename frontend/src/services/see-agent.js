@@ -166,6 +166,26 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         }
 
         if (currentMode === 'chat') {
+            // Allow structured progress messages to render during chat mode.
+            // Without this, the UI appears idle until the first model text token arrives.
+            if (ch && ch.startsWith('{') && ch.endsWith('}')) {
+                try {
+                    const obj = JSON.parse(ch);
+                    if (obj && obj.meta && obj.meta.action_type === 'progress' && typeof obj.content === 'string') {
+                        const messages = chatStore.messages;
+                        if (messages.length > 0) {
+                            const lastMessage = messages[messages.length - 1];
+                            if (lastMessage && lastMessage.role === 'assistant' && lastMessage.is_temp === true) {
+                                lastMessage.content = obj.content;
+                                return;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // fall through to normal token append
+                }
+            }
+
             updateChatToken(ch, conversationId);
         } else if (currentMode === 'agent') {
             if (ch && ch.startsWith('{') && ch.endsWith('}')) {

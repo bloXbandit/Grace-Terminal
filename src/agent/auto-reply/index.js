@@ -14,6 +14,8 @@ const { analyzeFiles, generateContextSummary, generateUserFriendlySummary } = re
 const { sportsHandler } = require('@src/plugins/SportsResultsHandler');
 const { getCachedAnalysis, setCachedAnalysis } = require('@src/utils/fileAnalysisCache');
 const { getProfile } = require('@src/services/userProfile');
+const fs = require('fs');
+const path = require('path');
 
 const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], profileContext = '', onTokenStream = null, files = [], newlyUploadedFileIds = []) => {
   // Detect voice requests for optimized routing
@@ -48,13 +50,166 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     // This was a mode command, return the result directly
     return modeCommandResult.message;
   }
+
+  // EARLY DETECTION: Media generation/edit requests
+  // This runs before specialist routing so we can deterministically engage the media fast-path.
+  let mediaEarlyTrigger = false;
+  try {
+    const q = String(goal || '');
+    const hasAction = /\b(create|make|generate|produce|render|edit|enhance)\b/i.test(q);
+    const hasMedia = /\b(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)\b/i.test(q);
+    mediaEarlyTrigger = hasAction && hasMedia;
+    if (mediaEarlyTrigger) {
+      console.log('[AutoReply] Media early trigger: true');
+    }
+  } catch (e) {
+    // best-effort
+  }
+
+  // FAST-PATH: Lightweight follow-up turns (avoid accidental agentic planning/execution)
+  // Example: "can we start working on this?" should stay conversational unless user asks for a concrete action.
+  try {
+    const q = (goal || '').trim();
+    const isShort = q.length > 0 && q.length <= 80;
+    const looksLikeFollowup = /\b(can\s+we|let'?s|ok|okay|cool|sounds\s+good|great)\b/i.test(q);
+    const startsWorking = /\bstart\s+working\b/i.test(q);
+    const explicitAction = /\b(analy[sz]e|scan|review|summari[sz]e|map|implement|change|fix|refactor|debug|run\s+tests?|test|build|install|deploy|create|generate|write|edit)\b/i.test(q);
+    if (isShort && looksLikeFollowup && startsWorking && !explicitAction) {
+      return {
+        handledBySpecialist: true,
+        specialist: 'followup_light',
+        taskType: 'general_chat',
+        result: `Yes. What do you want to do first?\n\nPick one:\n- Map the repo structure (entry points + key modules)\n- Fix a specific bug (tell me the error + file/line if you have it)\n- Implement a feature (describe the change + where it should live)\n- Run tests / validate build (tell me which target you want)\n\nIf you tell me your first step, I’ll proceed without doing extra work.`
+      };
+    }
+  } catch (e) {
+    // best-effort
+  }
+
+  // FAST-PATH: GitHub deploy key setup (one active repo at a time, sandbox-lifetime)
+  // IMPORTANT: Keep this trigger narrow to avoid hijacking general chat where “git/github/repo” is mentioned.
+  // We only enter this flow when:
+  // - the prompt contains a repo reference (URL/slug), OR
+  // - the prompt explicitly asks to setup/generate a deploy key to connect/clone/download/access.
+  let repoSlug = null;
+  let markerRepoSlug = null;
+  let markerRepoSsh = null;
+  try {
+    // Best-effort: if we previously set an active repo marker in the shared workspace, reuse it.
+    // This avoids asking the user for the repo again in the same conversation.
+    const uuidPrefix = String(conversation_id || '').slice(0, 6);
+    const markerCandidatePaths = [
+      // Conversation-scoped marker (preferred)
+      path.join(process.cwd(), 'workspace', `Conversation_${uuidPrefix}`, '.grace_active_git_repo.json'),
+      // Workspace root marker (fallback)
+      path.join(process.cwd(), 'workspace', '.grace_active_git_repo.json')
+    ];
+
+    for (const candidatePath of markerCandidatePaths) {
+      if (!candidatePath || !fs.existsSync(candidatePath)) continue;
+      const raw = fs.readFileSync(candidatePath, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        if (!markerRepoSlug && typeof parsed.repo === 'string' && parsed.repo.includes('/')) {
+          markerRepoSlug = parsed.repo;
+        }
+        if (!markerRepoSsh && typeof parsed.repo_ssh === 'string' && parsed.repo_ssh.includes('git@github.com:')) {
+          markerRepoSsh = parsed.repo_ssh;
+        }
+      }
+      if (markerRepoSlug || markerRepoSsh) break;
+    }
+  } catch (e) {
+    // ignore
+  }
+  try {
+    const httpsMatch = goal && goal.match(/https?:\/\/github\.com\/(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)(?:\.git)?/i);
+    const sshMatch = goal && goal.match(/git@github\.com:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)(?:\.git)?/i);
+    const slugMatch = goal && goal.match(/\b(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)\b/);
+    if (httpsMatch && httpsMatch.groups) {
+      repoSlug = `${httpsMatch.groups.owner}/${httpsMatch.groups.repo}`;
+    } else if (sshMatch && sshMatch.groups) {
+      repoSlug = `${sshMatch.groups.owner}/${sshMatch.groups.repo}`;
+    } else if (slugMatch && slugMatch.groups) {
+      repoSlug = `${slugMatch.groups.owner}/${slugMatch.groups.repo}`;
+    }
+  } catch (e) {
+    repoSlug = null;
+  }
+
+  const wantsExplicitGitConnect = goal && /\b(clone|download|connect|pull|push|commit)\b/i.test(goal);
+  const asksForDeployKeySetup = goal && /\b(deploy\s*key|ssh\s*key)\b/i.test(goal) && /\b(setup|set\s*up|generate|create|add|use|connect|clone|download|access)\b/i.test(goal);
+  const inferredRepoSlug = repoSlug || markerRepoSlug;
+  const gitIntent = Boolean((inferredRepoSlug && (wantsExplicitGitConnect || /\b(git|github|repo|repository)\b/i.test(goal))) || asksForDeployKeySetup);
+
+  if (gitIntent) {
+    const wantsPush = /\b(push|commit\s+and\s+push|push\s+to|merge\s+to\s+master|merge\s+to\s+main)\b/i.test(goal);
+
+    if (!inferredRepoSlug) {
+      // User is asking about deploy keys in general, or about connecting, but didn’t provide a repo.
+      // Keep response minimal and request the repo explicitly.
+      return {
+        handledBySpecialist: true,
+        specialist: 'git_deploy_key',
+        taskType: 'general_chat',
+        result: `Send me link to the GitHub repo you want me to connect to in one of these formats:\n\n- https://github.com/OWNER/REPO\n- git@github.com:OWNER/REPO.git\n- OWNER/REPO\n\nIf you want me to push commits, say \"push\" explicitly so I can ask you to enable write access on the deploy key.`
+      };
+    }
+
+    const repoSshUrl = markerRepoSsh || `git@github.com:${inferredRepoSlug}.git`;
+    const keyPath = `/root/.ssh/grace_deploy_key`;
+    const markerPath = `/workspace/.grace_active_git_repo.json`;
+
+    // If the user says they've added the deploy key, attempt a deterministic clone.
+    // Avoid ssh-agent and fragile nested quoting; verify access via git ls-remote.
+    const userSaysDone = /\b(done|added|installed)\b/i.test(goal);
+    const wantsCloneOrDownload = /\b(clone|download|connect)\b/i.test(goal);
+    if (userSaysDone && (wantsCloneOrDownload || /\bclone\b/i.test(goal))) {
+      const safeRepoDir = inferredRepoSlug.replace(/[^A-Za-z0-9_.-]+/g, '__');
+      const destDir = `/workspace/repos/${safeRepoDir}`;
+      const actionXML = `<actions>
+<terminal_run>
+  <command>bash</command>
+  <args>-lc "set -euo pipefail; if [ ! -f '${keyPath}' ]; then echo 'ERROR: Deploy key not found at ${keyPath}. The sandbox may have restarted; please request a new deploy key.' >&2; exit 1; fi; mkdir -p /root/.ssh /workspace/repos; chmod 700 /root/.ssh; touch /root/.ssh/known_hosts; chmod 600 /root/.ssh/known_hosts; ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null || true; export GIT_SSH_COMMAND='ssh -i ${keyPath} -o IdentitiesOnly=yes -o UserKnownHostsFile=/root/.ssh/known_hosts -o StrictHostKeyChecking=yes'; echo '--- VERIFY ACCESS (git ls-remote) ---'; git ls-remote '${repoSshUrl}' HEAD >/dev/null; echo 'OK: access verified.'; echo '--- CLONE ---'; rm -rf '${destDir}'; git clone '${repoSshUrl}' '${destDir}'; echo '--- LATEST COMMIT ---'; git -C '${destDir}' --no-pager log -1 --oneline;"</args>
+</terminal_run>
+</actions>`;
+
+      return {
+        needsExecution: true,
+        specialistResponse: null,
+        specialist: 'git_deploy_key',
+        taskType: 'git_deploy_key',
+        skipPlanning: true,
+        directExecution: true,
+        preGeneratedAction: actionXML
+      };
+    }
+
+    const actionXML = `<actions>
+<terminal_run>
+  <command>bash</command>
+  <args>-lc "set -euo pipefail; mkdir -p /root/.ssh /workspace; chmod 700 /root/.ssh; touch /root/.ssh/known_hosts; chmod 600 /root/.ssh/known_hosts; ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null || true; if [ ! -f '${keyPath}' ]; then ssh-keygen -q -t ed25519 -f '${keyPath}' -N '' -C 'grace-deploy-key' >/dev/null 2>&1; chmod 600 '${keyPath}'; chmod 644 '${keyPath}.pub'; fi; printf '{\\"repo\\":\\"${inferredRepoSlug}\\",\\"repo_ssh\\":\\"${repoSshUrl}\\",\\"key_path\\":\\"${keyPath}\\",\\"write_requested\\":${wantsPush ? 'true' : 'false'}}' > '${markerPath}'; chmod 600 '${markerPath}'; echo '--- DEPLOY KEY (public) ---'; cat '${keyPath}.pub'; echo; echo '--- NEXT STEP ---'; echo '1) GitHub repo ${inferredRepoSlug} → Settings → Deploy keys → Add deploy key'; echo '2) Paste the public key above'; echo '${wantsPush ? '3) Enable Allow write access (only because you asked to push)' : '3) Leave write access OFF unless you later ask me to push'}'; echo '4) Reply \"done\" once added'; echo 'SSH URL I will use: ${repoSshUrl}';"</args>
+</terminal_run>
+</actions>`;
+
+    return {
+      needsExecution: true,
+      specialistResponse: null,
+      specialist: 'git_deploy_key',
+      taskType: 'git_deploy_key',
+      skipPlanning: true,
+      directExecution: true,
+      preGeneratedAction: actionXML
+    };
+  }
   
   // FAST-PATH: Sports scores queries (instant response, no planning, no XML tags)
   if (sportsHandler.isSportsQuery(goal)) {
-    console.log('[AutoReply] ⚡ Fast-path: Sports query detected');
+    console.log('[AutoReply] ⚡ Fast-path: Sports query detected', { conversation_id });
     try {
       const response = await sportsHandler.handleSportsQuery(goal);
       if (response) {
+        console.log('[AutoReply] ✅ Sports handler handled query', { conversation_id });
         return {
           handledBySpecialist: true,
           specialist: 'sports_handler',
@@ -103,6 +258,180 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       taskType: 'general_chat',
       result: response
     };
+  }
+  
+  // FAST-PATH: Photo/Video generation (instant response, no planning)
+  // Catches: "create a video", "generate a photo", "make an image", etc.
+  const mediaFastPathHeuristic = (() => {
+    const q = String(goal || '');
+    // Require BOTH an action verb and a media noun to avoid hijacking general chat.
+    const hasAction = /\b(create|make|generate|produce|render|edit|enhance)\b/i.test(q);
+    const hasMedia = /\b(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)\b/i.test(q);
+    return mediaEarlyTrigger || (hasAction && hasMedia);
+  })();
+
+  const photoVideoPattern = mediaFastPathHeuristic
+    ? [goal]
+    : goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|produce|render|edit|enhance)(?:(?:\s+(?!a\b|an\b|the\b|me\b|some\b|new\b|\d+\b)\w+)){0,3}\s+)?(a |an |the |me |some )?(?:new )?(?:(?:\d+\s*(?:seconds?|secs?|s|minutes?|mins?|m)\s+)?(?:\w+\s+){0,3})?(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:photo|image|video|movie|film|clip|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  try {
+    console.log('[AutoReply] Media fast-path check:', {
+      mediaFastPathHeuristic,
+      regexMatched: !mediaFastPathHeuristic ? !!photoVideoPattern : null,
+      preview: String(goal || '').slice(0, 120)
+    });
+  } catch (e) {
+    // best-effort
+  }
+  if (photoVideoPattern) {
+    console.log('[AutoReply] ⚡⚡ Photo/Video Fast-path: Photo/Video generation detected');
+    console.log('[AutoReply] Pattern matched:', photoVideoPattern[0]);
+    
+    // Extract file type
+    const matchedText = photoVideoPattern[0] ? photoVideoPattern[0].toLowerCase() : '';
+    const fileTypeGroup = photoVideoPattern[3] ? photoVideoPattern[3].toLowerCase() : '';
+    const fileType = fileTypeGroup || matchedText;
+    const isVideo = fileType.includes('video') || fileType.includes('movie') || fileType.includes('film') || fileType.includes('clip') || fileType.includes('animation') || fileType.includes('footage');
+    const isPhoto = !isVideo && (fileType.includes('photo') || fileType.includes('image') || fileType.includes('picture') || fileType.includes('snapshot') || fileType.includes('portrait') || fileType.includes('landscape'));
+    
+    // Extract raw title from request
+    const titleMatch = goal.match(/(?:titled|called|named)\s+["']?([^"']+?)["']?(?:\s+with|\s+about|\s+on|\s+for|$)/i) ||
+                       goal.match(/(?:about|on|regarding|concerning|re)\s+([^.!?]+?)(?:\s+with|\s+and|$)/i) ||
+                       goal.match(/(?:make|create|generate|produce|render)\s+(?:a|an|the|me)?\s*(?:photo|image|video|movie|film)?\s*(?:about\s+)?([^.!?]+?)$/i);
+    let rawTitle = titleMatch ? titleMatch[1].trim() : goal.trim();
+    
+    // Normalize title
+    const normalizeTitle = (input) => {
+      if (!input) return { title: 'Media', topics: ['Media'] };
+      let t = input.trim();
+      t = t.replace(/^(about|on|regarding|concerning)\s+/i, '');
+      t = t.replace(/^[.!?]+$/g, '');
+      if (!t) return { title: 'Media', topics: ['Media'] };
+      const parts = t
+        .split(/\s+and\s+|,|\&/i)
+        .map(p => p.trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      const capWords = (s) => s.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      const topics = (parts.length ? parts : [t]).map(capWords);
+      const title = topics.join(' and ');
+      return { title, topics };
+    };
+    
+    const { title, topics } = normalizeTitle(rawTitle);
+    
+    // Determine if this is a video or photo request based on content
+    const lowerGoal = goal.toLowerCase();
+    const hasVideoKeywords = /video|movie|film|clip|animation|footage|sora/.test(lowerGoal);
+    const hasPhotoKeywords = /photo|image|picture|snapshot|portrait|landscape|gemini/.test(lowerGoal);
+    
+    const isVideoRequest = isVideo || (hasVideoKeywords && !hasPhotoKeywords);
+    const isPhotoRequest = isPhoto || (hasPhotoKeywords && !hasVideoKeywords);
+    
+    console.log('[AutoReply] Media type detected:', isVideoRequest ? 'VIDEO' : isPhotoRequest ? 'PHOTO' : 'UNKNOWN');
+
+    if (isVideoRequest) {
+      // VIDEO: Generate and save an MP4 into the conversation workspace, then register it so UI can preview.
+      try {
+        console.log('[AutoReply] 🎬 Video fast-path: starting generation');
+        const TextToVideoService = require('@src/utils/text_to_video');
+        const FileRegistry = require('@src/context/FileRegistry');
+        const path = require('path');
+        const fs = require('fs').promises;
+
+        const registry = new FileRegistry(conversation_id, user_id);
+        await registry.ensureDir();
+
+        const videoService = new TextToVideoService();
+
+        console.log('[AutoReply] 🎬 Video fast-path: calling OpenAI videos API (sora-2-pro) - may take 2-5 min');
+        const gen = await videoService.generateVideo(goal, {
+          model: 'sora-2-pro',
+          maxWaitMs: 5 * 60 * 1000, // 5 minutes - Sora takes 2-5 min typically
+          pollIntervalMs: 3000
+        });
+
+        const bytes = gen?.data?.bytes;
+        if (!bytes || !(bytes instanceof Buffer) || bytes.length === 0) {
+          throw new Error('Video generation returned no bytes');
+        }
+
+        const safeBase = (title || 'video').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'video';
+        const outName = `${safeBase}_${Date.now()}.mp4`;
+        const outPath = path.join(registry.getConversationDir(), outName);
+
+        await fs.writeFile(outPath, bytes);
+        await registry.register(outPath, outName);
+
+        console.log('[AutoReply] 🎬 Video fast-path: saved file', { outName, outPath });
+
+        return {
+          handledBySpecialist: true,
+          specialist: 'photo_video_generation',
+          taskType: 'general_chat',
+          result: `✅ Created ${outName}`,
+          files: [{ name: outName, path: outPath, type: 'video/mp4' }]
+        };
+      } catch (e) {
+        console.error('[AutoReply] Video generation fast-path failed:', e?.message || e);
+        if (e && e.stack) {
+          console.error('[AutoReply] Video generation fast-path stack:', e.stack);
+        }
+        return null;
+      }
+    }
+
+    // PHOTO: Generate and save a PNG into the conversation workspace, then register it so UI can preview.
+    try {
+      const TextToImageService = require('@src/utils/text_to_image');
+      const FileRegistry = require('@src/context/FileRegistry');
+      const path = require('path');
+      const fs = require('fs').promises;
+
+      const registry = new FileRegistry(conversation_id, user_id);
+      await registry.ensureDir();
+
+      const imageService = new TextToImageService();
+
+      // Use the full goal as prompt to preserve instructions (style, composition, etc.)
+      const gen = await imageService.generateImage(goal, {
+        quality: 'high',
+        enhancePrompt: true
+      });
+
+      const dataUrl = gen?.data?.imageUrl;
+      if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+        throw new Error('Image generation returned no data URL');
+      }
+
+      const commaIdx = dataUrl.indexOf(',');
+      if (commaIdx === -1) {
+        throw new Error('Invalid data URL from image generation');
+      }
+
+      const meta = dataUrl.slice(0, commaIdx);
+      const b64 = dataUrl.slice(commaIdx + 1);
+      const mimeMatch = meta.match(/^data:([^;]+);base64$/i);
+      const mime = mimeMatch && mimeMatch[1] ? mimeMatch[1].toLowerCase() : 'image/png';
+      const ext = mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : 'png';
+
+      const safeBase = (title || 'image').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'image';
+      const outName = `${safeBase}_${Date.now()}.${ext}`;
+      const outPath = path.join(registry.getConversationDir(), outName);
+
+      await fs.writeFile(outPath, Buffer.from(b64, 'base64'));
+      await registry.register(outPath, outName);
+
+      return {
+        handledBySpecialist: true,
+        specialist: 'photo_video_generation',
+        taskType: 'general_chat',
+        result: `✅ Created ${outName}`,
+        files: [{ name: outName, filepath: outPath, type: mime }]
+      };
+    } catch (e) {
+      console.error('[AutoReply] Photo generation fast-path failed:', e?.message || e);
+      return null;
+    }
   }
   
   // FILE UPLOAD DETECTION: Analyze uploaded files if present

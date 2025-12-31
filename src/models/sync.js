@@ -19,6 +19,7 @@ const Knowledge = require('./Knowledge');
 const User = require('./User');
 const UserProfile = require('./UserProfile');
 const RoutingPreference = require('./RoutingPreference');
+const UserMemory = require('./UserMemory');
 
 // SEAL Framework Models
 const TaskExecution = require('./TaskExecution');
@@ -35,7 +36,12 @@ const tableSync = async () => {
   await SearchProviderTable.sync({ alter: true });
   await UserProviderConfigTable.sync({ alter: true });
   await UserSearchSettingTable.sync({ alter: true });
-  await LLMLogs.sync({ alter: true });
+  try {
+    await LLMLogs.sync({ alter: true });
+  } catch (e) {
+    console.error('[sync:tableSync] LLMLogs alter sync failed; falling back to safe sync()', e);
+    await LLMLogs.sync();
+  }
   await Task.sync({ alter: true });
   await Message.sync({ alter: true });
   await McpServer.sync({ alter: true });
@@ -45,6 +51,7 @@ const tableSync = async () => {
   await User.sync({ alter: true });
   await UserProfile.sync({ alter: true });
   await RoutingPreference.sync({ alter: true });
+  await UserMemory.sync({ alter: true });
   
   // SEAL Framework Tables
   await TaskExecution.sync({ alter: true });
@@ -56,7 +63,16 @@ const tableSync = async () => {
 const dataSync = async () => {
   const count = await Platform.count();
   if (count === 0) {
-    const defaultData = require('../../public/default_data/default_platform.json');
+    let defaultData = [];
+    try {
+      defaultData = require('../../public/default_data/default_platform.json');
+    } catch (e) {
+      try {
+        defaultData = require('../../workspace/Grace-Terminal/public/default_data/default_platform.json');
+      } catch (e2) {
+        defaultData = [];
+      }
+    }
     for (const item of defaultData) {
       // Use ENV API key if JSON has empty key
       let apiKey = item.api_key;
@@ -70,36 +86,55 @@ const dataSync = async () => {
         logo_url: item.logo_url,
         source_type: 'system',
         api_key: apiKey,
-        api_url: item.api_url,
+        api_url: item.api_url || item.base_url,
         api_version: item.api_version,
         key_obtain_url: item.key_obtain_url,
-        is_subscribe: item.is_subscribe || false
+        is_subscribe: item.is_subscribe || false,
+        is_enabled: (typeof item.is_enabled === 'boolean')
+          ? item.is_enabled
+          : (typeof item.enabled === 'boolean')
+            ? item.enabled
+            : undefined
       };
       const platform = await Platform.create(platformData);
 
-      const modelsData = item.models.map(model => ({
-        // @ts-ignore
-        platform_id: platform.id,
-        logo_url: model.logo_url,
-        model_id: model.model_id,
-        model_name: model.model_name,
-        group_name: model.group_name,
-        model_types: model.model_types,
-      }));
-      await Model.bulkCreate(modelsData);
+      if (Array.isArray(item.models) && item.models.length > 0) {
+        const modelsData = item.models.map(model => ({
+          // @ts-ignore
+          platform_id: platform.id,
+          logo_url: model.logo_url,
+          model_id: model.model_id,
+          model_name: model.model_name,
+          group_name: model.group_name,
+          model_types: model.model_types,
+        }));
+        await Model.bulkCreate(modelsData);
+      }
     }
   }
 
   const searchProviderCount = await SearchProviderTable.count();
   if (searchProviderCount === 0) {
-    const defaultSearchProviderData = require('../../public/default_data/default_search_provider.json');
-    for (const item of defaultSearchProviderData) {
-      const searchProviderData = {
-        name: item.name,
-        logo_url: item.logo_url,
-        base_config_schema: item.base_config_schema,
-      };
-      await SearchProviderTable.create(searchProviderData);
+    let defaultSearchProviderData = [];
+    try {
+      defaultSearchProviderData = require('../../public/default_data/default_search_provider.json');
+    } catch (e) {
+      try {
+        defaultSearchProviderData = require('../../workspace/Grace-Terminal/public/default_data/default_search_provider.json');
+      } catch (e2) {
+        defaultSearchProviderData = [];
+      }
+    }
+
+    if (Array.isArray(defaultSearchProviderData) && defaultSearchProviderData.length > 0) {
+      for (const item of defaultSearchProviderData) {
+        const searchProviderData = {
+          name: item.name,
+          logo_url: item.logo_url,
+          base_config_schema: item.base_config_schema,
+        };
+        await SearchProviderTable.create(searchProviderData);
+      }
     }
   }
 
@@ -139,7 +174,73 @@ const dataSync = async () => {
 }
 
 const dataUpdate = async () => {
-  const defaultData = require('../../public/default_data/default_platform.json');
+  let defaultData = [];
+  try {
+    defaultData = require('../../public/default_data/default_platform.json');
+  } catch (e) {
+    defaultData = [];
+  }
+
+  // Add newer OpenAI models (idempotent) without requiring seed JSON
+  try {
+    const openaiPlatform = await Platform.findOne({ where: { name: 'OpenAI' } });
+    if (openaiPlatform) {
+      if ((!openaiPlatform.api_key || !String(openaiPlatform.api_key).trim()) && process.env.OPENAI_API_KEY) {
+        await Platform.update({ api_key: process.env.OPENAI_API_KEY }, { where: { id: openaiPlatform.id } });
+        openaiPlatform.api_key = process.env.OPENAI_API_KEY;
+      }
+
+      if (!openaiPlatform.is_enabled && openaiPlatform.api_key && String(openaiPlatform.api_key).trim()) {
+        await Platform.update({ is_enabled: true }, { where: { id: openaiPlatform.id } });
+      }
+
+      const ensureModel = async ({ model_id, model_name, group_name, model_types }) => {
+        const existing = await Model.findOne({ where: { platform_id: openaiPlatform.id, model_id } });
+        if (existing) return;
+        await Model.create({
+          platform_id: openaiPlatform.id,
+          model_id,
+          model_name,
+          group_name,
+          model_types,
+          logo_url: openaiPlatform.logo_url || null,
+        });
+      };
+
+      await ensureModel({
+        model_id: 'gpt-5.2',
+        model_name: 'GPT-5.2',
+        group_name: 'GPT 5.2',
+        model_types: ['chat']
+      });
+      await ensureModel({
+        model_id: 'gpt-5.2-mini',
+        model_name: 'GPT-5.2 Mini',
+        group_name: 'GPT 5.2',
+        model_types: ['chat']
+      });
+      await ensureModel({
+        model_id: 'sora-2-pro',
+        model_name: 'Sora 2 Pro',
+        group_name: 'Sora',
+        model_types: ['video']
+      });
+    }
+
+    const openRouterPlatform = await Platform.findOne({ where: { name: 'OpenRouter' } });
+    if (openRouterPlatform) {
+      if ((!openRouterPlatform.api_key || !String(openRouterPlatform.api_key).trim()) && process.env.OPENROUTER_API_KEY) {
+        await Platform.update({ api_key: process.env.OPENROUTER_API_KEY }, { where: { id: openRouterPlatform.id } });
+        openRouterPlatform.api_key = process.env.OPENROUTER_API_KEY;
+      }
+
+      if (!openRouterPlatform.is_enabled && openRouterPlatform.api_key && String(openRouterPlatform.api_key).trim()) {
+        await Platform.update({ is_enabled: true }, { where: { id: openRouterPlatform.id } });
+      }
+    }
+  } catch (e) {
+    console.error('[sync:dataUpdate] Failed to ensure OpenAI models', e);
+  }
 
   // v0.1 => v0.1.1
   await Platform.update({
@@ -176,16 +277,30 @@ const dataUpdate = async () => {
   }
 
   // v0.1.1 => v0.1.2
-  const defaultSearchProviderData = require('../../public/default_data/default_search_provider.json');
-  const CloudswaySearchProvider = defaultSearchProviderData.find(item => item.name === 'Cloudsway');
-  const searchProvider = await SearchProviderTable.findOne({ where: { name: CloudswaySearchProvider.name } });
-  if (!searchProvider) {
-    const searchProviderData = {
-      name: CloudswaySearchProvider.name,
-      logo_url: CloudswaySearchProvider.logo_url,
-      base_config_schema: CloudswaySearchProvider.base_config_schema,
-    };
-    await SearchProviderTable.create(searchProviderData);
+  let defaultSearchProviderData = [];
+  try {
+    defaultSearchProviderData = require('../../public/default_data/default_search_provider.json');
+  } catch (e) {
+    try {
+      defaultSearchProviderData = require('../../workspace/Grace-Terminal/public/default_data/default_search_provider.json');
+    } catch (e2) {
+      defaultSearchProviderData = [];
+    }
+  }
+
+  if (Array.isArray(defaultSearchProviderData) && defaultSearchProviderData.length > 0) {
+    const CloudswaySearchProvider = defaultSearchProviderData.find(item => item.name === 'Cloudsway');
+    if (CloudswaySearchProvider) {
+      const searchProvider = await SearchProviderTable.findOne({ where: { name: CloudswaySearchProvider.name } });
+      if (!searchProvider) {
+        const searchProviderData = {
+          name: CloudswaySearchProvider.name,
+          logo_url: CloudswaySearchProvider.logo_url,
+          base_config_schema: CloudswaySearchProvider.base_config_schema,
+        };
+        await SearchProviderTable.create(searchProviderData);
+      }
+    }
   }
 
   const cloudswayPlatform = await Platform.findOne({ where: { name: 'Cloudsway' } })

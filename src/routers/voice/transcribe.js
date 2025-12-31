@@ -101,12 +101,50 @@ router.post('/', async (ctx) => {
     console.log('[Voice] Audio file path:', tempPath);
 
     const contentType = audioFile.mimetype || audioFile.type || 'audio/webm';
+    const originalFilename = audioFile.originalFilename || audioFile.name || audioFile.filename || null;
+    const reportedSize = typeof audioFile.size === 'number' ? audioFile.size : null;
+    console.log('[Voice] Audio file meta:', { contentType, originalFilename, reportedSize });
+
+    if (!tempPath || !fs.existsSync(tempPath)) {
+      ctx.status = 400;
+      ctx.body = { error: 'Audio upload missing temp file path', contentType, originalFilename, reportedSize };
+      return;
+    }
+
+    const stat = fs.statSync(tempPath);
+    const sizeBytes = stat?.size || 0;
+    // Guard against empty/corrupt uploads (common cause of upstream 400s)
+    if (!sizeBytes || sizeBytes < 1024) {
+      ctx.status = 400;
+      ctx.body = {
+        error: 'Empty or invalid audio upload',
+        contentType,
+        originalFilename,
+        sizeBytes,
+        reportedSize,
+      };
+      await unlink(tempPath).catch(() => {});
+      return;
+    }
     
     // Read audio file
     const tReadStart = Date.now();
     const audioBuffer = fs.readFileSync(tempPath);
     const tReadMs = Date.now() - tReadStart;
     console.log('[Voice] STT file read ms:', tReadMs, 'bytes:', audioBuffer.length);
+
+    if (!audioBuffer || audioBuffer.length < 1024) {
+      ctx.status = 400;
+      ctx.body = {
+        error: 'Empty or invalid audio buffer',
+        contentType,
+        originalFilename,
+        sizeBytes,
+        reportedSize,
+      };
+      await unlink(tempPath).catch(() => {});
+      return;
+    }
 
     const primaryProvider = getSttProvider();
     const providers = primaryProvider === 'deepgram' ? ['deepgram', 'openai'] : ['openai', 'deepgram'];
@@ -134,11 +172,20 @@ router.post('/', async (ctx) => {
     }
 
     if (!result) {
-      ctx.status = 500;
+      // Upstream providers already returned details; report them clearly to the client.
+      // 502 is appropriate for upstream rejection, but 500 may cause frontend to treat it as fatal.
+      // Use 400 when upstream indicates bad request / bad audio.
+      const upstreamStatus = lastErr?.upstream_status;
+      const status = (upstreamStatus === 400) ? 400 : 502;
+      ctx.status = status;
       ctx.body = {
         error: 'Transcription failed',
-        upstream_status: lastErr?.upstream_status,
-        upstream_error: lastErr?.upstream_error || lastErr?.message
+        upstream_status: upstreamStatus,
+        upstream_error: lastErr?.upstream_error || lastErr?.message,
+        contentType,
+        originalFilename,
+        sizeBytes,
+        reportedSize
       };
       return;
     }

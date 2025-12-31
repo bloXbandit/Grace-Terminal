@@ -13,10 +13,7 @@
               <div class="button-row first-row">
                 <!-- 文件上传 -->
                 <ChatInputUpload v-model:fileList="fileList" v-model:conversation_id="conversation_id" :isPublic="isPublic" v-if="chatMode === 'task'" />
-                <!-- Model locked to GPT-5 -->
-                <div class="model-locked">
-                  <span class="model-locked-text">GPT-5</span>
-                </div>
+                <ModelSelect />
                 <!-- 模式切换器 - 响应式 -->
                 <div class="mode-selector-dropdown">
                   <!-- 桌面端下拉框 -->

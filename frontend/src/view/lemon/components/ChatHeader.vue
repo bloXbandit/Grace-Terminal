@@ -24,6 +24,23 @@
           <Microphone />
         </a-tooltip>
       </div>
+      <div class="voice-style-btn btn" v-if="isVoiceEnabled" @click.stop="toggleVoiceStyleMenu">
+        <a-tooltip :title="`Voice style: ${selectedTtsVoice}`" placement="bottom" :arrow="false">
+          <ToolOutlined />
+        </a-tooltip>
+        <div class="voice-style-menu" v-if="showVoiceStyleMenu">
+          <div
+            v-for="opt in ttsVoiceOptions"
+            :key="opt.value"
+            class="voice-style-item"
+            :class="{ 'active': selectedTtsVoice === opt.value }"
+            @click.stop="setTtsVoice(opt.value)"
+          >
+            <span class="voice-style-name">{{ opt.label }}</span>
+            <span class="voice-style-value">{{ opt.value }}</span>
+          </div>
+        </div>
+      </div>
       <div class="interrupt-btn btn" v-if="isVoiceEnabled && isVoiceSessionActive" @click="handleInterruptGrace">
         <a-tooltip title="Interrupt Grace" placement="bottom" :arrow="false">
           <StopOutlined />
@@ -216,6 +233,30 @@ const isVoiceEnabled = ref(import.meta.env.VITE_VOICE_ENABLED === 'true')
 const voiceState = ref('IDLE') // IDLE | LISTENING | PROCESSING | SPEAKING
 const isVoiceSessionActive = ref(false) // Whether session is active (for button styling)
 
+const ttsVoiceOptions = ref([
+  { value: 'alloy', label: 'Asteria' },
+  { value: 'nova', label: 'Luna' },
+  { value: 'shimmer', label: 'Stella' },
+  { value: 'echo', label: 'Orion' },
+  { value: 'fable', label: 'Hera' },
+  { value: 'onyx', label: 'Zeus' }
+])
+
+const showVoiceStyleMenu = ref(false)
+const selectedTtsVoice = ref('alloy')
+
+const toggleVoiceStyleMenu = () => {
+  showVoiceStyleMenu.value = !showVoiceStyleMenu.value
+}
+
+const setTtsVoice = (voice) => {
+  selectedTtsVoice.value = voice
+  showVoiceStyleMenu.value = false
+  try {
+    localStorage.setItem('grace_tts_voice', voice)
+  } catch (e) {}
+}
+
 // Voice session refs
 let mediaRecorder = null
 let audioChunks = []
@@ -238,9 +279,12 @@ let pendingTtsCount = 0
 let rearmTimeout = null
 let bargeInRafId = null
 let bargeInGraceTimeout = null
+let lastDocRefreshPromptTurnId = null
+let lastAutoReplySpokenTurnId = null
 let vadRafId = null
 let voiceSessionStartedAt = null
 let lastPlaybackEndedAt = 0
+let shouldProcessOnStop = false
 
 // VAD snapshot for STT gating / self-heal
 let vadLastSpeechAt = null
@@ -260,11 +304,11 @@ const TWO_HIT_THRESHOLD = 2 // Require this many non-suspicious recordings after
 
 // VAD settings
 const SILENCE_THRESHOLD = 0.021 // Energy threshold for silence
-const SILENCE_DURATION = 250 // ms of silence before auto-stop (reduced from 1200ms)
+const SILENCE_DURATION = 220 // ms of silence before auto-stop (reduced from 1200ms)
 const MIN_RECORDING_DURATION = 400 // ms minimum recording (reduced for short utterances)
 const MAX_RECORDING_DURATION = 9000 // ms max recording before forced processing
 const MIN_BLOB_SIZE = 2000 // bytes minimum to send to Whisper (reduced)
-const POST_TTS_COOLDOWN = 800 // ms cooldown after TTS before rearming
+const POST_TTS_COOLDOWN = 700 // ms cooldown after TTS before rearming
 const BARGE_IN_GRACE_PERIOD = 600 // ms grace period after TTS starts
 const VOICE_START_WARMUP_MS = 2200
 const FIRST_CHUNK_MIN_CHARS = 36
@@ -323,6 +367,8 @@ const startVoiceSession = async () => {
     
     mediaRecorder.onstop = async () => {
       if (!isVoiceSessionActive.value) return
+      if (!shouldProcessOnStop) return
+      shouldProcessOnStop = false
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
       await processAudio(audioBlob)
     }
@@ -351,6 +397,7 @@ const endVoiceSession = () => {
   
   // Stop recording
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    shouldProcessOnStop = false
     mediaRecorder.stop()
   }
   
@@ -487,6 +534,7 @@ const softRestartListening = (reason) => {
 
   try {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      shouldProcessOnStop = false
       mediaRecorder.stop()
     }
   } catch (e) {}
@@ -522,7 +570,7 @@ const startVADLoop = () => {
   const MAX_SILENCE_THRESHOLD = 0.05
   const SILENCE_MARGIN = 0.01
   const SPEECH_MARGIN = 0.02
-  const TRAILING_SILENCE_DURATION = 500 // ms to wait after last speech
+  const TRAILING_SILENCE_DURATION = 420 // ms to wait after last speech
   const STUCK_DETECTOR_THRESHOLD = 3500 // ms after which we check for stuck recording
   
   const checkSilence = () => {
@@ -537,6 +585,7 @@ const startVADLoop = () => {
         console.log('[Voice] Max recording duration reached without speech, rearming')
         // No speech detected, just rearm without processing
         if (mediaRecorder && mediaRecorder.state === 'recording') {
+          shouldProcessOnStop = false
           mediaRecorder.stop()
         }
         // Reset and restart
@@ -603,8 +652,14 @@ const startVADLoop = () => {
       silenceStartTime = null
       lastSpeechAt = null
     } else {
-      // After speech has started, track last speech time for better end-of-utterance detection
-      if (normalizedEnergy > dynamicSilenceThreshold + SPEECH_MARGIN) {
+      // After speech has started, track last speech time for better end-of-utterance detection.
+      // Use a slightly more forgiving threshold so softer phonemes don't look like silence
+      // and cause mid-utterance cutoffs.
+      const speechContinueThreshold = Math.max(
+        dynamicSilenceThreshold + (SPEECH_MARGIN * 0.35),
+        dynamicSpeechThreshold * 0.7
+      )
+      if (normalizedEnergy > speechContinueThreshold) {
         lastSpeechAt = Date.now()
       }
       
@@ -624,6 +679,7 @@ const startVADLoop = () => {
             // No real speech detected, just rearm without processing
             console.log('[Voice] Stuck detector: no real speech, rearming')
             if (mediaRecorder && mediaRecorder.state === 'recording') {
+              shouldProcessOnStop = false
               mediaRecorder.stop()
             }
             // Reset and restart
@@ -706,6 +762,7 @@ const stopRecordingForProcessing = () => {
   if (!hasRealSpeech) {
     console.log('[Voice] No real speech detected in segment, rearming without STT')
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      shouldProcessOnStop = false
       mediaRecorder.stop()
     }
     audioChunks = []
@@ -726,6 +783,7 @@ const stopRecordingForProcessing = () => {
   emitter.emit('voice-status', { status: 'processing' })
   
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    shouldProcessOnStop = true
     mediaRecorder.stop()
   }
 }
@@ -807,6 +865,9 @@ const processAudio = async (audioBlob) => {
         }
         
         mediaRecorder.onstop = async () => {
+          if (!isVoiceSessionActive.value) return
+          if (!shouldProcessOnStop) return
+          shouldProcessOnStop = false
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
           await processAudio(audioBlob)
         }
@@ -995,7 +1056,7 @@ const processAudio = async (audioBlob) => {
       return
     }
     
-    // Show transcribed text to user for confirmation
+    // Show transcribed text to user for confirmation (non-blocking)
     emitter.emit('voice-transcription', { text: trimmedText, timestamp: Date.now() })
     
     if (!trimmedText || trimmedText.length === 0) {
@@ -1047,19 +1108,9 @@ const processAudio = async (audioBlob) => {
     // Create abort controller for this turn
     abortController = new AbortController()
 
-    // Step 2: Prepare for Streaming
-    audioQueue = []
-    isPlayingAudio = false
-    sentenceBuffer = ''
-    ttsChain = Promise.resolve()
-    firstAudioPending = true
-    activeTurnId = turnId
-    agentStreamDone = false
-    pendingTtsCount = 0
-    
-    // Step 3: Send to agent
+    // Step 3: Send to agent (kick off request early; do local setup while it's in flight)
     const tAgentStart = performance.now()
-    const agentResponse = await fetch('/api/agent/run', {
+    const agentFetchPromise = fetch('/api/agent/run', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1075,6 +1126,18 @@ const processAudio = async (audioBlob) => {
       signal: abortController.signal
     })
 
+    // Step 2: Prepare for Streaming
+    audioQueue = []
+    isPlayingAudio = false
+    sentenceBuffer = ''
+    ttsChain = Promise.resolve()
+    firstAudioPending = true
+    activeTurnId = turnId
+    agentStreamDone = false
+    pendingTtsCount = 0
+
+    const agentResponse = await agentFetchPromise
+
     const tAgentHeaders = performance.now()
     console.log(`[Voice] Turn ${turnId} agent headers ms:`, Math.round(tAgentHeaders - tAgentStart))
     
@@ -1087,7 +1150,7 @@ const processAudio = async (audioBlob) => {
 
     // Helper to process text chunks for streaming TTS with micro-chunk dispatch
     let firstTokenWallTime = null
-    const FIRST_CHUNK_MAX_WAIT_MS = 450
+    const FIRST_CHUNK_MAX_WAIT_MS = 600
 
     const processTokenForTTS = async (textChunk) => {
       sentenceBuffer += textChunk
@@ -1099,16 +1162,17 @@ const processAudio = async (audioBlob) => {
       // Micro-chunk dispatch for first audio
       if (firstAudioPending) {
         const trimmed = sentenceBuffer.trim()
-        const minFirstChunkChars = 22
-        const softMaxFirstChunkChars = 22
-        const hardMaxFirstChunkChars = 44
+        // Slightly larger first chunk to avoid mid-phrase splits like "I'll tone" + "down ..."
+        // Keep timeout fallback to preserve perceived latency.
+        const minFirstChunkChars = 40
+        const softMaxFirstChunkChars = 60
+        const hardMaxFirstChunkChars = 60
         const hasMinChars = trimmed.length >= minFirstChunkChars
         const hasSafeBoundary = /([.!?,:;]\s|[\r\n])/.test(sentenceBuffer)
-        const hasWordBoundary = /\s/.test(sentenceBuffer) && trimmed.length >= minFirstChunkChars
 
         const waitedLongEnough = firstTokenWallTime !== null && (Date.now() - firstTokenWallTime) >= FIRST_CHUNK_MAX_WAIT_MS
         
-        if (hasMinChars && (hasSafeBoundary || hasWordBoundary || waitedLongEnough)) {
+        if (hasMinChars && (hasSafeBoundary || waitedLongEnough)) {
           let cutIndex = -1
           let cutIndexSoft = -1
           
@@ -1130,8 +1194,8 @@ const processAudio = async (audioBlob) => {
           }
 
           // If no good sentence/clause boundary within the soft limit, prefer a clean word boundary
-          // around the target length to avoid clipping the last word.
-          if (cutIndex === -1 && trimmed.length >= minFirstChunkChars) {
+          // around the target length to avoid clipping the last word, but only after waiting a bit.
+          if (cutIndex === -1 && waitedLongEnough && trimmed.length >= minFirstChunkChars) {
             const target = Math.min(sentenceBuffer.length, softMaxFirstChunkChars)
             const slice = sentenceBuffer.slice(0, target)
             let spaceMatch = slice.lastIndexOf(' ')
@@ -1291,7 +1355,23 @@ const processAudio = async (audioBlob) => {
               const hasPriorAudio = !firstAudioPending || pendingTtsCount > 0 || audioQueue.length > 0
               // Avoid choppy tiny tail chunks at end-of-stream when we've already spoken content.
               if (hasPriorAudio && sanitized.length < minCoalescedChars) {
-                sentenceBuffer = ''
+                const tail = sanitized.trim()
+                const looksLikeWord = /^[A-Za-z][A-Za-z'’\-]*[.!?]?$/.test(tail)
+                const isJustPunct = /^[\s\.,;:!?\-]+$/.test(tail)
+
+                // Keep short but meaningful tails like "with" (common streaming edge-case)
+                if (!isJustPunct && looksLikeWord) {
+                  pendingTtsCount++
+                  ttsChain = ttsChain
+                    .then(() => queueTTSChunk(tail, turnId, tTurnStart))
+                    .finally(() => {
+                      pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                      maybeFinishTurn(turnId)
+                    })
+                  sentenceBuffer = ''
+                } else {
+                  sentenceBuffer = ''
+                }
               } else {
                 pendingTtsCount++
                 ttsChain = ttsChain
@@ -1350,20 +1430,35 @@ const processAudio = async (audioBlob) => {
                   const actionType = obj.meta.action_type
                   let ttsMessage = null
                   
-                  if (actionType === 'finish_summery' && obj.message) {
-                    // Task completion - speak a brief confirmation
-                    if (obj.message.includes('Created') || obj.message.includes('completed') || obj.message.includes('finished')) {
-                      ttsMessage = "Done! I've completed that for you."
+                  const actionText = (typeof obj.message === 'string' && obj.message) ? obj.message : (typeof obj.content === 'string' ? obj.content : '')
+
+                  if (actionType === 'finish_summery') {
+                    // Task completion
+                    // If this created a file (docx/xlsx/pdf), give a gentle hint to refresh if needed.
+                    const metaFiles = Array.isArray(obj?.meta?.json) ? obj.meta.json : []
+                    const hasDocFile = metaFiles.some(f => {
+                      const name = (f?.filename || f?.filepath || '').toString().toLowerCase()
+                      return name.endsWith('.docx') || name.endsWith('.xlsx') || name.endsWith('.pdf')
+                    })
+
+                    if (hasDocFile) {
+                      if (lastDocRefreshPromptTurnId !== turnId) {
+                        lastDocRefreshPromptTurnId = turnId
+                        ttsMessage = "Done. If you don't see the document yet, refresh the page."
+                      }
+                    } else {
+                      // Default completion voice
+                      ttsMessage = "Done."
                     }
-                  } else if (actionType === 'progress' && obj.message) {
+                  } else if (actionType === 'progress' && actionText) {
                     // Progress updates - only speak meaningful ones
-                    const msg = obj.message.toLowerCase()
+                    const msg = actionText.toLowerCase()
                     if (msg.includes('creating') || msg.includes('generating') || msg.includes('building')) {
                       ttsMessage = "Just a moment, I'm working on that..."
                     }
-                  } else if (actionType === 'coding' && obj.message) {
+                  } else if (actionType === 'coding' && actionText) {
                     // Code execution feedback
-                    const msg = obj.message.toLowerCase()
+                    const msg = actionText.toLowerCase()
                     if (msg.includes('running') || msg.includes('executing')) {
                       ttsMessage = "I'm executing the code now..."
                     }
@@ -1380,6 +1475,25 @@ const processAudio = async (audioBlob) => {
                           pendingTtsCount = Math.max(0, pendingTtsCount - 1)
                           maybeFinishTurn(turnId)
                         })
+                    }
+                  }
+
+                  // Some flows emit the final assistant text as a structured action event (e.g. action_type=auto_reply)
+                  // and do not stream assistant content deltas. In voice mode, speak that content.
+                  if (!ttsMessage && isVoiceSessionActive.value && actionText) {
+                    const speakActionTypes = new Set(['auto_reply'])
+                    if (speakActionTypes.has(actionType) && lastAutoReplySpokenTurnId !== turnId) {
+                      lastAutoReplySpokenTurnId = turnId
+                      const sanitized = sanitizeSpokenText(actionText)
+                      if (sanitized) {
+                        pendingTtsCount++
+                        ttsChain = ttsChain
+                          .then(() => queueTTSChunk(sanitized, turnId, tTurnStart))
+                          .finally(() => {
+                            pendingTtsCount = Math.max(0, pendingTtsCount - 1)
+                            maybeFinishTurn(turnId)
+                          })
+                      }
                     }
                   }
                 } catch (e) {}
@@ -1488,7 +1602,7 @@ const queueTTSChunk = async (text, turnId, tTurnStart) => {
     const response = await fetch('/api/voice/synthesize-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: 'alloy' }),
+      body: JSON.stringify({ text, voice: selectedTtsVoice.value || 'alloy' }),
       signal: abortController?.signal
     })
 
@@ -1603,6 +1717,8 @@ const maybeFinishTurn = (turnId) => {
       }
       mediaRecorder.onstop = async () => {
         if (!isVoiceSessionActive.value) return
+        if (!shouldProcessOnStop) return
+        shouldProcessOnStop = false
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
         await processAudio(audioBlob)
       }
@@ -1664,6 +1780,8 @@ function sanitizeSpokenText(text) {
     .replace(/\s{2,}/g, ' ')
     .replace(/\n\s+/g, '\n')
     .trim()
+
+  sanitized = normalizeNumbersForTTS(sanitized)
   
   // If after sanitization we have no meaningful content, return empty
   // Allow short meaningful replies like "Hey." but block pure punctuation/noise.
@@ -1671,6 +1789,50 @@ function sanitizeSpokenText(text) {
   if (sanitized.length < 2) return ''
   
   return sanitized
+}
+
+function normalizeNumbersForTTS(text) {
+  if (!text) return ''
+  const numberToWordsUnder1000 = (n) => {
+    const ones = ['zero','one','two','three','four','five','six','seven','eight','nine']
+    const teens = ['ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen']
+    const tens = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety']
+    if (n < 10) return ones[n]
+    if (n < 20) return teens[n - 10]
+    if (n < 100) {
+      const t = Math.floor(n / 10)
+      const r = n % 10
+      return r ? `${tens[t]}-${ones[r]}` : tens[t]
+    }
+    if (n < 1000) {
+      const h = Math.floor(n / 100)
+      const r = n % 100
+      return r ? `${ones[h]} hundred ${numberToWordsUnder1000(r)}` : `${ones[h]} hundred`
+    }
+    return String(n)
+  }
+
+  const decimalToWords = (s) => {
+    const parts = s.split('.')
+    if (parts.length !== 2) return numberToWordsUnder1000(parseInt(s, 10))
+    const i = parseInt(parts[0] || '0', 10)
+    const frac = (parts[1] || '').split('').map(ch => {
+      const d = ch.charCodeAt(0) - 48
+      if (d >= 0 && d <= 9) return ['zero','one','two','three','four','five','six','seven','eight','nine'][d]
+      return ch
+    }).join(' ')
+    return `${numberToWordsUnder1000(i)} point ${frac}`
+  }
+
+  return String(text).replace(/\b(\d{1,4}(?:\.\d+)?)\s*%/g, (m, num) => {
+    const n = parseFloat(num)
+    if (!Number.isFinite(n)) return m
+    if (n >= 0 && n < 1000 && String(num).length <= 6) {
+      const spoken = String(num).includes('.') ? decimalToWords(String(num)) : numberToWordsUnder1000(parseInt(num, 10))
+      return `${spoken} percent`
+    }
+    return m
+  })
 }
 
 // Barge-in: detect speech during playback
@@ -1806,10 +1968,44 @@ const handleClickOutside = (event) => {
   if (moreBtn && !moreBtn.contains(event.target)) {
     showMore.value = false;
   }
+
+  const styleBtn = document.querySelector('.voice-style-btn')
+  if (styleBtn && !styleBtn.contains(event.target)) {
+    showVoiceStyleMenu.value = false
+  }
 };
 
 // 在组件挂载时添加事件监听
 onMounted(() => {
+  ;(async () => {
+    try {
+      const saved = localStorage.getItem('grace_tts_voice')
+      if (saved && ttsVoiceOptions.value.some(o => o.value === saved)) {
+        selectedTtsVoice.value = saved
+      }
+    } catch (e) {}
+
+    try {
+      const res = await fetch('/api/voice/voices')
+      if (!res.ok) return
+      const data = await res.json().catch(() => null)
+      if (!data || !Array.isArray(data.voices) || data.voices.length === 0) return
+
+      const normalized = data.voices
+        .map(v => ({ value: v?.value, label: v?.label || v?.value }))
+        .filter(v => typeof v.value === 'string' && v.value.length)
+
+      if (normalized.length) {
+        ttsVoiceOptions.value = normalized
+        if (!ttsVoiceOptions.value.some(o => o.value === selectedTtsVoice.value)) {
+          selectedTtsVoice.value = ttsVoiceOptions.value[0].value
+          try {
+            localStorage.setItem('grace_tts_voice', selectedTtsVoice.value)
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  })()
   document.addEventListener('click', handleClickOutside);
 });
 
@@ -1864,6 +2060,54 @@ defineEmits(['share'])
   display: flex;
   align-items: center;
   gap: .5rem;
+
+  .voice-style-btn {
+    position: relative;
+  }
+
+  .voice-style-menu {
+    position: absolute;
+    top: 36px;
+    right: 0;
+    background: #fff;
+    border: 1px solid #0000001f;
+    border-radius: .75rem;
+    min-width: 170px;
+    padding: 6px;
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  }
+
+  .voice-style-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: .5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .voice-style-item:hover {
+    background: #f5f5f5;
+  }
+
+  .voice-style-item.active {
+    background: #0000000a;
+    outline: 1px solid #00000014;
+  }
+
+  .voice-style-name {
+    font-size: 12px;
+    color: #34322d;
+  }
+
+  .voice-style-value {
+    font-size: 11px;
+    color: #6b6a66;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
 
   .share-btn {
     display: inline-flex;

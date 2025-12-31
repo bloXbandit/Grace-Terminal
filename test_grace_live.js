@@ -49,6 +49,32 @@ const TEST_CASES = {
       breakPoints: ['intent_detection', 'llm_call', 'response']
     }
   ],
+  media: [
+    {
+      name: 'Photo Fast-Path (PNG)',
+      goal: 'Generate a photo of a neon koi fish swimming in a dark pond, cinematic lighting',
+      mode: 'agent',
+      expectedActions: ['auto_reply', 'finish_summery'],
+      breakPoints: ['intent_detection', 'auto_reply', 'response', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /\.png$|\.jpg$|\.jpeg$/i,
+        location: '/workspace'
+      }
+    },
+    {
+      name: 'Video Fast-Path (MP4)',
+      goal: 'Create a 3 second video of a neon koi fish swimming in a dark pond, cinematic lighting',
+      mode: 'agent',
+      expectedActions: ['auto_reply', 'finish_summery'],
+      breakPoints: ['intent_detection', 'auto_reply', 'response', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /\.mp4$/i,
+        location: '/workspace'
+      }
+    }
+  ],
   file: [
     {
       name: 'File Upload Test',
@@ -83,6 +109,14 @@ const TEST_CASES = {
       mode: 'task',
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary']
+    },
+    {
+      name: 'Routing Preferences - Code Generation Model',
+      goal: 'Write a Python function that returns the factorial of n using recursion.',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'thinking', 'execution', 'summary'],
+      expectedCoordinatorModel: 'openrouter/zhipu/glm-4.6'
     },
     {
       name: 'Excel Spreadsheet',
@@ -347,6 +381,7 @@ class GraceTester {
     let hasError = false;
     let errorDetails = null;
     let currentLLMCall = null;
+    let coordinatorModelUsed = null;
     
     // Start monitoring Docker logs for this test
     const { spawn } = require('child_process');
@@ -499,6 +534,7 @@ class GraceTester {
             breakPointsReached.add('specialist_routing');
             const modelMatch = line.match(/Using model: (.+)/);
             if (modelMatch) {
+              coordinatorModelUsed = modelMatch[1].trim();
               log.info(`🎯 Coordinator routing to: ${modelMatch[1]}`);
             }
           }
@@ -671,6 +707,16 @@ class GraceTester {
               const decodedData = Buffer.from(base64Data, 'base64').toString('utf8');
               console.log(`[DEBUG] Decoded data:`, decodedData.substring(0, 100));
               
+              // Grace stream end marker (server may keep HTTP connection open)
+              if (decodedData && decodedData.includes('__lemon_out_end__')) {
+                breakPointsReached.add('response');
+                log.info(`🛑 Stream end marker received: ${decodedData.trim().substring(0, 120)}`);
+                clearInterval(streamHangCheck);
+                // Force close the stream to allow the test to complete deterministically
+                response.data.destroy();
+                return;
+              }
+
               // Check if decoded data is JSON or plain text
               let data;
               if (decodedData.trim().startsWith('{') || decodedData.trim().startsWith('[')) {
@@ -714,6 +760,11 @@ class GraceTester {
                 if (data.meta?.json) {
                   log.data('📁 Files', data.meta.json);
                 }
+
+                // Grace may keep the HTTP stream open after finish_summery.
+                // End the test deterministically once we see the summary.
+                clearInterval(streamHangCheck);
+                response.data.destroy();
               }
               if (actionType === 'auto_reply') {
                 breakPointsReached.add('auto_reply');
@@ -747,11 +798,43 @@ class GraceTester {
       await new Promise((resolve, reject) => {
         response.data.on('end', () => {
           clearInterval(streamHangCheck);
-          log.success(`Received ${messages.length} messages (${chunkCount} chunks)`);
           resolve();
         });
-        response.data.on('error', reject);
+        response.data.on('error', (err) => {
+          clearInterval(streamHangCheck);
+          reject(err);
+        });
+        response.data.on('close', () => {
+          clearInterval(streamHangCheck);
+          resolve();
+        });
       });
+
+      if (testCase.expectedCoordinatorModel) {
+        if (!coordinatorModelUsed) {
+          hasError = true;
+          errorDetails = {
+            type: 'routing_preference_assertion_failed',
+            expectedCoordinatorModel: testCase.expectedCoordinatorModel,
+            actualCoordinatorModel: null,
+            message: 'No coordinator routing log was detected'
+          };
+          log.error(`Expected coordinator model "${testCase.expectedCoordinatorModel}" but no coordinator routing log was detected`);
+        } else if (coordinatorModelUsed !== testCase.expectedCoordinatorModel) {
+          hasError = true;
+          errorDetails = {
+            type: 'routing_preference_assertion_failed',
+            expectedCoordinatorModel: testCase.expectedCoordinatorModel,
+            actualCoordinatorModel: coordinatorModelUsed,
+            message: 'Coordinator routed to a different model than expected'
+          };
+          log.error(`Expected coordinator model "${testCase.expectedCoordinatorModel}" but got "${coordinatorModelUsed}"`);
+        } else {
+          log.success(`✅ Coordinator used expected model: ${coordinatorModelUsed}`);
+        }
+      }
+
+      log.success(`Received ${messages.length} messages (${chunkCount} chunks)`);
 
       const duration = Date.now() - startTime;
       
@@ -948,11 +1031,14 @@ class GraceTester {
     try {
       if (config.type === 'file') {
         // Check if file was created in Docker container
-        const findCmd = `find ${config.location} -type f -name "*" -mmin -2 2>/dev/null`;
+        // NOTE: In grace-app container, workspace is mounted at /app/workspace (see docker-compose).
+        // Older configs use /workspace, so translate for container checks.
+        const dockerLocation = (config.location === '/workspace') ? '/app/workspace' : config.location;
+        const findCmd = `find ${dockerLocation} -type f -name "*" -mmin -2 2>/dev/null`;
         const { stdout } = await this.execDockerCommand(findCmd);
         const files = stdout.trim().split('\n').filter(f => f);
         
-        log.info(`Found ${files.length} recent files in ${config.location}`);
+        log.info(`Found ${files.length} recent files in ${dockerLocation}`);
         
         const matchingFiles = files.filter(f => config.pattern.test(f));
         

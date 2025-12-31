@@ -89,42 +89,81 @@ class GeminiLLM extends BaseLLM {
       messages.unshift({ "role": "system", "content": MASTER_SYSTEM_PROMPT });
     }
     
-    // gemini-1.5-pro-latest
-    // const { model = 'gemini-pro' } = options;
+    // Translate OpenAI-style messages to Gemini contents format
+    const geminiContents = this._translateToGeminiContents(messages);
+    
     const model = this.model;
-
     const instance = await axiosInstancePromise;
 
-    // reference: https://ai.google.dev/gemini-api/docs/get-started/tutorial?lang=rest#stream_generate_content
+    // Gemini REST endpoint with key query parameter
     const config = {
       method: "post",
       maxBodyLength: Infinity,
-      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${this.GOOGLE_AI_KEY}`,
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.GOOGLE_AI_KEY)}`,
       headers: {
         "Content-Type": 'application/json'
       },
       transformResponse: [],
       data: {
-        "contents": messages,
+        "contents": geminiContents,
         "generationConfig": {
           "temperature": options.temperature || 0,
         }
       },
       responseType: "stream",
     };
-    console.log("config", JSON.stringify(config, null, 2));
+    console.log("Gemini request config", JSON.stringify(config, null, 2));
 
     // @ts-ignore
     const response = await instance.request(config).catch(err => {
       return err;
     });
-    console.log(response.status);
+    console.log("Gemini response status", response.status);
     return response;
   }
 
+  /**
+   * Translate OpenAI-style messages to Gemini contents format
+   * @param {Array} messages - OpenAI messages with role/content
+   * @returns {Array} Gemini contents with role/parts
+   */
+  _translateToGeminiContents(messages) {
+    const contents = [];
+    let systemText = '';
+    
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        // Accumulate system text to prepend to first user message
+        systemText += (systemText ? '\n' : '') + msg.content;
+      } else if (msg.role === 'user') {
+        const userText = systemText ? systemText + '\n' + msg.content : msg.content;
+        contents.push({
+          role: 'user',
+          parts: [{ text: userText }]
+        });
+        systemText = ''; // Clear system text after using it
+      } else if (msg.role === 'assistant') {
+        contents.push({
+          role: 'model',
+          parts: [{ text: msg.content }]
+        });
+      }
+    }
+    
+    // If there was only a system message with no user, add a user message
+    if (contents.length === 0 && systemText) {
+      contents.push({
+        role: 'user',
+        parts: [{ text: systemText }]
+      });
+    }
+    
+    return contents;
+  }
+
   async call(prompt, context = {}) {
-    const massageUser = [{ "parts": [{ "text": prompt }] }]
-    const messages = (context.messages || []).concat(massageUser);
+    // Build OpenAI-style messages from context + prompt
+    const messages = (context.messages || []).concat([{ role: 'user', content: prompt }]);
     return this.request(messages);
   }
 

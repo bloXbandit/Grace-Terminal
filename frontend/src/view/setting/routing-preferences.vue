@@ -1,4 +1,4 @@
-thats not it<template>
+<template>
   <div class="routing-preferences">
     <div class="settings-header">
       <h1>🎯 Routing Preferences</h1>
@@ -141,6 +141,10 @@ const availableModels = ref([
   { key: 'openrouter/openai/gpt-oss-20b', name: 'GPT OSS 20B' },
   { key: 'openrouter/microsoft/phi-4', name: 'Phi-4 (Microsoft)' },
   { key: 'openrouter/google/gemini-pro-1.5', name: 'Gemini Pro 1.5' },
+  // Native Gemini Provider (direct Google Gemini platform)
+  { key: 'gemini/gemini-3-pro-preview', name: 'Gemini 3 Pro Preview (Gemini)' },
+  { key: 'gemini/gemini-2.0-flash', name: 'Gemini 2.0 Flash (Gemini)' },
+  { key: 'gemini/gemini-1.5-pro', name: 'Gemini 1.5 Pro (Gemini)' },
   { key: 'openrouter/meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B' },
   { key: 'openrouter/gryphe/mythomax-l2-13b', name: 'MythoMax L2 13B (Creative)' }
 ])

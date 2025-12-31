@@ -105,6 +105,9 @@ const router = useRouter();
 const setActiveChat = async (chat) => {
   conversationId.value = chat.conversation_id;
   chatStore.chat = chat;
+  if (chat && chat.model_id) {
+    chatStore.model_id = chat.model_id;
+  }
   chatStore.clearMessages();
   await chatStore.initConversation(chat.conversation_id);
   router.push(`/grace/${chat.conversation_id}`);

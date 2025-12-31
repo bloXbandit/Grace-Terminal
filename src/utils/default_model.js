@@ -42,11 +42,15 @@ const _fetchDefaultModel = async (type = 'assistant') => {
     const platform = await Plantform.findOne({ where: { id: model.dataValues.platform_id } });
     if (!platform) return null;
 
-    const api_key = platform.dataValues.api_key;
+    let api_key = platform.dataValues.api_key;
+    if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
+      api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+    }
     const base_url = platform.dataValues.api_url
     let api_url = platform.dataValues.api_url;
     if (type === 'assistant') {
-      api_url = platform.dataValues.api_url + '/chat/completions';
+      // Gemini does not use /chat/completions; keep base_url unchanged for Gemini
+      api_url = platform.dataValues.name === 'Gemini' ? base_url : platform.dataValues.api_url + '/chat/completions';
     }
     const platform_name = platform.dataValues.name;
 
@@ -113,10 +117,13 @@ const getDefaultModel = async (conversation_id) => {
       };
     }
 
-    const api_key = platform.dataValues.api_key;
+    let api_key = platform.dataValues.api_key;
+    if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
+      api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+    }
     const base_url = platform.dataValues.api_url
     let api_url = platform.dataValues.api_url;
-    api_url = platform.dataValues.api_url + '/chat/completions';
+    api_url = platform.dataValues.name === 'Gemini' ? base_url : platform.dataValues.api_url + '/chat/completions';
     const platform_name = platform.dataValues.name;
 
     return { 
@@ -153,10 +160,14 @@ const getCustomModel = async (model_id) => {
   const platform = await Plantform.findOne({ where: { id: model.dataValues.platform_id } });
   if (!platform) return null;
 
-  const api_key = platform.dataValues.api_key;
+  let api_key = platform.dataValues.api_key;
+  if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
+    api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+  }
   const base_url = platform.dataValues.api_url
   let api_url = platform.dataValues.api_url;
-  api_url = platform.dataValues.api_url + '/chat/completions';
+  // Gemini does not use /chat/completions; keep base_url unchanged for Gemini
+  api_url = platform.dataValues.name === 'Gemini' ? base_url : platform.dataValues.api_url + '/chat/completions';
   const platform_name = platform.dataValues.name;
 
   return { model_name, platform_name, api_key, api_url, base_url: base_url, is_subscribe: false };

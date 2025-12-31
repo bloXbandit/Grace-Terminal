@@ -1,7 +1,8 @@
 
 
 const imgType = ['png','jpg','svg','jpeg','gif','webp','bmp']
-const blobTypeDict = ['png','jpg','svg','jpeg','gif','webp','bmp','pdf','docx','doc','xlsx','xls','pptx','ppt']
+const videoType = ['mp4','webm','ogg','mov','avi','mkv']
+const blobTypeDict = ['png','jpg','svg','jpeg','gif','webp','bmp','pdf','docx','doc','xlsx','xls','pptx','ppt','mp4','webm','ogg','mov','mp3','wav']
 
 // 
 function getFileReponseTypeByName(filename){
@@ -88,5 +89,6 @@ async function handleFileDownload(file) {
 export default {
     getFileReponseTypeByName,
     handleFileDownload,
-    imgType
+    imgType,
+    videoType
 };

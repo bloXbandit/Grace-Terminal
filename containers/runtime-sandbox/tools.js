@@ -15,8 +15,8 @@ const write_file = async (filepath, content) => {
   return fs.writeFile(filepath, content);
 }
 
-const write_code = async (action, uuid) => {
-  // Handle all path parameter variants (element-based and attribute-based XML)
+const write_code = async (action, uuid, user_id) => {
+  // Handle both 'path' and 'file_path' (XML attribute becomes '@_file_path')
   let { path: filepath, file_path, '@_file_path': xmlFilePath, content, '#text': xmlText } = action.params;
   filepath = filepath || file_path || xmlFilePath;
   
@@ -41,12 +41,22 @@ const write_code = async (action, uuid) => {
   
   filepath = await restrictFilepath(filepath);
   await write_file(filepath, fileContent);
-  // const result = await executeCode(filepath);
-  // return result;
+  // CRITICAL: Mask Python file success messages for ultra tasks (hide from UI)
+  // Only hide .py files which are temporary scripts, keep actual document/file messages
+  let successMessage = `File ${filepath} written successfully.`;
+  if (filepath.endsWith('.py')) {
+    // For Python scripts, return minimal message that won't show in UI
+    successMessage = ''; // Empty message = won't appear in UI stream
+  }
+
+  // Also suppress internal workflow artifacts that are not useful to show in chat UI
+  if (/\/todo\.md$/i.test(filepath)) {
+    successMessage = '';
+  }
   return {
     uuid,
     status: 'success',
-    content: `File ${filepath} written successfully.`,
+    content: successMessage,
     meta: {
       action_type: action.type,
       filepath

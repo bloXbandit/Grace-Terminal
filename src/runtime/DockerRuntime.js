@@ -175,6 +175,51 @@ class DockerRuntime {
         result = await this._call_docker_action(action, uuid);
         break;
       case 'terminal_run':
+        // RELIABILITY: Convert fragile `python3 -c "..."` one-liners into a temp script file.
+        // This prevents shell quoting/parsing errors that can break execution.
+        try {
+          const cmd = (action?.params?.command || '').toString();
+          const rawArgs = action?.params?.args;
+          const argsStr = Array.isArray(rawArgs) ? rawArgs.join(' ') : (rawArgs || '').toString();
+
+          const looksLikePythonInline = (cmd === 'python3' || cmd.endsWith('/python3')) && argsStr.trim().startsWith('-c');
+          const looksLikeDocxSnippet = argsStr.includes('from docx import Document') || argsStr.includes('doc.save(');
+
+          if (looksLikePythonInline && looksLikeDocxSnippet) {
+            const afterDashC = argsStr.trim().slice(2).trim();
+            let code = afterDashC;
+            if ((code.startsWith('"') && code.endsWith('"')) || (code.startsWith("'") && code.endsWith("'"))) {
+              code = code.slice(1, -1);
+            }
+            code = code.replace(/\\\"/g, '"');
+
+            const tempScriptName = `temp_script_${Date.now()}.py`;
+            const writeAction = {
+              type: 'write_code',
+              params: {
+                language: 'python',
+                path: tempScriptName,
+                content: code
+              }
+            };
+
+            // Ensure cwd is set before executing write/run so both happen in the same conversation directory.
+            if (action.params.cwd) {
+              action.params.cwd = path.join(dir_name, action.params.cwd)
+            } else {
+              action.params.cwd = `./${dir_name}`
+            }
+
+            const writeResult = await this._call_docker_action(writeAction, uuidv4());
+            console.log('[terminal_run] Converted python3 -c to temp script:', tempScriptName, 'writeResult.status=', writeResult?.status);
+
+            action.params.args = tempScriptName;
+          }
+        } catch (e) {
+          // Best-effort conversion; fall back to original command on any failure.
+          console.warn('[terminal_run] Failed to convert python3 -c to temp script:', e?.message || e);
+        }
+
         if (action.params.cwd) {
           action.params.cwd = path.join(dir_name, action.params.cwd)
         } else {

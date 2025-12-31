@@ -14,7 +14,7 @@ class MultiAgentCoordinator {
     
     // Load user's custom routing preferences (from DB)
     this.customRouting = {};
-    this.loadUserPreferences();
+    this._preferencesLoadPromise = this.loadUserPreferences();
   }
   
   /**
@@ -22,6 +22,10 @@ class MultiAgentCoordinator {
    */
   async loadUserPreferences() {
     try {
+      if (!this.user_id) {
+        return;
+      }
+
       const preferences = await RoutingPreference.findAll({
         where: {
           user_id: this.user_id,
@@ -36,8 +40,20 @@ class MultiAgentCoordinator {
           systemPrompt: SPECIALIST_ROUTING[pref.task_type]?.systemPrompt || ''
         };
       });
+
+      console.log(`[Coordinator] Loaded ${preferences.length} routing preference(s) from DB`);
     } catch (error) {
       console.error('[Coordinator] Error loading user preferences:', error);
+    }
+  }
+
+  async ensureUserPreferencesLoaded() {
+    try {
+      if (this._preferencesLoadPromise) {
+        await this._preferencesLoadPromise;
+      }
+    } catch (e) {
+      // loadUserPreferences already logs; keep routing functional with defaults
     }
   }
 
@@ -66,6 +82,28 @@ class MultiAgentCoordinator {
       // Entertainment/media
       /\b(entertainment|performance|show|production|content)\b/i
     ];
+    
+    // Photo/Video generation detection (check before creative_writing)
+    const photoVideoIndicators = [
+      /\b(photo|image|picture|snapshot|portrait|landscape)\b/i,
+      /\b(video|movie|film|clip|animation|footage)\b/i,
+      /\b(edit|generate|create|make|produce|render)\b.*\b(photo|image|video|movie|film)\b/i,
+      /\b(photo|image|video|movie|film)\b.*\b(edit|generation|creation|production|rendering)\b/i
+    ];
+    
+    // Check for photo/video indicators
+    let photoVideoScore = 0;
+    for (const pattern of photoVideoIndicators) {
+      if (pattern.test(message)) {
+        photoVideoScore++;
+      }
+    }
+    
+    // If 2+ photo/video indicators, route to photo_video_generation
+    if (photoVideoScore >= 2) {
+      console.log(`[Coordinator] Photo/Video generation context detected (score: ${photoVideoScore})`);
+      return 'photo_video_generation';
+    }
     
     // Check for multiple creative indicators (context-based)
     let creativeScore = 0;
@@ -353,6 +391,14 @@ class MultiAgentCoordinator {
       return 'data_analysis';
     }
     
+    // Photo/Video Generation (specific keyword matching)
+    if (message.match(/create.*video|generate.*video|make.*video|render.*video|produce.*video/i) ||
+        message.match(/create.*photo|generate.*photo|make.*photo|edit.*photo|enhance.*photo/i) ||
+        message.match(/create.*image|generate.*image|make.*image|edit.*image|modify.*image/i) ||
+        message.match(/sora.*video|gemini.*photo|gemini.*image/i)) {
+      return 'photo_video_generation';
+    }
+    
     // Creative & Storytelling (specific keyword fallback)
     // Note: Context-aware detection happens earlier, this catches explicit creative requests
     if (message.match(/write.*story|creative.*writing|storytelling|narrative|fiction|novel|character.*dialogue|poem|poetry|rap|song|lyrics|verse|rhyme|haiku|limerick|creative.*text/i)) {
@@ -408,13 +454,20 @@ class MultiAgentCoordinator {
       return 'code_generation'; // Claude Sonnet 4.5 - best for code
     }
     
-    // 2. Creative but ambiguous -> Route to creative specialist (REFINED)
+    // 2. Photo/Video generation -> Route to photo_video_generation specialist
+    const hasPhotoVideoKeywords = /\b(photo|image|video|movie|film|edit|generate|create|make|produce|render)\b/i.test(message);
+    if (hasPhotoVideoKeywords && !hasCodeKeywords && !hasFiles) {
+      console.log('[Coordinator] Photo/Video generation request → routing to photo_video_generation');
+      return 'photo_video_generation'; // Sora-2-Pro/Gemini-3-Pro - specialized for media
+    }
+    
+    // 3. Creative but ambiguous -> Route to creative specialist (REFINED)
     if (hasCreativeKeywords && !hasCodeKeywords && !hasFiles) {
       console.log('[Coordinator] Explicit creative request → routing to creative_writing');
       return 'creative_writing'; // Mythomax - specialized for creativity
     }
     
-    // 3. Data/file related -> Route to data specialist
+    // 4. Data/file related -> Route to data specialist
     if (hasDataKeywords) {
       console.log('[Coordinator] Data-related ambiguous request → routing to data_generation');
       return 'data_generation'; // Qwen - excellent for structured data
@@ -554,8 +607,8 @@ class MultiAgentCoordinator {
       case 'jpeg':
       case 'svg':
       case 'qr':
-        console.log('[Coordinator] Image/graphics → ui_design specialist');
-        return 'ui_design'; // Phi-4 for graphics
+        console.log('[Coordinator] Image/graphics → photo_video_generation specialist');
+        return 'photo_video_generation'; // Sora-2-Pro/Gemini-3-Pro for media
         
       case 'xer':
       case 'mpp':
@@ -627,10 +680,12 @@ class MultiAgentCoordinator {
         api_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 
                  provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
                  provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' :
+                 provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' :
                  'https://api.openai.com/v1/chat/completions',
         base_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1' :
                   provider === 'openai' ? 'https://api.openai.com/v1' :
                   provider === 'anthropic' ? 'https://api.anthropic.com/v1' :
+                  provider === 'gemini' ? 'https://generativelanguage.googleapis.com' :
                   'https://api.openai.com/v1',
         is_subscribe: false
       };
@@ -1121,6 +1176,7 @@ If this is a delivery task and the file already exists with this name, DO NOT co
     console.log(`[Coordinator] Detected task type: ${taskType}`);
     
     // Get routing config
+    await this.ensureUserPreferencesLoaded();
     const routing = this.getRouting(taskType);
     console.log(`[Coordinator] Using model: ${routing.primary}`);
     
@@ -1222,6 +1278,8 @@ If this is a delivery task and the file already exists with this name, DO NOT co
    */
   async collaborate(userMessage, subtasks) {
     const results = [];
+
+    await this.ensureUserPreferencesLoaded();
     
     for (const subtask of subtasks) {
       console.log(`[Collaboration] Working on: ${subtask.description}`);
@@ -1259,6 +1317,7 @@ If this is a delivery task and the file already exists with this name, DO NOT co
    * Grace asks a specialist for help (conversational)
    */
   async askSpecialist(taskType, question) {
+    await this.ensureUserPreferencesLoaded();
     const routing = this.getRouting(taskType);
     
     console.log(`[Grace → ${routing.primary}] ${question}`);

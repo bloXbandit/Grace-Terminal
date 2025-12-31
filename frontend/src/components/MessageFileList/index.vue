@@ -137,14 +137,23 @@ const displayedFiles = computed(() => {
 
 // 打开文件
 const handleOpenFile = (file) => {
-  console.log("handleOpenFile", file, file.filepath);
-  if (fileUtil.imgType.includes(file.filepath.split(".").pop())) {
-    workspaceService.getFile(file.filepath).then((res) => {
+  const filePath = file.filepath || file.path;
+  console.log("handleOpenFile", file, filePath);
+  if (!filePath) {
+    console.error("handleOpenFile: no filepath or path on file object", file);
+    return;
+  }
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  if (fileUtil.imgType.includes(ext)) {
+    workspaceService.getFile(filePath).then((res) => {
       imageUrl.value = URL.createObjectURL(res);
     });
     isModalVisible.value = true;
+  } else if (fileUtil.videoType?.includes(ext)) {
+    // Video files go to full preview
+    emitter.emit("fullPreviewVisable", { ...file, filepath: filePath });
   } else {
-    emitter.emit("fullPreviewVisable", file);
+    emitter.emit("fullPreviewVisable", { ...file, filepath: filePath });
   }
 };
 

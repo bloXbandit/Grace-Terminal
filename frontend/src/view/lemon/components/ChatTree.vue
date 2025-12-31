@@ -155,6 +155,11 @@ function activateMessageAt(index) {
   display: flex;
   flex-direction: column;
 
+  .message-user,
+  .message-assistant {
+    display: block;
+  }
+
   .user,
   .assistant {
     width: 100%;
@@ -177,6 +182,8 @@ function activateMessageAt(index) {
         border: 1px solid #0000000f;
         border-radius: 12px;
         text-align: start;
+        display: block;
+        margin: 0 0 8px 0;
       }
     }
 
@@ -191,6 +198,8 @@ function activateMessageAt(index) {
     .message-assistant {
       font-size: 16px;
       color: #34322d;
+      display: block;
+      margin-top: 8px;
     }
 
     &:hover {

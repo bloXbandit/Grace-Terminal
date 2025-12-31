@@ -30,6 +30,7 @@
             type="text"
             placeholder="e.g., Software Developer, Designer, Student"
             @blur="saveField('profession')"
+            @focus="originalValues.profession = profile.profession"
           />
           <span class="field-hint">Helps Grace tailor technical explanations</span>
         </div>
@@ -40,6 +41,7 @@
             id="expertise_level"
             v-model="profile.expertise_level"
             @change="saveField('expertise_level')"
+            @focus="originalValues.expertise_level = profile.expertise_level"
           >
             <option value="">Select level...</option>
             <option value="beginner">Beginner</option>
@@ -62,6 +64,7 @@
             placeholder="e.g., AI, Web Development, Design, Startups"
             rows="3"
             @blur="saveField('interests')"
+            @focus="originalValues.interests = profile.interests"
           ></textarea>
           <span class="field-hint">Topics you're passionate about</span>
         </div>
@@ -74,6 +77,7 @@
             placeholder="e.g., Build a SaaS product, Learn React, Launch a startup"
             rows="3"
             @blur="saveField('goals')"
+            @focus="originalValues.goals = profile.goals"
           ></textarea>
           <span class="field-hint">What you're working towards</span>
         </div>
@@ -86,6 +90,7 @@
             type="text"
             placeholder="e.g., San Francisco, Remote"
             @blur="saveField('location')"
+            @focus="originalValues.location = profile.location"
           />
           <span class="field-hint">For time zone context</span>
         </div>
@@ -165,6 +170,7 @@ const loadProfile = async () => {
       response.data.profile.forEach(item => {
         if (profile.value.hasOwnProperty(item.key)) {
           profile.value[item.key] = item.value;
+          originalValues.value[item.key] = item.value;
         }
       });
       
@@ -184,7 +190,7 @@ const saveField = async (key) => {
   if (!value || value.trim() === '') return;
   
   // CRITICAL FIX: Only save if value actually changed
-  if (originalValues.value[key] === value) {
+  if (Object.prototype.hasOwnProperty.call(originalValues.value, key) && originalValues.value[key] === value) {
     console.log(`[Profile] No change detected for ${key}, skipping save`);
     return;
   }
@@ -199,6 +205,8 @@ const saveField = async (key) => {
     
     if (response.data && response.data.success) {
       console.log(`[Profile] Saved ${key}: ${value.trim()}`);
+
+      originalValues.value[key] = value.trim()
       
       // Only refresh learned profile section (not form fields)
       const learnedResponse = await http.get('/api/users/profile');

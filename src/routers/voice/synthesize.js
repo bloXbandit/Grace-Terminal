@@ -50,6 +50,29 @@ const synthesizeWithDeepgram = async ({ text, voice }) => {
   });
 };
 
+router.get('/voices', async (ctx) => {
+  const provider = getTtsProvider();
+  const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+  const labelMap = {
+    alloy: 'Asteria',
+    nova: 'Luna',
+    shimmer: 'Stella',
+    echo: 'Orion',
+    fable: 'Hera',
+    onyx: 'Zeus'
+  };
+
+  ctx.body = {
+    provider,
+    deepgram_default_model: process.env.DEEPGRAM_TTS_MODEL || 'aura-asteria-en',
+    voices: validVoices.map((v) => ({
+      value: v,
+      label: labelMap[v] || v,
+      deepgram_model: deepgramVoiceMap[v] || null
+    }))
+  };
+});
+
 /**
  * Synthesize speech using OpenAI TTS
  * POST /api/voice/synthesize

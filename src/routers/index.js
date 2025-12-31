@@ -30,6 +30,7 @@ const modules = [
   'recharge_product',
   'dev_mode',
   'voice',
+  'assistant',
 ];
 
 for (const module of modules) {

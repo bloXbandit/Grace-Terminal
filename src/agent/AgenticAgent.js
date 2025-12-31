@@ -326,9 +326,8 @@ class AgenticAgent {
     
     // Check if specialist handled it
     if (reply && typeof reply === 'object' && reply.handledBySpecialist) {
-      // Format creative content for better readability
-      const formattedContent = this._formatCreativeContent(reply.result);
-      await this._publishMessage({ action_type: 'auto_reply', status: 'success', content: formattedContent });
+      // Don't send auto_reply with full result - finish_summery will handle it
+      // This prevents duplicate content display in UI
       return reply; // Return specialist result
     }
     
@@ -689,8 +688,9 @@ class AgenticAgent {
           
           console.log('[AgenticAgent] Direct completion task - marking as done');
           await Conversation.update({ status: 'done' }, { where: { conversation_id: this.context.conversation_id } });
-          // Send completion signal to stop UI spinner
-          await this._publishMessage({ action_type: 'finish_summery', status: 'success', content: '' });
+          // Send completion signal to stop UI spinner, include files for UI preview if available
+          const filesJson = autoReplyResult.files || [];
+          await this._publishMessage({ action_type: 'finish_summery', status: 'success', content: autoReplyResult.result || '', json: filesJson });
           return autoReplyResult.result;
         }
         

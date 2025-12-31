@@ -2,27 +2,48 @@ async function checkLlmApiAvailability(baseUrl, apiKey='', model) {
   if (!baseUrl) {
     return { status: false, message: 'Base URL is required.' };
   }
-  const api_url = baseUrl + '/chat/completions'
+  const isGeminiBaseUrl = typeof baseUrl === 'string' && baseUrl.includes('generativelanguage.googleapis.com');
+  const isGeminiModel = typeof model === 'string' && model.toLowerCase().startsWith('gemini');
+  const isGemini = isGeminiBaseUrl || isGeminiModel;
+
+  const api_url = isGemini
+    ? `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey || '')}`
+    : baseUrl + '/chat/completions'
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   try {
     const response = await fetch(api_url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // API key is usually passed as Bearer
-      },
-      body: JSON.stringify({
-        // This is a simple example request body for the OpenAI Chat Completion API
-        // **Important: Adjust according to your actual LLM API documentation**
-        model: model, // Replace with the model name you are testing
-        messages: [{
-          role: "user",
-          content: "hello" // A simple request content for testing
-        }],
-        max_tokens: 16 // Minimum required by GPT-5 Pro (was 5, but GPT-5 requires >= 16)
-      }),
+      headers: isGemini
+        ? {
+          'Content-Type': 'application/json'
+        }
+        : {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}` // API key is usually passed as Bearer
+        },
+      body: JSON.stringify(
+        isGemini
+          ? {
+            contents: [{
+              parts: [{ text: 'hello' }]
+            }]
+          }
+          : {
+            // This is a simple example request body for the OpenAI Chat Completion API
+            // **Important: Adjust according to your actual LLM API documentation**
+            model: model, // Replace with the model name you are testing
+            messages: [{
+              role: "user",
+              content: "hello" // A simple request content for testing
+            }],
+            // Use max_completion_tokens for newer models (gpt-5, o1, o3), max_tokens for older
+            ...(model && /^(gpt-5|o1|o3)/i.test(model)
+              ? { max_completion_tokens: 16 }
+              : { max_tokens: 16 })
+          }
+      ),
       signal: controller.signal
     });
 
@@ -30,15 +51,17 @@ async function checkLlmApiAvailability(baseUrl, apiKey='', model) {
       const data = await response.json();
       // Further check the response data, e.g., whether expected fields or error info exist
       // Different LLM API responses may vary, adjust as needed
-      if (data && data.choices && data.choices.length > 0) {
+      if (!isGemini && data && data.choices && data.choices.length > 0) {
         return { status: true, message: 'LLM API call succeeded.' };
-      } else {
-        return { status: false, message: 'LLM API call succeeded, but response data is not as expected.' };
       }
-    } else {
-      const errorText = await response.text();
-      return { status: false, message: `LLM API call failed, HTTP status: ${response.status}, error: ${errorText}` };
+      if (isGemini && data && Array.isArray(data.candidates) && data.candidates.length > 0) {
+        return { status: true, message: 'LLM API call succeeded.' };
+      }
+      return { status: false, message: 'LLM API call succeeded, but response data is not as expected.' };
     }
+
+    const errorText = await response.text();
+    return { status: false, message: `LLM API call failed, HTTP status: ${response.status}, error: ${errorText}` };
   } catch (error) {
     if (error.name === 'AbortError') {
       return { status: false, message: `LLM API call timed out: ${error.message}` };

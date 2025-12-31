@@ -159,6 +159,12 @@
         <CodeViewer v-else-if="canCodePreview" :file-path="file.filepath" :file-content="content" />
         <!-- office 文件预览 PDF Excel DOC DOCX-->
         <officePreview v-else-if="canOfficePreview" :filePath="file.filepath" />
+        <!-- Video preview -->
+        <div v-else-if="canVideoPreview" class="video-preview">
+          <video :src="videoUrl" controls autoplay class="video-player">
+            Your browser does not support the video tag.
+          </video>
+        </div>
         <!-- 无法预览的格式 -->
         <div v-else class="no-preview">
           <div class="detail">
@@ -279,6 +285,8 @@ const codePreviewType = ref([
   "lua",
 ]);
 const officePreviewType = ref(["pdf", "xlsx", "xls", "docx", "pptx"]);
+const videoPreviewType = ref(["mp4", "webm", "ogg", "mov"]);
+const videoUrl = ref("");
 // Local file list
 const fileList = ref([]);
 
@@ -330,6 +338,12 @@ watch(file, (newValue) => {
         content.value = handleFileContent(resString);
       });
     }
+    // Video file: load as blob URL for playback
+    if (videoPreviewType.value.includes(fileExtension?.toLowerCase())) {
+      workspaceService.getFile(newValue.filepath).then((res) => {
+        videoUrl.value = URL.createObjectURL(res);
+      });
+    }
   }
 
   // 设置渲染模式
@@ -370,6 +384,10 @@ const canCodePreview = computed(() => {
 //
 const canOfficePreview = computed(() => {
   return officePreviewType.value.includes(file.value.filepath?.split(".").pop());
+});
+// Video preview check
+const canVideoPreview = computed(() => {
+  return videoPreviewType.value.includes(file.value.filepath?.split(".").pop()?.toLowerCase());
 });
 
 // Copy content
@@ -589,6 +607,21 @@ const previewVisavleClose = async () => {
 
       .file-content-container {
         background-color: #00000000 !important;
+      }
+
+      .video-preview {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+        width: 100%;
+        background-color: #000;
+
+        .video-player {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
       }
 
       .no-preview {

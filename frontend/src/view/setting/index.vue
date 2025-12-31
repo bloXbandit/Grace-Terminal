@@ -166,6 +166,10 @@ onMounted(() => {
 
 
 const back = () => {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
   router.push('/')
 }
 

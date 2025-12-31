@@ -141,6 +141,7 @@ import { ref, computed, onMounted, onUnmounted, watchEffect, nextTick, h } from 
 import { useChatStore } from '@/store/modules/chat'
 import { storeToRefs } from 'pinia'
 import { DownOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import http from '@/utils/http'
 
 import { useUserStore } from '@/store/modules/user';
 import modelService from '@/services/default-model-setting'
@@ -148,7 +149,7 @@ import Pricing from '@/view/pay/components/pricing.vue';
 import i18n from '@/locals';
 
 const userStore = useUserStore();
-const { membership } = storeToRefs(userStore);
+const { user, membership } = storeToRefs(userStore);
 
 // Pinia store
 const chatStore = useChatStore()
@@ -169,7 +170,9 @@ const isMobile = ref(false)
 
 // 登录状态检查
 const isLoggedIn = computed(() => {
-  return !!localStorage.getItem('access_token')
+  // In local/dev mode, backend may authorize a default user without issuing an access_token.
+  // Treat presence of a user id as logged-in to avoid incorrectly disabling all models.
+  return !!localStorage.getItem('access_token') || !!user.value?.id
 })
 
 // 登录提示弹窗
