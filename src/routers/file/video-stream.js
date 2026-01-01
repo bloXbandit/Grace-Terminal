@@ -1,5 +1,4 @@
-const Router = require('@koa/router');
-const router = new Router();
+const router = require('koa-router')();
 const fs = require('fs');
 const path = require('path');
 
@@ -95,4 +94,4 @@ router.get('/video-stream', async (ctx) => {
   }
 });
 
-module.exports = exports = router.routes();
+module.exports = router;

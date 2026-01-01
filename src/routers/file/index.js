@@ -11,7 +11,8 @@ const modules = [
 
 for (const module of modules) {
   try {
-    router.use(require(`./${module}.js`));
+    const subRouter = require(`./${module}.js`);
+    router.use(subRouter.routes(), subRouter.allowedMethods());
   }
   catch (error) { console.log(`load ${module} error`, error); }
 }
