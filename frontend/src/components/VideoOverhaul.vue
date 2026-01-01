@@ -113,50 +113,16 @@ const loadVideo = async (file) => {
   visible.value = true
   
   try {
-    // Use new streaming endpoint with proper headers
-    const token = localStorage.getItem('access_token')
+    // Use the streaming endpoint URL directly so the browser can manage Range requests and seeking
+    // Note: native <video> requests cannot set Authorization headers; local dev falls back to local admin.
     loadingText.value = 'Connecting to video server...'
-    
-    const response = await fetch(`/api/file/video-stream?path=${encodeURIComponent(filePath)}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Range': 'bytes=0-1048576' // Request first 1MB for metadata
-      }
-    })
-    
-    loadingText.value = 'Processing video data...'
-    
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('[VideoOverhaul] Server error:', response.status, errorText)
-      throw new Error(`Server error ${response.status}: ${errorText.slice(0, 100)}`)
-    }
-    
-    // Check content type
-    const contentType = response.headers.get('content-type') || ''
-    if (!contentType.startsWith('video/')) {
-      throw new Error(`Server returned non-video content: ${contentType}`)
-    }
-    
-    // Get file size from headers
-    const contentLength = response.headers.get('content-length')
-    if (contentLength) {
-      fileSize.value = parseInt(contentLength)
-    }
-    
-    loadingText.value = 'Creating video player...'
-    
-    // Create blob URL for streaming
-    const blob = await response.blob()
-    console.log('[VideoOverhaul] Video blob:', blob.type, blob.size)
-    
-    // Clean up old URL if exists
-    if (videoUrl.value) {
+
+    // Clean up old blob URL if exists
+    if (videoUrl.value && videoUrl.value.startsWith('blob:')) {
       URL.revokeObjectURL(videoUrl.value)
     }
-    
-    videoUrl.value = URL.createObjectURL(blob)
+
+    videoUrl.value = `/api/file/video-stream?path=${encodeURIComponent(filePath)}`
     loading.value = false
     
   } catch (err) {
@@ -226,10 +192,10 @@ const download = async () => {
 }
 
 const close = () => {
-  if (videoUrl.value) {
+  if (videoUrl.value && videoUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(videoUrl.value)
-    videoUrl.value = ''
   }
+  videoUrl.value = ''
   if (videoPlayer.value) {
     videoPlayer.value.pause()
     videoPlayer.value.src = ''
