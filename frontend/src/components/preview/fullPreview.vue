@@ -174,7 +174,7 @@
                 <fileSvg :url="file?.filepath" class="file-type" />
               </div>
               <div class="file-info">
-                <div class="file-name">{{ file.filepath.split("/").pop() }}</div>
+                <div class="file-name">{{ fileName || file?.filename || file?.name || file?.filepath || "" }}</div>
                 <div class="file-type">{{ $t("lemon.fullPreview.fileTypePresentation") }}</div>
               </div>
             </div>
@@ -287,6 +287,7 @@ const codePreviewType = ref([
 const officePreviewType = ref(["pdf", "xlsx", "xls", "docx", "pptx"]);
 const videoPreviewType = ref(["mp4", "webm", "ogg", "mov"]);
 const videoUrl = ref("");
+let lastVideoObjectUrl = null;
 // Local file list
 const fileList = ref([]);
 
@@ -304,14 +305,53 @@ watch(currentIndex, (newValue) => {
   if (currentIndex.value === -1) {
     return;
   }
-  file.value = fileList.value[newValue];
+  if (!Array.isArray(fileList.value) || fileList.value.length === 0) {
+    file.value = {};
+    return;
+  }
+  if (typeof newValue !== "number" || Number.isNaN(newValue)) {
+    file.value = {};
+    return;
+  }
+  const clampedIndex = Math.max(0, Math.min(newValue, fileList.value.length - 1));
+  if (clampedIndex !== newValue) {
+    currentIndex.value = clampedIndex;
+  }
+  file.value = fileList.value[clampedIndex] || {};
 });
 // file name
 const fileName = ref("");
 //
 watch(file, (newValue) => {
+  if (!newValue) {
+    fileName.value = "";
+    content.value = "";
+    videoUrl.value = "";
+    contentLoading.value = false;
+    return;
+  }
   //content is loading
   contentLoading.value = true;
+
+  // Reset any existing video URL when switching files
+  if (lastVideoObjectUrl) {
+    try {
+      URL.revokeObjectURL(lastVideoObjectUrl);
+    } catch (e) {}
+    lastVideoObjectUrl = null;
+  }
+  videoUrl.value = "";
+
+  const resolvedFilepath = newValue?.filepath || newValue?.path || newValue?.url;
+  if (resolvedFilepath && !newValue.filepath) {
+    newValue.filepath = resolvedFilepath;
+  }
+  if (!newValue.filename) {
+    newValue.filename = newValue.name || (typeof resolvedFilepath === "string" ? resolvedFilepath.split("/").pop() : undefined);
+  }
+  if (!newValue.name) {
+    newValue.name = newValue.filename;
+  }
 
   // 判断文件类型
   canBeDiff.value = newValue.type === "diff";
@@ -330,18 +370,53 @@ watch(file, (newValue) => {
     content.value = `--- 删除的内容 ---\n${findContent}\n\n+++ 添加的内容 +++\n${withContent}`;
   } else {
     // 判断是否为代码文件（直接检查文件扩展名）
-    const fileExtension = newValue.filepath?.split(".").pop();
+    const fileExtension = (newValue.filepath || newValue.path || newValue.url)?.split(".").pop();
     if (codePreviewType.value.includes(fileExtension)) {
       // 代码文件：从服务器加载内容
-      workspaceService.getFile(newValue.filepath).then((res) => {
+      workspaceService.getFile(newValue.filepath || newValue.path || newValue.url).then((res) => {
         let resString = typeof res === "string" ? res : JSON.stringify(res);
         content.value = handleFileContent(resString);
       });
     }
     // Video file: load as blob URL for playback
     if (videoPreviewType.value.includes(fileExtension?.toLowerCase())) {
-      workspaceService.getFile(newValue.filepath).then((res) => {
-        videoUrl.value = URL.createObjectURL(res);
+      workspaceService.getFile(newValue.filepath || newValue.path || newValue.url).then((res) => {
+        const blob = (res && typeof Blob !== 'undefined' && res instanceof Blob)
+          ? res
+          : (res && res.data && typeof Blob !== 'undefined' && res.data instanceof Blob)
+            ? res.data
+            : null;
+
+        if (!blob) {
+          message.error(t("lemon.fullPreview.cannotPreviewFormat"));
+          return;
+        }
+
+        // If backend returned an error JSON as a blob, show it instead of a blank player
+        const type = (blob.type || '').toLowerCase();
+        if (type.includes('json') || (type.includes('text') && !type.includes('video'))) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const text = typeof reader.result === 'string' ? reader.result : '';
+            console.error('[VideoPreview] /api/file/read returned non-video payload:', text.slice(0, 500));
+            message.error(text ? text.slice(0, 180) : t("lemon.fullPreview.cannotPreviewFormat"));
+          };
+          reader.onerror = () => {
+            message.error(t("lemon.fullPreview.cannotPreviewFormat"));
+          };
+          reader.readAsText(blob);
+          return;
+        }
+
+        if (!type.startsWith('video/') && fileExtension?.toLowerCase() === 'mp4') {
+          console.warn('[VideoPreview] Unexpected blob type for mp4:', blob.type);
+        }
+
+        lastVideoObjectUrl = URL.createObjectURL(blob);
+        videoUrl.value = lastVideoObjectUrl;
+      }).catch(() => {
+        videoUrl.value = '';
+        message.error(t("lemon.fullPreview.cannotPreviewFormat"));
       });
     }
   }
@@ -485,8 +560,41 @@ function handleExportPDF() {
 emitter.on("fullPreviewVisable", (val) => {
   emitter.emit("preview-close");
   console.log("messages.value", val);
+  
+  // Normalize the clicked file to ensure filepath exists
+  const normalized = { ...(val || {}) };
+  if (!normalized.filepath && normalized.path) {
+    normalized.filepath = normalized.path;
+  }
+  if (!normalized.filepath && normalized.url) {
+    normalized.filepath = normalized.url;
+  }
+  if (!normalized.filename) {
+    normalized.filename = normalized.name || (typeof normalized.filepath === 'string' ? normalized.filepath.split('/').pop() : undefined);
+  }
+  if (!normalized.name) {
+    normalized.name = normalized.filename;
+  }
+  
   fileList.value = viewList.viewLocal(messages.value, true); // loading again TODO:
   currentIndex.value = fileList.value.findIndex((item) => item.id === val.id);
+  
+  // If ID match fails (common due to UUID overwrite), fallback to filepath match
+  if (currentIndex.value === -1 && normalized.filepath) {
+    currentIndex.value = fileList.value.findIndex((item) => 
+      item.filepath === normalized.filepath || 
+      item.path === normalized.filepath || 
+      item.url === normalized.filepath
+    );
+  }
+  
+  // If still not found, use the clicked file directly to guarantee preview works
+  if (currentIndex.value === -1) {
+    console.warn('[fullPreviewVisable] File not found in message list, using clicked file directly');
+    fileList.value = [normalized];
+    currentIndex.value = 0;
+  }
+  
   console.log("fileList.value", fileList.value, currentIndex.value);
   fullPreviewVisable.value = true;
 });
@@ -494,10 +602,23 @@ emitter.on("fullPreviewVisable", (val) => {
 //预览文件
 emitter.on("fullPreviewVisable-open", (val) => {
   showHeader.value = true;
-  fileList.value = [val];
+  const normalized = { ...(val || {}) };
+  if (!normalized.filepath && normalized.path) {
+    normalized.filepath = normalized.path;
+  }
+  if (!normalized.filepath && normalized.url) {
+    normalized.filepath = normalized.url;
+  }
+  if (!normalized.filename) {
+    normalized.filename = normalized.name || (typeof normalized.filepath === 'string' ? normalized.filepath.split('/').pop() : undefined);
+  }
+  if (!normalized.name) {
+    normalized.name = normalized.filename;
+  }
+  fileList.value = [normalized];
   currentIndex.value = 0;
   fullPreviewVisable.value = true;
-  file.value = val;
+  file.value = normalized;
 });
 
 emitter.on("fullPreviewVisable-close", () => {

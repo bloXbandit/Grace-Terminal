@@ -152,9 +152,14 @@ function handleFinishSummaryAddId(message, messages) {
         return !name.endsWith('.py');
     });
 
+    // CRITICAL: NEVER overwrite existing IDs - this breaks preview selection
+    // Only generate UUID if absolutely no ID exists
     for (let i = 0; i < filteredList.length; i++) {
         const element = filteredList[i];
-        element.id = uuid();
+        // RED BUTTON: Preserve all existing IDs, never overwrite
+        if (!element.id) {
+            element.id = uuid();
+        }
     }
 
     if (message.meta) {

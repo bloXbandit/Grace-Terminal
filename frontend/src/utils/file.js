@@ -6,7 +6,7 @@ const blobTypeDict = ['png','jpg','svg','jpeg','gif','webp','bmp','pdf','docx','
 
 // 
 function getFileReponseTypeByName(filename){
-    const fileExtendName = filename.split('.').pop();
+    const fileExtendName = filename.split('.').pop()?.toLowerCase();
     if(blobTypeDict.includes(fileExtendName)){
         return 'blob';
     }else{

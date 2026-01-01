@@ -14,6 +14,8 @@
     </div>
   </div>
   <imgModal v-if="list.length > 0" :url="imageUrl" v-model:visible="isModalVisible" @close="isModalVisible = false" />
+  <!-- COMPLETE OVERHAUL: Replace all video preview with bulletproof system -->
+  <VideoOverhaul />
 </template>
 <script setup>
 import { computed, ref } from "vue";
@@ -23,6 +25,7 @@ import imgModal from "@/components/file/imgModal.vue";
 import fileUtil from "@/utils/file";
 import workspaceService from "@/services/workspace";
 import { FileSearchOutlined } from "@ant-design/icons-vue";
+import VideoOverhaul from "@/components/VideoOverhaul.vue";
 
 import { storeToRefs } from "pinia";
 
@@ -135,24 +138,26 @@ const displayedFiles = computed(() => {
   return list.value;
 });
 
-// 打开文件
+// COMPLETE OVERHAUL: Use bulletproof video system for all videos
 const handleOpenFile = (file) => {
-  const filePath = file.filepath || file.path;
+  const filePath = file.filepath || file.path || file.url;
   console.log("handleOpenFile", file, filePath);
   if (!filePath) {
-    console.error("handleOpenFile: no filepath or path on file object", file);
+    console.error("handleOpenFile: no filepath, path, or url on file object", file);
     return;
   }
   const ext = filePath.split(".").pop()?.toLowerCase();
   if (fileUtil.imgType.includes(ext)) {
+    // Keep existing image preview
     workspaceService.getFile(filePath).then((res) => {
       imageUrl.value = URL.createObjectURL(res);
     });
     isModalVisible.value = true;
   } else if (fileUtil.videoType?.includes(ext)) {
-    // Video files go to full preview
-    emitter.emit("fullPreviewVisable", { ...file, filepath: filePath });
+    // COMPLETE OVERHAUL: Use new bulletproof video system
+    window.showVideoOverhaul(file);
   } else {
+    // For other files, try the old system
     emitter.emit("fullPreviewVisable", { ...file, filepath: filePath });
   }
 };

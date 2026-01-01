@@ -66,6 +66,18 @@ const TEST_CASES = {
       }
     },
     {
+      name: 'Cartoon Image Request (Regression) - Girl With Teddy Bear',
+      goal: 'make me a cartoon picture of a girl with a teddy bear',
+      mode: 'agent',
+      expectedActions: ['auto_reply', 'finish_summery'],
+      breakPoints: ['intent_detection', 'auto_reply', 'planning', 'execution', 'summary', 'llm_call'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /\.(png|jpg|jpeg|webp)$/i,
+        location: '/workspace'
+      }
+    },
+    {
       name: 'Video Fast-Path (MP4)',
       goal: 'Create a 3 second video of a neon koi fish swimming in a dark pond, cinematic lighting',
       mode: 'agent',

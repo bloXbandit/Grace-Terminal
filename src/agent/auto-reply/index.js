@@ -382,7 +382,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
 
     // PHOTO: Generate and save a PNG into the conversation workspace, then register it so UI can preview.
     try {
-      const TextToImageService = require('@src/utils/text_to_image');
+      const { getTextToImageService } = require('@src/utils/text_to_image');
       const FileRegistry = require('@src/context/FileRegistry');
       const path = require('path');
       const fs = require('fs').promises;
@@ -390,7 +390,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       const registry = new FileRegistry(conversation_id, user_id);
       await registry.ensureDir();
 
-      const imageService = new TextToImageService();
+      const imageService = getTextToImageService();
 
       // Use the full goal as prompt to preserve instructions (style, composition, etc.)
       const gen = await imageService.generateImage(goal, {

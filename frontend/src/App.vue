@@ -9,12 +9,14 @@
     }
   }">
     <router-view></router-view>
+    <VideoOverhaul />
   </a-config-provider>
 </template>
 
 <script setup>
 import { onMounted } from 'vue';
 import { useUserStore } from '@/store/modules/user.js';
+import VideoOverhaul from '@/components/VideoOverhaul.vue';
 
 const userStore = useUserStore();
 

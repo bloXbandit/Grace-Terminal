@@ -1,6 +1,7 @@
 require("module-alias/register");
 require('dotenv').config();
 
+const sequelize = require('./index.js');
 const Conversation = require('./Conversation');
 const File = require('./File');
 const Platform = require('./Platform');
@@ -37,6 +38,7 @@ const tableSync = async () => {
   await UserProviderConfigTable.sync({ alter: true });
   await UserSearchSettingTable.sync({ alter: true });
   try {
+    await sequelize.query('DROP TABLE IF EXISTS `llm_logs_backup`;');
     await LLMLogs.sync({ alter: true });
   } catch (e) {
     console.error('[sync:tableSync] LLMLogs alter sync failed; falling back to safe sync()', e);
@@ -371,6 +373,10 @@ const sync = async () => {
   }
 }
 
-sync()
-
 module.exports = exports = sync;
+
+if (require.main === module) {
+  sync()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}

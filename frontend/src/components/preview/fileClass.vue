@@ -298,14 +298,22 @@ fileUtil.handleFileDownload(file);
 }
 
 const handleOpenFile = (file) => {
-if (fileUtil.imgType.includes(file.filename.split('.').pop())) {
-  workspaceService.getFile(file.filepath).then(res => {
-    imgUrl.value = URL.createObjectURL(res)
-    imgVisable.value = true
-  })
-} else {
-  emitter.emit('fullPreviewVisable', file)
-}
+  const ext = (file?.filename || file?.filepath || '').split('.').pop()?.toLowerCase()
+  if (fileUtil.imgType.includes(ext)) {
+    workspaceService.getFile(file.filepath).then(res => {
+      imgUrl.value = URL.createObjectURL(res)
+      imgVisable.value = true
+    })
+  } else if (fileUtil.videoType?.includes(ext)) {
+    // Use global video overhaul player (registered in App.vue)
+    if (typeof window !== 'undefined' && typeof window.showVideoOverhaul === 'function') {
+      window.showVideoOverhaul(file)
+    } else {
+      emitter.emit('fullPreviewVisable', file)
+    }
+  } else {
+    emitter.emit('fullPreviewVisable', file)
+  }
 fileExplorerVisible.value = false
 }
 

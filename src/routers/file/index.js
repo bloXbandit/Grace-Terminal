@@ -1,10 +1,12 @@
-const router = require("koa-router")();
+const Router = require("koa-router");
+const router = new Router();
 
 router.prefix("/api/file");
 
 const modules = [
   "file",
-  "editor"
+  "editor",
+  "video-stream"
 ]
 
 for (const module of modules) {
