@@ -6,6 +6,9 @@
 
 const axios = require('axios').default;
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
+const FormData = require('form-data');
 
 const GRACE_URL = 'http://localhost:5005';
 const TEST_USER_ID = 'test_user_1';
@@ -71,6 +74,35 @@ const TEST_CASES = {
       verifyExecution: {
         type: 'file',
         pattern: /\.mp4$/i,
+        location: '/workspace'
+      }
+    },
+    {
+      name: 'Photo Edit - CodeFormer (HF)',
+      goal: 'Enhance face in this photo and improve quality',
+      mode: 'agent',
+      filePath: './workspace/Conversation_57cea1/upload/1623254673adb362aa8c66020d80f189.jpg',
+      expectedActions: ['auto_reply', 'finish_summery'],
+      breakPoints: ['intent_detection', 'auto_reply', 'response', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /_codeformer_\d+\.(png|jpg|jpeg)$/i,
+        location: '/workspace'
+      }
+    },
+    {
+      name: 'Photo Edit - Face Swap (HF InsightFace)',
+      goal: 'Swap faces. Use photo 1 as source face and photo 2 as target image.',
+      mode: 'agent',
+      filePaths: [
+        './workspace/Conversation_57cea1/upload/1623254673adb362aa8c66020d80f189.jpg',
+        './workspace/Conversation_57cea1/upload/1623254673adb362aa8c66020d80f189.jpg'
+      ],
+      expectedActions: ['auto_reply', 'finish_summery'],
+      breakPoints: ['intent_detection', 'auto_reply', 'response', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /_faceswap_\d+\.(png|jpg|jpeg)$/i,
         location: '/workspace'
       }
     }
@@ -324,13 +356,33 @@ const TEST_CASES = {
   ]
 };
 
-// Flatten for easy iteration
 const ALL_TEST_CASES = Object.values(TEST_CASES).flat();
 
 class GraceTester {
   constructor() {
     this.results = [];
     this.conversationId = null;
+  }
+
+  async uploadFileToConversation(conversationId, filePath) {
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+    if (!fs.existsSync(absPath)) {
+      return { uploaded: false, skipped: true, reason: `File not found: ${absPath}` };
+    }
+
+    const form = new FormData();
+    form.append('files', fs.createReadStream(absPath));
+    form.append('conversation_id', conversationId);
+
+    const res = await axios.post(`${GRACE_URL}/api/file/upload`, form, {
+      headers: {
+        ...form.getHeaders()
+      },
+      maxBodyLength: Infinity,
+      timeout: 60000
+    });
+
+    return { uploaded: true, response: res.data };
   }
 
   async createConversation(providedId = null) {
@@ -641,6 +693,33 @@ class GraceTester {
     try {
       // Create new conversation for each test
       await this.createConversation();
+
+      const filePaths = Array.isArray(testCase.filePaths)
+        ? testCase.filePaths
+        : testCase.filePath
+          ? [testCase.filePath]
+          : [];
+
+      for (const fp of filePaths) {
+        log.info(`Uploading file: ${fp}`);
+        try {
+          const upload = await this.uploadFileToConversation(this.conversationId, fp);
+          if (upload.skipped) {
+            log.warn(upload.reason);
+            return {
+              testName: testCase.name,
+              success: true,
+              skipped: true,
+              reason: upload.reason,
+              duration: Date.now() - startTime,
+              messages: []
+            };
+          }
+          log.success('✅ File uploaded');
+        } catch (e) {
+          log.error(`❌ File upload failed: ${e.message}`);
+        }
+      }
       
       // Send request and capture streaming response
       const headers = {

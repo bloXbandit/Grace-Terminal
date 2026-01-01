@@ -31,6 +31,41 @@ class ImageEditService {
    */
   detectEditType(request) {
     const q = (request || '').toLowerCase();
+
+    // Face swap (Hugging Face InsightFace)
+    const wantsFaceSwap = /\b(face\s*swap|swap\s*face|swap\s*faces|replace\s*face\s*with|put\s+my\s+face\s+on|put\s+(?:the\s+)?first\s+face\s+on\s+(?:the\s+)?second|put\s+(?:the\s+)?second\s+face\s+on\s+(?:the\s+)?first)\b/i.test(q);
+    if (wantsFaceSwap) {
+      return {
+        type: 'huggingface_faceswap',
+        operation: 'faceswap',
+        params: {}
+      };
+    }
+
+    // Face/portrait enhancement (Hugging Face CodeFormer)
+    // This should run BEFORE other AI patterns so we can route to the specialized enhancer.
+    const wantsFaceEnhance = /\b(enhance\s+face|beautify|restore\s+photo|restore\s+image|improve\s+quality|face\s+enhance|face\s+restoration)\b/i.test(q);
+    const wantsTransform = /\b(make\s+(?:him|her|them|this|that|the\s+person|the\s+kid|kid)\s+)?(muscular|buff|fit)\b/i.test(q) || /\b(transform|glow\s*up)\b/i.test(q);
+    if (wantsFaceEnhance || wantsTransform) {
+      let fidelity = 0.5;
+      if (/\b(restore|enhance|improve|repair|upscale)\b/i.test(q)) {
+        fidelity = 0.7;
+      } else if (/\b(muscular|buff|transform|beautify|glow\s*up)\b/i.test(q)) {
+        fidelity = 0.3;
+      }
+
+      return {
+        type: 'huggingface_face',
+        operation: 'codeformer',
+        params: {
+          fidelity,
+          upscale: 2,
+          face_align: true,
+          background_enhance: true,
+          face_upsample: true
+        }
+      };
+    }
     
     // Technical edits (Pillow)
     const technicalPatterns = {

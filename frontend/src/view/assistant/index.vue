@@ -306,6 +306,7 @@ const howtoSections = ref([
     title: '⚡ Pro Tips',
     tips: [
       { id: 17, emoji: '⚙️', title: 'Default Chat Model', description: 'For fast, high-quality general chat, set your default model to Gemini Preview 3 or Claude Sonnet 4.5.' },
+      { id: 18, emoji: '🪄', title: 'Face Swap', description: 'Upload 2 photos, then say "swap faces". Default is photo 1 (source face) → photo 2 (target image). Say "reverse" to swap the other way.' },
       { id: 13, emoji: '🧠', title: 'Memory Commands', description: 'Say "Remember that I prefer..." to save preferences. Grace will use this context in future chats.' },
       { id: 14, emoji: '🔍', title: 'Web Research', description: 'Ask Grace to "search for..." or "research..." for current information from the web.' },
       { id: 15, emoji: '📁', title: 'File Explorer', description: 'Click the folder icon to browse all files Grace has created for you.' },

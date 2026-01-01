@@ -98,6 +98,22 @@
                       </a-menu>
                     </template>
                   </a-dropdown>
+
+                  <a-popover placement="top" trigger="click" overlayClassName="creator-popover">
+                    <template #content>
+                      <div class="creator-popover-content">
+                        <div class="creator-title">Creator</div>
+                        <a-button block class="creator-item" @click="applyCreatorPreset('faceswap')">Face Swap (2 photos)</a-button>
+                        <a-button block class="creator-item" @click="applyCreatorPreset('sora')">Sora Prompt Helper</a-button>
+                      </div>
+                    </template>
+                    <a-button class="creator-button" title="Creator">
+                      <template #icon>
+                        <BulbOutlined />
+                      </template>
+                      Creator
+                    </a-button>
+                  </a-popover>
                   
                   <!-- Computer Preview Button -->
                   <a-button class="computer-button" @click="openComputerPreview">
@@ -567,6 +583,38 @@ const handleSend = () => {
   });
 };
 
+const applyCreatorPreset = (preset) => {
+  const cid = conversation_id.value || 'unknown';
+  const storageKey = `creator_last_preset_${cid}`;
+
+  let text = '';
+  if (preset === 'faceswap') {
+    text =
+      'Face swap:\n' +
+      '- Use photo 1 as SOURCE face\n' +
+      '- Use photo 2 as TARGET image\n' +
+      '- Keep lighting, pose, background\n' +
+      '- Output one final image\n' +
+      '(Say "reverse" to swap direction.)';
+  } else if (preset === 'sora') {
+    text =
+      'Sora settings (prompt helper):\n' +
+      '- duration: 4s | 8s | 12s\n' +
+      '- aspect: landscape | portrait\n' +
+      '- style: cinematic\n' +
+      '- camera: handheld / dolly / drone\n' +
+      '- motion: slow / fast\n' +
+      'Scene prompt:';
+  }
+
+  if (text) {
+    messageText.value = text;
+    try {
+      localStorage.setItem(storageKey, preset);
+    } catch (e) {}
+  }
+};
+
 const handleStop = () => {
   chatStore.handleStop();
 };
@@ -608,6 +656,26 @@ const keydown = (e) => {
     align-items: center;
     justify-content: space-between;
   }
+}
+
+.creator-button {
+  margin-left: 8px;
+}
+
+.creator-popover-content {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.creator-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.creator-item {
+  text-align: left;
 }
 .visibility-select .desc {
   font-size: 12px;

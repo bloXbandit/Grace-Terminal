@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.21",
+    "@gradio/client": "^2.0.1",
     "@koa/multer": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.13.0",
     "@octokit/rest": "^20.0.2",
