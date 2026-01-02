@@ -43,6 +43,12 @@ const routes = [
     name: "assistant",
     component: () => import("@/view/assistant/index.vue"),
     meta: { verify: true }
+  },
+  {
+    path: "/digital-twin",
+    name: "digital-twin",
+    component: () => import("@/view/digital-twin/index.vue"),
+    meta: { verify: true }
   },{
     path: "/pricing",
     name: "pricing",

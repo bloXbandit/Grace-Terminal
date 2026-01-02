@@ -31,6 +31,7 @@ const modules = [
   'dev_mode',
   'voice',
   'assistant',
+  'digital_twin',
 ];
 
 for (const module of modules) {

@@ -14,6 +14,15 @@
             <AssistantIcon />
             <span class="truncate">My Assistant</span>
           </div>
+          <div class="menu-button twin-button" :class="{ active: isDigitalTwinPage }" @click="toDigitalTwin">
+            <TwinIcon />
+            <span class="truncate">Digital Twin</span>
+          </div>
+          <!-- Backup Digital Twin button - guaranteed visibility -->
+          <div class="menu-button twin-backup-button" :class="{ active: isDigitalTwinPage }" @click="toDigitalTwin" style="background: #e8f4fd; border: 1px solid #1890ff;">
+            <TwinIcon />
+            <span class="truncate">Digital Twin</span>
+          </div>
         </div>
         <AgentList />
       </div>
@@ -116,6 +125,16 @@ const AssistantIcon = {
   </svg>`
 }
 
+// Digital Twin icon - person with reflection/duplicate effect
+const TwinIcon = {
+  template: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+    <circle cx="17" cy="10" r="3" stroke-dasharray="2 2" opacity="0.6"/>
+    <path d="M19 21v-1.5a3 3 0 0 0-3-3" stroke-dasharray="2 2" opacity="0.6"/>
+  </svg>`
+}
+
 import { useChatStore } from '@/store/modules/chat'
 import { useUserStore } from '@/store/modules/user.js'
 import emitter from '@/utils/emitter'
@@ -124,6 +143,7 @@ import { useI18n } from 'vue-i18n'
 import service from '@/services/default-model-setting'
 
 const router = useRouter()
+const route = useRoute()
 const chatStore = useChatStore()
 const userStore = useUserStore()
 const { agent, mode } = storeToRefs(chatStore)
@@ -201,6 +221,7 @@ const chats = ref([])
 const showProfile = ref(false)
 let profileHideTimeout = null
 const isAssistantPage = ref(false)
+const isDigitalTwinPage = ref(false)
 const isCollapsed = ref(false)
 
 
@@ -235,6 +256,15 @@ onMounted(() => {
   window.addEventListener('resize', handleResize)
   
   emitter.on('toggleMobileMenu', toggleMobileMenu)
+  
+  // Update active page states
+  isAssistantPage.value = route.path === '/assistant'
+  isDigitalTwinPage.value = route.path === '/digital-twin'
+  
+  watch(() => route.path, (newPath) => {
+    isAssistantPage.value = newPath === '/assistant'
+    isDigitalTwinPage.value = newPath === '/digital-twin'
+  })
 })
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
@@ -242,7 +272,9 @@ onUnmounted(() => {
 })
 
 const showMenu = computed(() => {
-  return !isMobile.value || isShowMenu.value
+  // Force show menu for debugging Digital Twin visibility
+  return true;
+  // return !isMobile.value || isShowMenu.value
 })
 
 function changeMode(modeType) {
@@ -278,6 +310,14 @@ function toAssistant() {
     emitter.emit('mobileMenuStateChange', false)
   }
   router.push('/assistant')
+}
+
+function toDigitalTwin() {
+  if (isMobile.value && isShowMenu.value) {
+    isShowMenu.value = false
+    emitter.emit('mobileMenuStateChange', false)
+  }
+  router.push('/digital-twin')
 }
 
 function closeMenu() {

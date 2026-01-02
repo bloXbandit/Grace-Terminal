@@ -260,6 +260,170 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     };
   }
   
+  // FAST-PATH: Digital Twin website generation
+  // Catches: "create website with my twin", "twin website", "my twin on website", etc.
+  const twinWebsitePattern = goal.match(/(?:create|make|build|generate).*(?:website|site|page).*(?:with|using|featuring|my|the).*(?:digital\s+)?twin|twin.*(?:website|site|page)|website.*twin/i);
+  
+  if (twinWebsitePattern) {
+    console.log('[AutoReply] 🌐 Digital Twin Website Fast-path: Website with twin detected');
+    console.log('[AutoReply] Pattern matched:', twinWebsitePattern[0]);
+    
+    try {
+      const TwinWebsiteGenerator = require('@src/utils/twin_website_generator');
+      const DigitalTwin = require('@src/models/DigitalTwin');
+      const FileRegistry = require('@src/context/FileRegistry');
+      const path = require('path');
+      
+      // Get user's default twin
+      const twin = await DigitalTwin.findOne({
+        where: { user_id, is_default: true, status: 'active' }
+      });
+      
+      if (!twin) {
+        return {
+          handledBySpecialist: true,
+          specialist: 'digital_twin_website',
+          taskType: 'general_chat',
+          result: 'You don\'t have a digital twin set up yet. Visit the Digital Twin page to create one from your photo.'
+        };
+      }
+      
+      // Extract website type from request
+      const websiteType = goal.includes('resume') ? 'resume' : 
+                         goal.includes('product') ? 'product' : 
+                         goal.includes('business') ? 'business' : 'resume';
+      
+      // Generate website with twin
+      const registry = new FileRegistry(conversation_id, user_id);
+      await registry.ensureDir();
+      const outputDir = path.join(process.cwd(), 'workspace', `user_${user_id}`, 'twin_websites');
+      
+      const generator = new TwinWebsiteGenerator();
+      const result = await generator.generateWebsite({
+        type: websiteType,
+        twin_id: twin.id,
+        content: { title: `${twin.name}'s ${websiteType} Website` },
+        user_id,
+        conversation_id,
+        output_dir: outputDir
+      });
+      
+      return {
+        handledBySpecialist: true,
+        specialist: 'digital_twin_website',
+        taskType: 'general_chat',
+        result: `✅ Generated ${websiteType} website with ${twin.name}: ${result.websitePath}`,
+        files: result.files || []
+      };
+    } catch (e) {
+      console.error('[AutoReply] Twin website generation failed:', e);
+      return null; // Fall back to agentic
+    }
+  }
+  
+  // FAST-PATH: Digital Twin video generation (talking head from saved twin)
+  // Catches: "use my twin", "generate video with my twin", "my digital twin says", etc.
+  const twinPattern = goal.match(/(?:use|with|using|from|via)\s+(?:my|the|our)?\s*(?:digital\s+)?twin|(?:my|the)\s+twin\s+(?:say|speak|tell|video)|twin\s+(?:video|generation)|(?:create|make|generate).*(?:with|using).*twin/i);
+  
+  if (twinPattern) {
+    console.log('[AutoReply] 🎭 Digital Twin Fast-path: Twin usage detected');
+    console.log('[AutoReply] Pattern matched:', twinPattern[0]);
+    
+    try {
+      const DigitalTwinService = require('@src/utils/digital_twin');
+      const DigitalTwin = require('@src/models/DigitalTwin');
+      const FileRegistry = require('@src/context/FileRegistry');
+      const path = require('path');
+      
+      // Get user's default twin
+      const twin = await DigitalTwin.findOne({
+        where: { user_id, is_default: true, status: 'active' }
+      });
+      
+      if (!twin) {
+        return {
+          handledBySpecialist: true,
+          specialist: 'digital_twin',
+          taskType: 'general_chat',
+          result: 'You don\'t have a digital twin set up yet. Visit the Digital Twin page to create one from your photo.'
+        };
+      }
+      
+      // Extract script from request
+      let script = null;
+      
+      // Method 1: Direct quote extraction
+      const scriptMatch = goal.match(/(?:say|speak|tell)\s+["']?([^"']+)["']?/i) ||
+                         goal.match(/(?:video|twin).*?["']([^"']+)["']/i);
+      
+      if (scriptMatch) {
+        script = scriptMatch[1].trim();
+      } else {
+        // Method 2: Concept-based - generate script using LLM
+        const concept = goal.replace(twinPattern[0], '').trim();
+        if (concept && concept.length > 10) {
+          console.log('[AutoReply] 🧠 Generating script from concept:', concept);
+          
+          try {
+            const call = require('@src/utils/llm');
+            const prompt = `Generate a short, natural script (30-60 seconds) for a digital twin to say about: "${concept}"
+
+Requirements:
+- First person perspective ("I", "my", "we")
+- Conversational and friendly tone
+- 2-4 sentences max
+- Avoid complex jargon
+- End with a positive or engaging closing
+
+Script:`;
+            
+            const response = await call(prompt, [], { model: 'gpt-4o-mini', max_tokens: 200 });
+            script = response?.content?.trim() || concept;
+            
+            console.log('[AutoReply] ✅ Generated script:', script);
+          } catch (e) {
+            console.error('[AutoReply] Script generation failed:', e);
+            script = concept; // Fallback to raw concept
+          }
+        }
+      }
+      
+      if (!script || script.length < 5) {
+        return {
+          handledBySpecialist: true,
+          specialist: 'digital_twin',
+          taskType: 'general_chat',
+          result: 'What should your twin say? You can:\n1. Provide exact text: "Use my twin to say \'Welcome to my website!\'"\n2. Give a topic: "Use my twin to introduce my company"'
+        };
+      }
+      
+      // Generate twin video
+      const registry = new FileRegistry(conversation_id, user_id);
+      await registry.ensureDir();
+      const outputDir = path.join(process.cwd(), 'workspace', `user_${user_id}`, 'twin_videos');
+      
+      const service = new DigitalTwinService();
+      const result = await service.generateVideo({
+        twin_id: twin.id,
+        script,
+        user_id,
+        conversation_id,
+        output_dir: outputDir
+      });
+      
+      return {
+        handledBySpecialist: true,
+        specialist: 'digital_twin',
+        taskType: 'general_chat',
+        result: `✅ Generated twin video: ${result.video_filename}`,
+        files: [{ name: result.video_filename, path: result.video_path, type: 'video/mp4' }]
+      };
+    } catch (e) {
+      console.error('[AutoReply] Twin generation failed:', e);
+      return null; // Fall back to agentic
+    }
+  }
+  
   // FAST-PATH: Photo/Video generation (instant response, no planning)
   // Catches: "create a video", "generate a photo", "make an image", etc.
   const mediaFastPathHeuristic = (() => {

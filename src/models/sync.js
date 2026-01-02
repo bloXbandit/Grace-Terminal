@@ -22,6 +22,10 @@ const UserProfile = require('./UserProfile');
 const RoutingPreference = require('./RoutingPreference');
 const UserMemory = require('./UserMemory');
 
+// Digital Twin Models
+const DigitalTwin = require('./DigitalTwin');
+const TwinVideo = require('./TwinVideo');
+
 // SEAL Framework Models
 const TaskExecution = require('./TaskExecution');
 const SelfEdit = require('./SelfEdit');
@@ -60,6 +64,10 @@ const tableSync = async () => {
   await SelfEdit.sync({ alter: true });
   await PerformanceMetric.sync({ alter: true });
   await SkillGap.sync({ alter: true });
+  
+  // Digital Twin Tables
+  await DigitalTwin.sync({ alter: true });
+  await TwinVideo.sync({ alter: true });
 }
 
 const dataSync = async () => {
