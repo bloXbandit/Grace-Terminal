@@ -305,12 +305,8 @@ const handleOpenFile = (file) => {
       imgVisable.value = true
     })
   } else if (fileUtil.videoType?.includes(ext)) {
-    // Use global video overhaul player (registered in App.vue)
-    if (typeof window !== 'undefined' && typeof window.showVideoOverhaul === 'function') {
-      window.showVideoOverhaul(file)
-    } else {
-      emitter.emit('fullPreviewVisable', file)
-    }
+    // FIXED: Use fullPreview for embedded video display in Computer UI
+    emitter.emit('fullPreviewVisable', file)
   } else {
     emitter.emit('fullPreviewVisable', file)
   }
