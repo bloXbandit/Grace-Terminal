@@ -177,6 +177,22 @@ function handleFinishSummaryAddId(message, messages) {
 
     // Only mutate messages array if ChatPanel is still mounted
     if (window.isChatPanelMounted?.value) {
+        // PROGRESS MESSAGES: Update in place instead of adding new messages
+        // This creates a single updating line instead of multiple message items
+        if (message.meta?.action_type === 'progress') {
+            const taskId = message.meta?.task_id;
+            // Find existing progress message for this task
+            const existingIdx = messages.findIndex(m => 
+                m.meta?.action_type === 'progress' && m.meta?.task_id === taskId
+            );
+            if (existingIdx !== -1) {
+                // Update existing progress message content in place
+                messages[existingIdx].content = message.content;
+                messages[existingIdx].timestamp = message.timestamp;
+                return; // Don't push a new message
+            }
+        }
+        
         messages.push(message);
 
         if (message.status === 'success') {

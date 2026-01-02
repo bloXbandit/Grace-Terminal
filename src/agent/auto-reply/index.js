@@ -343,12 +343,77 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
 
         const videoService = new TextToVideoService();
 
+        // --- FAKE PROGRESS TICKER ---
+        // Sora takes ~3-4 min, so we simulate progress over ~180 seconds
+        // Progress increments randomly to feel natural, pauses occasionally
+        let progressPercent = 0;
+        let progressInterval = null;
+        const TARGET_DURATION_MS = 180000; // 3 minutes to reach ~95%
+        const UPDATE_INTERVAL_MS = 3000; // Update every 3 seconds
+        const totalUpdates = TARGET_DURATION_MS / UPDATE_INTERVAL_MS; // ~60 updates
+        const avgIncrementPerUpdate = 95 / totalUpdates; // ~1.58% per update on average
+
+        // Send initial "working on it" message
+        if (typeof onTokenStream === 'function') {
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          await sendProgressMessage(onTokenStream, conversation_id, '🎬 Starting video generation... this usually takes 3-4 minutes.', 'progress');
+        }
+
+        // Start the fake progress ticker
+        if (typeof onTokenStream === 'function') {
+          const Message = require('@src/utils/message');
+          console.log('[AutoReply] 🎬 Starting progress ticker interval');
+          progressInterval = setInterval(() => {
+            // Random increment: sometimes small, sometimes bigger, occasionally pause
+            const rand = Math.random();
+            let increment;
+            if (rand < 0.1) {
+              // 10% chance: pause (no increment)
+              increment = 0;
+            } else if (rand < 0.3) {
+              // 20% chance: small increment
+              increment = avgIncrementPerUpdate * 0.5;
+            } else if (rand < 0.9) {
+              // 60% chance: normal increment
+              increment = avgIncrementPerUpdate * (0.8 + Math.random() * 0.4);
+            } else {
+              // 10% chance: larger jump
+              increment = avgIncrementPerUpdate * 1.5;
+            }
+            
+            progressPercent = Math.min(95, progressPercent + increment);
+            const displayPercent = Math.round(progressPercent);
+            
+            console.log(`[AutoReply] 🎬 Progress tick: ${displayPercent}%`);
+            
+            // Stream progress update - use 'assistant' role so it appears on Grace's side
+            const progressMsg = Message.format({
+              role: 'assistant',
+              status: 'success',
+              content: `🎬 Generating video... ${displayPercent}%`,
+              action_type: 'progress',
+              task_id: conversation_id
+            });
+            try {
+              onTokenStream(progressMsg);
+            } catch (e) {
+              console.error('[AutoReply] Progress stream error:', e);
+            }
+          }, UPDATE_INTERVAL_MS);
+        }
+
         console.log('[AutoReply] 🎬 Video fast-path: calling OpenAI videos API (sora-2-pro) - may take 2-5 min');
         const gen = await videoService.generateVideo(goal, {
           model: 'sora-2-pro',
           maxWaitMs: 5 * 60 * 1000, // 5 minutes - Sora takes 2-5 min typically
           pollIntervalMs: 3000
         });
+
+        // Stop the progress ticker
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
 
         const bytes = gen?.data?.bytes;
         if (!bytes || !(bytes instanceof Buffer) || bytes.length === 0) {
@@ -372,6 +437,11 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
           files: [{ name: outName, path: outPath, type: 'video/mp4' }]
         };
       } catch (e) {
+        // Stop the progress ticker on error
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
         console.error('[AutoReply] Video generation fast-path failed:', e?.message || e);
         if (e && e.stack) {
           console.error('[AutoReply] Video generation fast-path stack:', e.stack);
@@ -381,6 +451,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     }
 
     // PHOTO: Generate and save a PNG into the conversation workspace, then register it so UI can preview.
+    if (isPhotoRequest) {
     try {
       const { getTextToImageService } = require('@src/utils/text_to_image');
       const FileRegistry = require('@src/context/FileRegistry');
@@ -432,11 +503,25 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       console.error('[AutoReply] Photo generation fast-path failed:', e?.message || e);
       return null;
     }
+    }
   }
   
   // FILE UPLOAD DETECTION: Analyze uploaded files if present
-  if (files && files.length > 0) {
-    console.log(`[AutoReply] 📎 Detected ${files.length} uploaded file(s)`);
+  // CRITICAL: Filter out image/video files - they're created by photo/video fast-path
+  // and should NOT trigger document analysis or cause follow-up messages to go to planning
+  const documentFiles = (files || []).filter(f => {
+    const name = (f.name || f.filename || '').toLowerCase();
+    // Exclude image and video files
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || 
+        name.endsWith('.gif') || name.endsWith('.webp') || name.endsWith('.mp4') ||
+        name.endsWith('.mov') || name.endsWith('.avi') || name.endsWith('.mkv')) {
+      return false;
+    }
+    return true;
+  });
+  
+  if (documentFiles && documentFiles.length > 0) {
+    console.log(`[AutoReply] 📎 Detected ${documentFiles.length} document file(s) (filtered from ${files.length} total)`);
     
     // SMART CACHING: Check if request needs file analysis
     const needsFileAnalysis = goal.match(/what'?s? in (it|the|this|that)|show me|break(down|)|content|tell me (about|what)|read (this|the)|analyze|summary|details|who is|is (it|this) (signed|executed)|what (company|lender|bank|date)|explain (this|the)|review (this|the)/i);
@@ -447,7 +532,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     const filesToAnalyze = [];
     const analyses = [];
     
-    for (const file of files) {
+    for (const file of documentFiles) {
       const fileId = file.id || file.dataValues?.id;
       if (!fileId) {
         console.log('[AutoReply] ⚠️ File has no ID, will analyze:', file.name);
@@ -477,7 +562,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       }
     }
     
-    console.log(`[AutoReply] Cache status: ${analyses.length}/${files.length} files cached`);
+    console.log(`[AutoReply] Cache status: ${analyses.length}/${documentFiles.length} files cached`);
     console.log(`[AutoReply] Need to analyze: ${filesToAnalyze.length} files`);
     console.log(`[AutoReply] Request needs file analysis: ${!!needsFileAnalysis}`);
     console.log(`[AutoReply] Request references file: ${!!referencesFile}`);
@@ -2123,29 +2208,26 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
   if (model_info.is_subscribe) {
     let replay = await auto_reply_server(goal, conversation_id)
     // If simple greeting, mark as fully handled to skip planning
-    if (isSimpleGreeting) {
-      console.log('[AutoReply] ✅ Simple greeting detected - skipping planning phase');
-      return {
-        handledBySpecialist: true,
-        result: replay,
-        specialist: 'auto_reply_greeting',
-        taskType: 'general_chat'
-      };
-    }
-    return replay
-  }
-  let replay = await auto_reply_local(goal, conversation_id)
-  // If simple greeting, mark as fully handled to skip planning
-  if (isSimpleGreeting) {
-    console.log('[AutoReply] ✅ Simple greeting detected - skipping planning phase');
+    // CRITICAL: Always wrap general_chat responses to prevent planning
+    // This ensures follow-up messages after photo/video don't trigger agent mode
+    console.log('[AutoReply] ✅ General chat response - skipping planning phase');
     return {
       handledBySpecialist: true,
       result: replay,
-      specialist: 'auto_reply_greeting',
+      specialist: 'auto_reply_chat',
       taskType: 'general_chat'
     };
   }
-  return replay
+  let replay = await auto_reply_local(goal, conversation_id)
+  // CRITICAL: Always wrap general_chat responses to prevent planning
+  // This ensures follow-up messages after photo/video don't trigger agent mode
+  console.log('[AutoReply] ✅ General chat response - skipping planning phase');
+  return {
+    handledBySpecialist: true,
+    result: replay,
+    specialist: 'auto_reply_chat',
+    taskType: 'general_chat'
+  }
 }
 
 const auto_reply_server = async (goal, conversation_id) => {

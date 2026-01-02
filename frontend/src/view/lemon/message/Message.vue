@@ -9,6 +9,11 @@
     <LoadingOutlined />
     <span style="margin-left: 5px">{{ content }}</span>
   </div>
+  <!-- Progress messages (e.g., video generation progress) -->
+  <div v-else-if="message?.meta?.action_type === 'progress'" class="progress-message">
+    <LoadingOutlined />
+    <span style="margin-left: 5px">{{ content }}</span>
+  </div>
   <!-- 代码编辑 -->
   <div v-else-if="message?.meta?.action_type === 'coding'">
     <CodingMessage :message="message" />
@@ -156,6 +161,14 @@ code {
   line-height: 18px;
   font-size: 13px;
   align-items: center;
+}
+
+.progress-message {
+  display: flex;
+  align-items: center;
+  color: #1890ff;
+  font-size: 14px;
+  padding: 8px 0;
 }
 
 .credits {
