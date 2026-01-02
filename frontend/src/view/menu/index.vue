@@ -77,13 +77,15 @@
 
          
 
-          <a-tooltip title="Documentation">
-            <a href="https://lemon-11.gitbook.io/lemonai" target="_blank" rel="noopener noreferrer" class="footer-social-link">
+          <a-tooltip title="Digital Twin">
+            <div @click="toDigitalTwin" class="footer-social-link" style="cursor: pointer;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="footer-social-icon" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                <circle cx="17" cy="10" r="3" stroke-dasharray="2 2" opacity="0.6"/>
+                <path d="M19 21v-1.5a3 3 0 0 0-3-3" stroke-dasharray="2 2" opacity="0.6"/>
               </svg>
-            </a>
+            </div>
           </a-tooltip>
         </div>
 
@@ -101,7 +103,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
 import Logo from '@/components/logo.vue'
