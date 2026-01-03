@@ -113,6 +113,7 @@ class DigitalTwinService {
       const videoPath = await this._generateTalkingHead({
         face_image_url: twin.face_image_url,
         audio_url: audioUrl,
+        audio_path: audioPath,
         model_type: twin.hf_model_type,
         output_dir
       });
@@ -330,13 +331,14 @@ class DigitalTwinService {
    * Generate talking head video using Replicate API
    * @private
    */
-  async _generateTalkingHead({ face_image_url, audio_url, model_type, output_dir }) {
+  async _generateTalkingHead({ face_image_url, audio_url, audio_path, model_type, output_dir }) {
     if (!this.replicateToken) {
       throw new Error('REPLICATE_API_TOKEN required for video generation');
     }
 
     // Validate audio duration (check file size as proxy)
-    const audioStats = await fs.stat(audio_url);
+    // Note: audio_url is a data URL, so we need audio_path for file stats
+    const audioStats = audio_path ? await fs.stat(audio_path) : { size: 0 };
     const audioSizeMB = audioStats.size / (1024 * 1024);
     
     // Rough estimate: 1MB ≈ 1 minute of audio at 128kbps
@@ -348,6 +350,8 @@ class DigitalTwinService {
     const modelVersion = this.models[model_type] || this.models.sadtalker_fast;
     console.log('[DigitalTwin] Using Replicate model:', modelVersion);
     console.log('[DigitalTwin] Audio size:', audioSizeMB.toFixed(2), 'MB');
+    console.log('[DigitalTwin] Face image URL type:', face_image_url.substring(0, 50) + '...');
+    console.log('[DigitalTwin] Audio URL type:', audio_url.substring(0, 50) + '...');
 
     // Start prediction
     const startResponse = await axios.post(
