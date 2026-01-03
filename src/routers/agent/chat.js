@@ -110,6 +110,13 @@ router.post("/chat", async (ctx, next) => {
   let profileContext = '';
   try {
     profileContext = await getProfileContext(user_id);
+    
+    // Add UserMemory context (My Assistant memories)
+    const { getMemoryContext } = require('@src/services/userMemory');
+    const memoryContext = await getMemoryContext(user_id, question);
+    if (memoryContext) {
+      profileContext += '\n' + memoryContext;
+    }
   } catch (err) {
     console.error('Profile context error:', err);
   }

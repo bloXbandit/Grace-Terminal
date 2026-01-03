@@ -51,6 +51,95 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     return modeCommandResult.message;
   }
 
+  // MEMORY SAVE FAST-PATH: Detect explicit memory save requests
+  const memorySavePattern = /\b(save|remember|store|record|note|memorize|keep|recall|remind)\s+(to|in|this|that)?\s*(memory|mind|assistant|profile)?\b/i;
+  const isMemorySaveRequest = memorySavePattern.test(goal);
+  
+  if (isMemorySaveRequest) {
+    console.log('[AutoReply] 🧠 Memory save fast-path: detected memory save request');
+    
+    try {
+      const UserMemory = require('@src/models/UserMemory');
+      
+      // Extract the content to save
+      let contentToSave = goal;
+      let title = '';
+      
+      // Pattern 1: "remember that X" or "save to memory that X"
+      let match = goal.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s+that\s+(.+)$/i);
+      if (match) {
+        contentToSave = match[4].trim();
+      } else {
+        // Pattern 2: "remember: X" or "save to memory: X"
+        match = goal.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s*:\s*(.+)$/i);
+        if (match) {
+          contentToSave = match[4].trim();
+        } else {
+          // Pattern 3: "remember X" (everything after the verb)
+          match = goal.match(/\b(save|remember|store|record|note|memorize|keep)\s+(.+)$/i);
+          if (match) {
+            contentToSave = match[2].trim();
+          }
+        }
+      }
+      
+      // Generate title (first 50 chars or first sentence)
+      if (contentToSave.length <= 50) {
+        title = contentToSave;
+      } else {
+        const firstSentence = contentToSave.match(/^[^.!?]+[.!?]/);
+        if (firstSentence) {
+          title = firstSentence[0].trim();
+        } else {
+          title = contentToSave.substring(0, 50) + '...';
+        }
+      }
+      
+      // Auto-generate tags based on content
+      const tags = [];
+      const lowerContent = contentToSave.toLowerCase();
+      
+      if (/\b(prefer|like|favorite|love|enjoy)\b/i.test(lowerContent)) {
+        tags.push('preference');
+      }
+      if (/\b(birthday|name|email|phone|address)\b/i.test(lowerContent)) {
+        tags.push('personal');
+      }
+      if (/\b(want to|goal|plan|aim|objective)\b/i.test(lowerContent)) {
+        tags.push('goal');
+      }
+      if (/\b(remind|reminder|don't forget|remember to)\b/i.test(lowerContent)) {
+        tags.push('reminder');
+      }
+      if (/\b(trip|travel|going to|visit|vacation)\b/i.test(lowerContent)) {
+        tags.push('travel');
+      }
+      if (/\b(meeting|appointment|event|schedule)\b/i.test(lowerContent)) {
+        tags.push('event');
+      }
+      
+      // Save to UserMemory
+      const memory = await UserMemory.create({
+        user_id: user_id,
+        title: title,
+        content: contentToSave,
+        source: 'grace',
+        conversation_id: conversation_id,
+        tags: tags.length > 0 ? tags : null,
+        pinned: false
+      });
+      
+      console.log('[AutoReply] ✅ Memory saved (ID', memory.id + '):', contentToSave);
+      
+      // Return success message
+      return `✅ Saved to memory: "${contentToSave}"`;
+      
+    } catch (e) {
+      console.error('[AutoReply] Memory save fast-path failed:', e?.message || e);
+      return null; // Fall back to agent
+    }
+  }
+
   // EARLY DETECTION: Media generation/edit requests
   // This runs before specialist routing so we can deterministically engage the media fast-path.
   let mediaEarlyTrigger = false;
