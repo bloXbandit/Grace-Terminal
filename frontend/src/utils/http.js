@@ -71,11 +71,16 @@ const http = {
     return instance.get(url, { params: params });
   },
   post(url, params, header = {},responseType='json') {
+    // Detect FormData and let it set its own Content-Type with boundary
+    const isFormData = params instanceof FormData;
+    
     const options = {
       url,
       method: "POST",
       data: params,
-      headers: Object.assign({ 'Content-Type': 'application/json' }, header),
+      headers: isFormData 
+        ? { ...header }  // Don't set Content-Type for FormData, let axios handle it
+        : Object.assign({ 'Content-Type': 'application/json' }, header),
       responseType:responseType,
     }
     return instance.request(options);
