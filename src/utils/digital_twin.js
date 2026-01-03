@@ -14,7 +14,7 @@ class DigitalTwinService {
     // Replicate models for talking head generation
     this.models = {
       sadtalker: 'cjwbw/sadtalker:a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3',
-      sadtalker_fast: 'lucataco/sadtalker:82a1e14e0d338dd65a526a0fc538d6c6a5e4c5ae013a8c7a5093d8b6e425e3a5'
+      sadtalker_fast: 'lucataco/sadtalker:85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b'
     };
     
     // TTS service (using OpenAI by default)
