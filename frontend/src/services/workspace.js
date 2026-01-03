@@ -23,9 +23,14 @@ const service = {
     const responseType = fileUtils.getFileReponseTypeByName(path)
     const response = await http.post(baseUrl, {
       path: path
-    },{},responseType);
-    // console.log(response)
-    return response.data|| '';
+    }, {}, responseType);
+    return response.data || '';
+  },
+
+  // For image previews, use a direct URL so <img> can load it without blob fetching
+  getPreviewUrl(filepath) {
+    const filePath = filepath;
+    return `/api/file/preview?path=${encodeURIComponent(filePath)}`;
   }
 
 }

@@ -51,6 +51,7 @@
     "mysql2": "^3.14.0",
     "node-fetch": "^2.7.0",
     "node-xlsx": "^0.24.0",
+    "openai": "^4.77.3",
     "pino": "^9.6.0",
     "playwright": "^1.52.0",
     "sequelize": "^6.37.7",

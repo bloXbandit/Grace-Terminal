@@ -1,72 +1,81 @@
 <template>
-  <div v-if="visible" class="video-overhaul-overlay" @click.self="close">
-    <div class="video-overhaul-modal">
-      <div class="video-overhaul-header">
-        <h3>{{ title }}</h3>
-        <div class="header-controls">
-          <button class="download-btn" @click="download" title="Download video">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-          </button>
-          <button class="close-btn" @click="close">&times;</button>
-        </div>
-      </div>
-      
-      <div class="video-overhaul-content">
-        <!-- Loading state -->
-        <div v-if="loading" class="loading-state">
-          <div class="spinner"></div>
-          <p>Loading video...</p>
-          <div class="loading-details">{{ loadingText }}</div>
-        </div>
-        
-        <!-- Error state -->
-        <div v-else-if="error" class="error-state">
-          <div class="error-icon">⚠️</div>
-          <h4>Failed to load video</h4>
-          <p>{{ error }}</p>
-          <div class="error-details">
-            <small>{{ errorDetails }}</small>
+  <teleport :to="teleportTarget">
+    <div v-if="visible" class="video-overhaul-overlay" :class="{ 'video-overhaul-overlay--viewport': isViewportTarget }" @click.self="close">
+      <div class="video-overhaul-modal">
+        <div class="video-overhaul-header">
+          <h3>{{ title }}</h3>
+          <div class="header-controls">
+            <button class="download-btn" @click="download" title="Download video">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+            </button>
+            <button class="close-btn" @click="close">&times;</button>
           </div>
-          <button class="retry-btn" @click="retry">Retry</button>
         </div>
         
-        <!-- Video player -->
-        <div v-else class="video-player-container">
-          <video 
-            ref="videoPlayer"
-            controls 
-            autoplay 
-            preload="metadata"
-            style="width: 100%; height: auto; max-height: 70vh;"
-            @loadeddata="onVideoLoaded"
-            @error="onVideoError"
-            @play="onPlay"
-            @pause="onPause"
-          >
-            <source :src="videoUrl" :type="videoMimeType">
-            Your browser does not support the video tag.
-          </video>
+        <div class="video-overhaul-content">
+          <!-- Loading state -->
+          <div v-if="loading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading video...</p>
+            <div class="loading-details">{{ loadingText }}</div>
+          </div>
           
-          <!-- Video info -->
-          <div class="video-info">
-            <div class="video-stats">
-              <span>{{ formatFileSize(fileSize) }}</span>
-              <span>{{ videoMimeType }}</span>
-              <span v-if="duration">{{ formatDuration(duration) }}</span>
+          <!-- Error state -->
+          <div v-else-if="error" class="error-state">
+            <div class="error-icon">⚠️</div>
+            <h4>Failed to load video</h4>
+            <p>{{ error }}</p>
+            <div class="error-details">
+              <small>{{ errorDetails }}</small>
+            </div>
+            <button class="retry-btn" @click="retry">Retry</button>
+          </div>
+          
+          <!-- Video player -->
+          <div v-else class="video-player-container">
+            <video 
+              ref="videoPlayer"
+              controls 
+              autoplay 
+              preload="metadata"
+              style="width: 100%; height: auto; max-height: 70vh;"
+              @loadeddata="onVideoLoaded"
+              @error="onVideoError"
+              @play="onPlay"
+              @pause="onPause"
+            >
+              <source :src="videoUrl" :type="videoMimeType">
+              Your browser does not support the video tag.
+            </video>
+            
+            <!-- Video info -->
+            <div class="video-info">
+              <div class="video-stats">
+                <span>{{ formatFileSize(fileSize) }}</span>
+                <span>{{ videoMimeType }}</span>
+                <span v-if="duration">{{ formatDuration(duration) }}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+const props = defineProps({
+  teleportTo: {
+    type: String,
+    default: ''
+  }
+})
 
 const visible = ref(false)
 const videoUrl = ref('')
@@ -90,6 +99,18 @@ const videoMimeType = computed(() => {
     'mkv': 'video/x-matroska'
   }
   return types[ext] || 'video/mp4'
+})
+
+const teleportTarget = computed(() => {
+  if (props.teleportTo) return props.teleportTo
+  // IMPORTANT: document.getElementById is not reactive; key off visible so this
+  // recomputes at open-time when the Computer UI overlay mount exists.
+  if (!visible.value) return 'body'
+  return document.getElementById('computer-ui-overlay') ? '#computer-ui-overlay' : 'body'
+})
+
+const isViewportTarget = computed(() => {
+  return teleportTarget.value === 'body'
 })
 
 // COMPLETE OVERHAUL: Bulletproof video loading with streaming endpoint
@@ -247,7 +268,7 @@ onUnmounted(() => {
 
 <style scoped>
 .video-overhaul-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -258,6 +279,10 @@ onUnmounted(() => {
   justify-content: center;
   z-index: 10000;
   backdrop-filter: blur(4px);
+}
+
+.video-overhaul-overlay--viewport {
+  position: fixed;
 }
 
 .video-overhaul-modal {

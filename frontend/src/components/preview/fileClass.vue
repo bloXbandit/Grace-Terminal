@@ -1,5 +1,5 @@
 <template>
-  <a-modal :open="fileExplorerVisible" :footer="null" style="
+  <a-modal :open="fileExplorerVisible" :footer="null" :z-index="10500" style="
     width: 600px; background-color: #fff; border-color: hsla(0, 0%, 100%, .05);
     border-width: 1px; border-radius: 20px; overflow: auto;
     flex-direction: column; max-width: 95%; max-height: 95%;
@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
@@ -300,17 +300,10 @@ fileUtil.handleFileDownload(file);
 const handleOpenFile = (file) => {
   const ext = (file?.filename || file?.filepath || '').split('.').pop()?.toLowerCase()
   if (fileUtil.imgType.includes(ext)) {
-    workspaceService.getFile(file.filepath).then(res => {
-      imgUrl.value = URL.createObjectURL(res)
-      imgVisable.value = true
-    })
+    imgUrl.value = workspaceService.getPreviewUrl(file.filepath)
+    imgVisable.value = true
   } else if (fileUtil.videoType?.includes(ext)) {
-    // Use global video overhaul player (registered in App.vue)
-    if (typeof window !== 'undefined' && typeof window.showVideoOverhaul === 'function') {
-      window.showVideoOverhaul(file)
-    } else {
-      emitter.emit('fullPreviewVisable', file)
-    }
+    emitter.emit('fullPreviewVisable', file)
   } else {
     emitter.emit('fullPreviewVisable', file)
   }
@@ -319,10 +312,8 @@ fileExplorerVisible.value = false
 
 const handlePreview = (file) => {
 if (fileUtil.imgType.includes(file.filename.split('.').pop())) {
-  workspaceService.getFile(file.filepath).then(res => {
-    imgUrl.value = URL.createObjectURL(res)
-    imgVisable.value = true
-  })
+  imgUrl.value = workspaceService.getPreviewUrl(file.filepath)
+  imgVisable.value = true
 } else {
   handleOpenFile(file)
 }
@@ -391,8 +382,17 @@ fileListState.forEach(file => {
 })
 }
 
-emitter.on('file-explorer-visible', () => {
-fileExplorerVisible.value = true
+const handleFileExplorerVisible = (val) => {
+  console.log('[fileClass] received file-explorer-visible:', val)
+  fileExplorerVisible.value = val === undefined ? true : !!val
+  console.log('[fileClass] fileExplorerVisible now:', fileExplorerVisible.value)
+}
+
+emitter.on('file-explorer-visible', handleFileExplorerVisible)
+
+onBeforeUnmount(() => {
+  console.log('[fileClass] Cleaning up emitter listener')
+  emitter.off('file-explorer-visible', handleFileExplorerVisible)
 })
 </script>
 

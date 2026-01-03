@@ -240,6 +240,52 @@ router.get("/list", async ({ response }) => {
   return response.success(files);
 });
 
+// preview file by path (primarily for images/media)
+router.get('/preview', async ({ request, response }) => {
+  const { path: filePath } = request.query || {};
+
+  if (!filePath) {
+    response.fail(null, 'File path is required');
+    return;
+  }
+  if (!fs.existsSync(filePath)) {
+    response.fail(null, 'File does not exist');
+    return;
+  }
+
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentTypes = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.tiff': 'image/tiff',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4'
+    };
+
+    const stream = fs.createReadStream(filePath);
+    const filename = path.basename(filePath);
+
+    if (contentTypes[ext]) {
+      response.set('Content-Type', contentTypes[ext]);
+      response.set('Cache-Control', 'public, max-age=3600');
+    }
+
+    response.file(filename, stream);
+  } catch (err) {
+    console.error(err);
+    response.fail(null, 'Failed to preview file');
+  }
+});
+
 // read file by path
 /**
  * @swagger

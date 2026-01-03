@@ -279,24 +279,39 @@ router.post("/run", async (ctx, next) => {
     }
   }
   
-  // STEP 2: Load ALL files for this conversation (for agent context)
-  // This gives agent persistent file access across all messages
+  // STEP 2: Load files for this request
+  // CRITICAL: Distinguish between:
+  // - newlyUploadedFiles: Only files from THIS request (for message attachment)
+  // - allConversationFiles: All files in conversation (for agent context)
+  let newlyUploadedFiles = [];
+  let allConversationFiles = [];
+  
   const hasNewUploads = Array.isArray(fileIds) && fileIds.length > 0;
+  
   if (conversation_id && (!isVoiceTask || hasNewUploads)) {
-    files = await File.findAll({
+    // Load all conversation files for agent context
+    allConversationFiles = await File.findAll({
       where: { conversation_id: conversation_id },
       order: [['create_at', 'DESC']] // Newest first
     });
-    console.log('[Agent Router] Total conversation files loaded:', files.length);
-    console.log('[Agent Router] Files:', files.map(f => ({ id: f.id, name: f.name, url: f.url })));
+    console.log('[Agent Router] Total conversation files loaded:', allConversationFiles.length);
+    
+    // Filter to only newly uploaded files for message attachment
+    if (hasNewUploads) {
+      newlyUploadedFiles = allConversationFiles.filter(f => fileIds.includes(f.id));
+      console.log('[Agent Router] Newly uploaded files:', newlyUploadedFiles.length);
+    }
   } else {
-    files = [];
     if (!conversation_id) {
       console.log('[Agent Router] No conversation_id yet, no files loaded');
     } else {
       console.log('[Agent Router] Voice turn without new uploads - skipping conversation file load');
     }
   }
+  
+  // Use all conversation files for agent context (backward compatibility)
+  files = allConversationFiles;
+  
   if (!body.conversation_id) {
     body.conversation_id = conversation_id;
   }
@@ -610,13 +625,29 @@ router.post("/run", async (ctx, next) => {
       await Message.saveToDB(notificationMsg, conversation_id);
       
       // Save queued message to DB
+      // CRITICAL: Only attach newly uploaded files to this message, not all conversation files
+      const newFilesForMessage = newlyUploadedFiles.map(file => {
+        let obj = file.dataValues || file;
+        const dbName = obj.name;
+        const urlFilename = obj.url ? path.basename(obj.url) : null;
+        const finalName = dbName || urlFilename || 'unknown';
+        const filename = path.basename(obj.url || finalName);
+        
+        return {
+          ...obj,
+          filename: finalName,
+          name: finalName,
+          filepath: path.join(dir_path, 'upload', filename)
+        };
+      });
+      
       const queuedMsg = Message.format({
         role: 'user',
         status: 'success',
         content: question,
         action_type: 'question',
         task_id: conversation_id,
-        json: newFiles
+        json: newFilesForMessage // Only newly uploaded files, not all conversation files
       });
       await Message.saveToDB(queuedMsg, conversation_id);
       
@@ -638,13 +669,29 @@ router.post("/run", async (ctx, next) => {
     console.log(`[Run] 🔒 Reserved slot ${executionId} for conversation ${conversation_id}`);
     
     // Save user message (Agent mode)
+    // CRITICAL: Only attach newly uploaded files to this message, not all conversation files
+    const newFilesForMessage = newlyUploadedFiles.map(file => {
+      let obj = file.dataValues || file;
+      const dbName = obj.name;
+      const urlFilename = obj.url ? path.basename(obj.url) : null;
+      const finalName = dbName || urlFilename || 'unknown';
+      const filename = path.basename(obj.url || finalName);
+      
+      return {
+        ...obj,
+        filename: finalName,
+        name: finalName,
+        filepath: path.join(dir_path, 'upload', filename)
+      };
+    });
+    
     const msg = Message.format({
       role: 'user',
       status: 'success',
       content: question,
       action_type: 'question',
       task_id: conversation_id,
-      json: newFiles
+      json: newFilesForMessage // Only newly uploaded files, not all conversation files
     });
     const message = await Message.saveToDB(msg, conversation_id);
     // await syncQuestionVectorData(message.id,question,conversation_id)

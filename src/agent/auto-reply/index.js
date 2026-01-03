@@ -25,12 +25,23 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   );
   const hasVoiceIndicator = goal && typeof goal === 'string' && goal.includes('[VOICE_TASK]');
   const isVoice = isVoiceRequest || hasVoiceIndicator;
+
+  const isTwinVideoRequestEarly = (() => {
+    try {
+      const q = String(goal || '').toLowerCase();
+      const hasTwinKeyword = /\b(digital\s*twin|my\s+twin|use\s+my\s+twin|talking\s*head|avatar\s+video)\b/.test(q);
+      const hasVideoIntent = /\b(video|clip|movie|film|talk|speak|say|record|generate)\b/.test(q);
+      return hasTwinKeyword && hasVideoIntent;
+    } catch (e) {
+      return false;
+    }
+  })();
   
   // CRITICAL: Check for Ultra doc pattern BEFORE skipping for voice
   // Voice requests for doc generation should still use Ultra fast-path
   const simpleFileGenPatternForVoice = goal && goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
-  if (isVoice && !simpleFileGenPatternForVoice) {
+  if (isVoice && !simpleFileGenPatternForVoice && !isTwinVideoRequestEarly) {
     // Voice request but NOT a doc generation request - skip auto_reply for speed
     console.log('[AutoReply] ⚡ Skipping for voice request (not doc gen) - 500-1000ms saved');
     return null; // Go straight to agent
@@ -49,6 +60,242 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   if (modeCommandResult) {
     // This was a mode command, return the result directly
     return modeCommandResult.message;
+  }
+
+  // FAST-PATH: User-requested memory save ("save to memory that...", "remember that...")
+  // This saves explicit user memories to UserMemory table for My Assistant page
+  // CRITICAL: Must match "remember that X" pattern more flexibly
+  const memoryPattern = goal && goal.match(/^(?:save\s+to\s+memory|remember|make\s+a\s+note|note\s+that|keep\s+in\s+mind|don'?t\s+forget)(?:\s+that)?\s+(.+)/i);
+  
+  if (memoryPattern) {
+    console.log('[AutoReply] 💾 User memory save request detected');
+    console.log('[AutoReply] Pattern matched:', memoryPattern[0]);
+    
+    try {
+      const axios = require('axios');
+      const memoryContent = memoryPattern[1].trim();
+      
+      // Extract a title from the content (first 50 chars or first sentence)
+      const titleMatch = memoryContent.match(/^([^.!?]{1,50})/);
+      const title = titleMatch ? titleMatch[1].trim() : memoryContent.substring(0, 50);
+      
+      // Save to UserMemory via API
+      const response = await axios.post('http://localhost:3000/api/assistant/memories', {
+        title: title,
+        content: memoryContent,
+        tags: ['user-requested'],
+        source: 'grace',
+        conversation_id: conversation_id
+      });
+      
+      if (response.data.success) {
+        console.log('[AutoReply] ✅ Memory saved successfully:', response.data.memory.id);
+        
+        return {
+          handledBySpecialist: true,
+          specialist: 'user_memory_save',
+          taskType: 'general_chat',
+          result: `✅ Got it! I've saved that to your memories.\n\nYou can view and manage all your saved memories in the **My Assistant** page.`
+        };
+      } else {
+        console.error('[AutoReply] Memory save failed:', response.data.error);
+        return null; // Fall back to agentic
+      }
+    } catch (e) {
+      console.error('[AutoReply] User memory save fast-path failed:', e?.message || e);
+      return null; // Fall back to agentic
+    }
+  }
+
+  // FAST-PATH: User memory recall ("what's my X", "tell me my X", "do you know my X")
+  // This queries UserMemory table and returns the answer immediately
+  // CRITICAL: Works across all conversations (user_id based, not conversation_id)
+  const recallPattern = goal && goal.match(/^(?:what'?s|whats|what\s+is|tell\s+me|do\s+you\s+know|remind\s+me)\s+(?:my|about\s+my|what\s+my)\s+(.+?)(?:\s+(?:is|was|are|were|name))?$/i);
+  
+  if (recallPattern) {
+    console.log('[AutoReply] 🧠 User memory recall request detected');
+    console.log('[AutoReply] Recall pattern matched:', recallPattern[0]);
+    console.log('[AutoReply] Searching for:', recallPattern[1]);
+    
+    try {
+      const axios = require('axios');
+      const searchQuery = recallPattern[1].trim();
+      
+      // Query UserMemory table via API (searches across all user's memories)
+      const response = await axios.get('http://localhost:3000/api/assistant/memories');
+      
+      if (response.data.success && response.data.memories && response.data.memories.length > 0) {
+        // Search for matching memory by content or title
+        const matchedMemory = response.data.memories.find(mem => {
+          const contentLower = (mem.content || '').toLowerCase();
+          const titleLower = (mem.title || '').toLowerCase();
+          const queryLower = searchQuery.toLowerCase();
+          
+          // Match if query appears in content or title
+          return contentLower.includes(queryLower) || titleLower.includes(queryLower);
+        });
+        
+        if (matchedMemory) {
+          console.log('[AutoReply] ✅ Memory found:', matchedMemory.id, matchedMemory.title);
+          
+          // Extract the specific answer from the memory content
+          // e.g., "my dogs name is menace" -> extract "menace"
+          const answerMatch = matchedMemory.content.match(new RegExp(`${searchQuery}\\s+(?:is|was|are|were)\\s+(.+?)(?:\\.|$)`, 'i'));
+          const answer = answerMatch ? answerMatch[1].trim() : matchedMemory.content;
+          
+          return {
+            handledBySpecialist: true,
+            specialist: 'user_memory_recall',
+            taskType: 'general_chat',
+            result: `Your ${searchQuery} is ${answer}.`
+          };
+        } else {
+          console.log('[AutoReply] No matching memory found for:', searchQuery);
+          // Fall back to agentic if no match
+          return null;
+        }
+      } else {
+        console.log('[AutoReply] No memories found in UserMemory table');
+        return null; // Fall back to agentic
+      }
+    } catch (e) {
+      console.error('[AutoReply] User memory recall fast-path failed:', e?.message || e);
+      return null; // Fall back to agentic
+    }
+  }
+
+  if (isTwinVideoRequestEarly) {
+    let progressInterval = null;
+    try {
+      console.log('[AutoReply] 🧬 Digital Twin video fast-path: starting generation');
+      const DigitalTwinService = require('@src/utils/digital_twin');
+      const fs = require('fs').promises;
+      const path = require('path');
+
+      let progressPercent = 0;
+      const TARGET_DURATION_MS = 6 * 60 * 1000;
+      const UPDATE_INTERVAL_MS = 3000;
+      const totalUpdates = TARGET_DURATION_MS / UPDATE_INTERVAL_MS;
+      const avgIncrementPerUpdate = 95 / totalUpdates;
+
+      if (typeof onTokenStream === 'function') {
+        const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+        await sendProgressMessage(
+          onTokenStream,
+          conversation_id,
+          '🧬 Starting digital twin video generation... this can take a few minutes.',
+          'progress'
+        );
+      }
+
+      if (typeof onTokenStream === 'function') {
+        const Message = require('@src/utils/message');
+        progressInterval = setInterval(() => {
+          const rand = Math.random();
+          let increment;
+          if (rand < 0.1) increment = 0;
+          else if (rand < 0.3) increment = avgIncrementPerUpdate * 0.5;
+          else if (rand < 0.9) increment = avgIncrementPerUpdate * (0.8 + Math.random() * 0.4);
+          else increment = avgIncrementPerUpdate * 1.5;
+
+          progressPercent = Math.min(95, progressPercent + increment);
+          const displayPercent = Math.round(progressPercent);
+
+          const progressMsg = Message.format({
+            role: 'assistant',
+            status: 'success',
+            content: `🧬 Generating twin video... ${displayPercent}%`,
+            action_type: 'progress',
+            task_id: conversation_id
+          });
+          try {
+            onTokenStream(progressMsg);
+          } catch (e) {
+            console.error('[AutoReply] Twin progress stream error:', e);
+          }
+        }, UPDATE_INTERVAL_MS);
+      }
+
+      let script = goal;
+      try {
+        const quoted = String(goal || '').match(/“([^”]+)”|"([^"]+)"|'([^']+)'/);
+        const q = quoted && (quoted[1] || quoted[2] || quoted[3]);
+        if (q && q.trim().length >= 3) {
+          script = q.trim();
+        }
+      } catch (e) {}
+
+      const service = new DigitalTwinService();
+      const defaultTwin = await service.getDefaultTwin(user_id);
+      if (!defaultTwin) {
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+        return {
+          handledBySpecialist: true,
+          specialist: 'digital_twin_video',
+          taskType: 'general_chat',
+          result: 'No default digital twin found. Create a twin and set it as default first.'
+        };
+      }
+
+      const outputDir = path.join(process.cwd(), 'workspace', `user_${user_id}`, 'twin_videos');
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const maxWaitMs = 6 * 60 * 1000;
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Digital twin video generation timed out (6 minutes)')), maxWaitMs));
+
+      const genResult = await Promise.race([
+        service.generateVideo({
+          twin_id: defaultTwin.id,
+          script,
+          user_id,
+          conversation_id,
+          output_dir: outputDir
+        }),
+        timeoutPromise
+      ]);
+
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+
+      const videoPath = genResult?.video_path;
+      const videoFilename = genResult?.video_filename || 'twin_video.mp4';
+      const streamUrl = videoPath
+        ? `/api/file/video-stream?path=${encodeURIComponent(videoPath)}`
+        : null;
+
+      const resultText = streamUrl
+        ? `✅ Digital twin video ready.\n\nPlay it here: ${streamUrl}`
+        : `✅ Digital twin video generated.`;
+
+      // CRITICAL: Return files array so frontend can display video in Computer UI
+      return {
+        handledBySpecialist: true,
+        specialist: 'digital_twin_video',
+        taskType: 'general_chat',
+        result: resultText,
+        files: videoPath ? [{ name: videoFilename, path: videoPath, type: 'video/mp4' }] : []
+      };
+    } catch (e) {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      console.error('[AutoReply] Digital Twin video fast-path failed:', e?.message || e);
+      
+      // CRITICAL: Return simple unavailable message instead of null to prevent agentic fallback
+      // User wants ONLY fast-path for digital twin requests, no planning cycle, no detailed errors
+      return {
+        handledBySpecialist: true,
+        specialist: 'digital_twin_video',
+        taskType: 'general_chat',
+        result: 'Digi-Twin is not available at this time.'
+      };
+    }
   }
 
   // EARLY DETECTION: Media generation/edit requests
@@ -482,16 +729,157 @@ Script:`;
     };
     
     const { title, topics } = normalizeTitle(rawTitle);
-    
     // Determine if this is a video or photo request based on content
     const lowerGoal = goal.toLowerCase();
     const hasVideoKeywords = /video|movie|film|clip|animation|footage|sora/.test(lowerGoal);
     const hasPhotoKeywords = /photo|image|picture|snapshot|portrait|landscape|gemini/.test(lowerGoal);
-    
+
     const isVideoRequest = isVideo || (hasVideoKeywords && !hasPhotoKeywords);
     const isPhotoRequest = isPhoto || (hasPhotoKeywords && !hasVideoKeywords);
-    
+
     console.log('[AutoReply] Media type detected:', isVideoRequest ? 'VIDEO' : isPhotoRequest ? 'PHOTO' : 'UNKNOWN');
+
+    // DIGITAL TWIN VIDEO: If the user is explicitly asking to use their digital twin / talking-head,
+    // use Replicate SadTalker pipeline instead of SORA.
+    // Keep trigger narrow so we don't interfere with normal SORA/video behavior.
+    const isTwinVideoRequest = (() => {
+      try {
+        const q = String(goal || '').toLowerCase();
+        const hasTwinKeyword = /\b(digital\s*twin|my\s+twin|use\s+my\s+twin|talking\s*head|avatar\s+video)\b/.test(q);
+        const hasVideoIntent = /\b(video|clip|movie|film|talk|speak|say|record)\b/.test(q);
+        return hasTwinKeyword && hasVideoIntent;
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    if (isTwinVideoRequest) {
+      let progressInterval = null;
+      try {
+        console.log('[AutoReply] 🧬 Digital Twin video fast-path: starting generation');
+        const DigitalTwinService = require('@src/utils/digital_twin');
+        const path = require('path');
+        const fs = require('fs').promises;
+
+        // --- FAKE PROGRESS TICKER (SORA-style) ---
+        let progressPercent = 0;
+        const TARGET_DURATION_MS = 6 * 60 * 1000; // 6 minutes cap
+        const UPDATE_INTERVAL_MS = 3000;
+        const totalUpdates = TARGET_DURATION_MS / UPDATE_INTERVAL_MS;
+        const avgIncrementPerUpdate = 95 / totalUpdates;
+
+        if (typeof onTokenStream === 'function') {
+          const { sendProgressMessage } = require('@src/routers/agent/utils/coding-messages');
+          await sendProgressMessage(
+            onTokenStream,
+            conversation_id,
+            '🧬 Starting digital twin video generation... this can take a few minutes.',
+            'progress'
+          );
+        }
+
+        if (typeof onTokenStream === 'function') {
+          const Message = require('@src/utils/message');
+          console.log('[AutoReply] 🧬 Starting twin progress ticker interval');
+          progressInterval = setInterval(() => {
+            const rand = Math.random();
+            let increment;
+            if (rand < 0.1) increment = 0;
+            else if (rand < 0.3) increment = avgIncrementPerUpdate * 0.5;
+            else if (rand < 0.9) increment = avgIncrementPerUpdate * (0.8 + Math.random() * 0.4);
+            else increment = avgIncrementPerUpdate * 1.5;
+
+            progressPercent = Math.min(95, progressPercent + increment);
+            const displayPercent = Math.round(progressPercent);
+
+            const progressMsg = Message.format({
+              role: 'assistant',
+              status: 'success',
+              content: `🧬 Generating twin video... ${displayPercent}%`,
+              action_type: 'progress',
+              task_id: conversation_id
+            });
+            try {
+              onTokenStream(progressMsg);
+            } catch (e) {
+              console.error('[AutoReply] Twin progress stream error:', e);
+            }
+          }, UPDATE_INTERVAL_MS);
+        }
+
+        // Extract a best-effort script from the prompt.
+        // If user provides quotes, prefer quoted text. Otherwise, use the full goal.
+        let script = goal;
+        try {
+          const quoted = String(goal || '').match(/“([^”]+)”|"([^"]+)"|'([^']+)'/);
+          const q = quoted && (quoted[1] || quoted[2] || quoted[3]);
+          if (q && q.trim().length >= 3) {
+            script = q.trim();
+          }
+        } catch (e) {}
+
+        const service = new DigitalTwinService();
+        const defaultTwin = await service.getDefaultTwin(user_id);
+        if (!defaultTwin) {
+          if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+          }
+          return {
+            handledBySpecialist: true,
+            specialist: 'digital_twin_video',
+            taskType: 'general_chat',
+            result: 'No default digital twin found. Create a twin and set it as default first.'
+          };
+        }
+
+        const outputDir = path.join(process.cwd(), 'workspace', `user_${user_id}`, 'twin_videos');
+        await fs.mkdir(outputDir, { recursive: true });
+
+        // Cap total wait at 6 minutes (stream stops either on completion or cap).
+        const maxWaitMs = 6 * 60 * 1000;
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Digital twin video generation timed out (6 minutes)')), maxWaitMs));
+
+        const genResult = await Promise.race([
+          service.generateVideo({
+            twin_id: defaultTwin.id,
+            script,
+            user_id,
+            conversation_id,
+            output_dir: outputDir
+          }),
+          timeoutPromise
+        ]);
+
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+
+        const videoPath = genResult?.video_path;
+        const streamUrl = videoPath
+          ? `/api/file/video-stream?path=${encodeURIComponent(videoPath)}`
+          : null;
+
+        const resultText = streamUrl
+          ? `✅ Digital twin video ready.\n\nPlay it here: ${streamUrl}`
+          : `✅ Digital twin video generated.`;
+
+        return {
+          handledBySpecialist: true,
+          specialist: 'digital_twin_video',
+          taskType: 'general_chat',
+          result: resultText
+        };
+      } catch (e) {
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+        console.error('[AutoReply] Digital Twin video fast-path failed:', e?.message || e);
+        return null;
+      }
+    }
 
     if (isVideoRequest) {
       // VIDEO: Generate and save an MP4 into the conversation workspace, then register it so UI can preview.

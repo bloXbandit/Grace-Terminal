@@ -378,46 +378,15 @@ watch(file, (newValue) => {
         content.value = handleFileContent(resString);
       });
     }
-    // Video file: load as blob URL for playback
+    // Video file: load as streaming URL for playback
     if (videoPreviewType.value.includes(fileExtension?.toLowerCase())) {
-      workspaceService.getFile(newValue.filepath || newValue.path || newValue.url).then((res) => {
-        const blob = (res && typeof Blob !== 'undefined' && res instanceof Blob)
-          ? res
-          : (res && res.data && typeof Blob !== 'undefined' && res.data instanceof Blob)
-            ? res.data
-            : null;
-
-        if (!blob) {
-          message.error(t("lemon.fullPreview.cannotPreviewFormat"));
-          return;
-        }
-
-        // If backend returned an error JSON as a blob, show it instead of a blank player
-        const type = (blob.type || '').toLowerCase();
-        if (type.includes('json') || (type.includes('text') && !type.includes('video'))) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const text = typeof reader.result === 'string' ? reader.result : '';
-            console.error('[VideoPreview] /api/file/read returned non-video payload:', text.slice(0, 500));
-            message.error(text ? text.slice(0, 180) : t("lemon.fullPreview.cannotPreviewFormat"));
-          };
-          reader.onerror = () => {
-            message.error(t("lemon.fullPreview.cannotPreviewFormat"));
-          };
-          reader.readAsText(blob);
-          return;
-        }
-
-        if (!type.startsWith('video/') && fileExtension?.toLowerCase() === 'mp4') {
-          console.warn('[VideoPreview] Unexpected blob type for mp4:', blob.type);
-        }
-
-        lastVideoObjectUrl = URL.createObjectURL(blob);
-        videoUrl.value = lastVideoObjectUrl;
-      }).catch(() => {
+      const filePath = newValue.filepath || newValue.path || newValue.url;
+      if (filePath) {
+        videoUrl.value = `/api/file/video-stream?path=${encodeURIComponent(filePath)}`;
+      } else {
         videoUrl.value = '';
         message.error(t("lemon.fullPreview.cannotPreviewFormat"));
-      });
+      }
     }
   }
 

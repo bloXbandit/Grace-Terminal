@@ -113,6 +113,7 @@ class DigitalTwinService {
       const videoPath = await this._generateTalkingHead({
         face_image_url: twin.face_image_url,
         audio_url: audioUrl,
+        audio_path: audioPath,
         model_type: twin.hf_model_type,
         output_dir
       });
@@ -330,13 +331,13 @@ class DigitalTwinService {
    * Generate talking head video using Replicate API
    * @private
    */
-  async _generateTalkingHead({ face_image_url, audio_url, model_type, output_dir }) {
+  async _generateTalkingHead({ face_image_url, audio_url, audio_path, model_type, output_dir }) {
     if (!this.replicateToken) {
       throw new Error('REPLICATE_API_TOKEN required for video generation');
     }
 
     // Validate audio duration (check file size as proxy)
-    const audioStats = await fs.stat(audio_url);
+    const audioStats = await fs.stat(audio_path);
     const audioSizeMB = audioStats.size / (1024 * 1024);
     
     // Rough estimate: 1MB ≈ 1 minute of audio at 128kbps
@@ -353,7 +354,7 @@ class DigitalTwinService {
     const startResponse = await axios.post(
       'https://api.replicate.com/v1/predictions',
       {
-        version: modelVersion.split(':')[1],
+        version: modelVersion,
         input: {
           source_image: face_image_url,
           driven_audio: audio_url,
@@ -364,7 +365,7 @@ class DigitalTwinService {
       },
       {
         headers: {
-          'Authorization': `Token ${this.replicateToken}`,
+          'Authorization': `Bearer ${this.replicateToken}`,
           'Content-Type': 'application/json'
         }
       }
@@ -386,7 +387,7 @@ class DigitalTwinService {
         `https://api.replicate.com/v1/predictions/${predictionId}`,
         {
           headers: {
-            'Authorization': `Token ${this.replicateToken}`
+            'Authorization': `Bearer ${this.replicateToken}`
           }
         }
       );
@@ -419,32 +420,18 @@ class DigitalTwinService {
 
   /**
    * Upload file to get public URL
-   * Uses base64 data URL for Replicate API compatibility
+   * Returns HTTP URL via /api/file/preview endpoint for Replicate API
    * @private
    */
   async _uploadFile(filePath) {
     try {
-      const fileBuffer = await fs.readFile(filePath);
-      const ext = path.extname(filePath).toLowerCase();
+      // Replicate requires publicly accessible HTTP URLs, not data URLs
+      // Use the /api/file/preview endpoint to serve the file
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      const publicUrl = `${baseUrl}/api/file/preview?path=${encodeURIComponent(filePath)}`;
       
-      // Determine MIME type
-      const mimeTypes = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.mp3': 'audio/mpeg',
-        '.wav': 'audio/wav',
-        '.mp4': 'video/mp4'
-      };
-      const mimeType = mimeTypes[ext] || 'application/octet-stream';
-      
-      // Convert to base64 data URL (Replicate accepts these)
-      const base64 = fileBuffer.toString('base64');
-      const dataUrl = `data:${mimeType};base64,${base64}`;
-      
-      console.log('[DigitalTwin] File converted to data URL:', filePath, `(${Math.round(fileBuffer.length / 1024)}KB)`);
-      return dataUrl;
+      console.log('[DigitalTwin] File available at HTTP URL:', publicUrl);
+      return publicUrl;
     } catch (error) {
       console.error('[DigitalTwin] File upload failed:', error);
       throw error;

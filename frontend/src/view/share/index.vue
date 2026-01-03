@@ -22,6 +22,7 @@
                     </div>
                 </div>
             </div>
+            <fileClass />
             <!-- 实时预览文件-->
             <Preview class="preview" />
             <!--本地预览文件-->
@@ -37,6 +38,7 @@ import Preview from '@/components/preview/index.vue'
 import LocalPreview from '@/components/preview/fullPreview.vue'
 import ChatHeader from '@/view/lemon/components/ChatHeader.vue'
 import ChatMessages from '@/view/lemon/components/ChatMessages.vue'
+import fileClass from '@/components/preview/fileClass.vue'
 import emitter from '@/utils/emitter';
 
 import { useRoute } from 'vue-router';

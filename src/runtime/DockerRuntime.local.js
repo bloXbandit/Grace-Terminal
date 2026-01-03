@@ -107,7 +107,9 @@ class DockerRuntime {
     // 初始化容器
     console.log('DockerRuntime.init_container');
 
-    const host_port = await this.find_available_port(EXECUTION_SERVER_PORT_RANGE);
+    // IMPORTANT: connect_container() assumes a fixed execution server port.
+    // Keep init_container aligned to prevent host/container port mismatches.
+    const host_port = 32811;
     this.host_port = host_port
     const vscode_port = await this.find_available_port(VSCODE_PORT_RANGE);
     const app_port_1 = await this.find_available_port(APP_PORT_RANGE_1);
@@ -129,29 +131,53 @@ class DockerRuntime {
     const imageName = 'hexdolemonai/lemon-runtime-sandbox:latest';
     await this.ensureImageExists(docker, imageName);
 
-    const container = await docker.createContainer({
-      Image: imageName,
-      name: 'lemon-runtime-sandbox',                // 容器名称
-      Cmd: ['node', 'chataa/action_execution_server.js', '--port', `${host_port}`, '--vscode_port', `${vscode_port}`],  // 启动命令
-      WorkingDir: '/chataa/code',                // 容器内工作目录
-      ExposedPorts: exposedPortsMap,
-      Env: [
-        `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
-        `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}`,
-        'SKIP_LLM_API_KEY_VERIFICATION=true'
-      ],
-      HostConfig: {
-        Binds: [
-          // 本地目录 : 容器目录 : 模式（rw 可读写 / ro 只读）
-          `${this.workspace_dir}:/workspace:rw`
+    let container;
+    try {
+      container = await docker.createContainer({
+        Image: imageName,
+        name: 'lemon-runtime-sandbox',                // 容器名称
+        Cmd: ['node', 'chataa/action_execution_server.js', '--port', `${host_port}`, '--vscode_port', `${vscode_port}`],  // 启动命令
+        WorkingDir: '/chataa/code',                // 容器内工作目录
+        ExposedPorts: exposedPortsMap,
+        Env: [
+          `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
+          `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}`,
+          'SKIP_LLM_API_KEY_VERIFICATION=true'
         ],
-        PortBindings: PortBindingsMap,
-        AutoRemove: false,  // 如需容器退出后自动删除，可改为 true
-        // NetworkMode: 'host',
-      },
-    });
-    // 2. 启动容器
-    await container.start();
+        HostConfig: {
+          Binds: [
+            // 本地目录 : 容器目录 : 模式（rw 可读写 / ro 只读）
+            `${this.workspace_dir}:/workspace:rw`
+          ],
+          PortBindings: PortBindingsMap,
+          AutoRemove: false,  // 如需容器退出后自动删除，可改为 true
+          // NetworkMode: 'host',
+        },
+      });
+    } catch (err) {
+      // If a stale container exists with the same name, reuse it instead of crashing.
+      // Docker returns 409 Conflict when name is already in use.
+      if (err && (err.statusCode === 409 || /already in use/i.test(err.message || ''))) {
+        console.log('DockerRuntime.init_container.createContainer name conflict - reusing existing container');
+        container = docker.getContainer('lemon-runtime-sandbox');
+      } else {
+        throw err;
+      }
+    }
+
+    try {
+      const container_info = await container.inspect();
+      if (container_info.State.Status === 'exited') {
+        await container.start();
+      } else if (container_info.State.Status !== 'running') {
+        // best-effort start for other non-running states
+        await container.start();
+      }
+    } catch (e) {
+      // If inspect/start fails here, bubble up for visibility.
+      throw e;
+    }
+
     return container;
   }
 

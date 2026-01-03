@@ -12,7 +12,13 @@ const modules = [
 for (const module of modules) {
   try {
     const subRouter = require(`./${module}.js`);
-    router.use(subRouter.routes(), subRouter.allowedMethods());
+    // Some modules export a Router instance, others export router.routes() middleware.
+    // Support both to avoid silently dropping endpoints.
+    if (typeof subRouter === 'function') {
+      router.use(subRouter);
+    } else {
+      router.use(subRouter.routes(), subRouter.allowedMethods());
+    }
   }
   catch (error) { console.log(`load ${module} error`, error); }
 }

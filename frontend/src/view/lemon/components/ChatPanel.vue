@@ -14,8 +14,12 @@
     <Welcome class="welcome" v-else />
     <fileClass />
   </div>
-  <Preview class="preview" />
-  <LocalPreview class="preview" />
+  <div class="preview computer-ui">
+    <Preview />
+    <LocalPreview />
+    <div id="computer-ui-overlay" class="computer-ui-overlay"></div>
+    <VideoOverhaul />
+  </div>
 </template>
 
 <script setup>
@@ -24,6 +28,7 @@ import ChatHeader from "./ChatHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import Preview from "@/components/preview/index.vue";
 import LocalPreview from "@/components/preview/fullPreview.vue";
+import VideoOverhaul from "@/components/VideoOverhaul.vue";
 import ChatInput from "./ChatInput.vue";
 import seeAgent from "@/services/see-agent";
 import { useChatStore } from "@/store/modules/chat";
@@ -284,6 +289,17 @@ const handleRejectConfirm = () => {
 .preview {
   max-width: 50%;
   min-width: 50%;
+}
+
+.computer-ui {
+  position: relative;
+  overflow: hidden;
+}
+
+.computer-ui-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
 }
 
 @media (max-width: 768px) {

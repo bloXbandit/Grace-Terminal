@@ -302,12 +302,19 @@ function handleQuestion(message, messages) {
         return;
     }
     
-    //判断 messages 中 有没有  role: 'user', is_temp: true, 的数据 如果有则替换 如果没有 则添加
-    let user_message_index = messages.findLastIndex(messageInfo => messageInfo.role === 'user' && messageInfo.is_temp);
-    if (user_message_index !== -1) {
-        messages[user_message_index] = message;
-        messages[user_message_index].files = message.meta.json;
+    // CRITICAL: Only replace temp messages if this is a real-time SSE message (has is_temp flag)
+    // Historical messages from initConversation should just be appended, not replace anything
+    if (message.is_temp) {
+        // This is a real-time SSE message, find and replace the temp user message
+        let user_message_index = messages.findLastIndex(messageInfo => messageInfo.role === 'user' && messageInfo.is_temp);
+        if (user_message_index !== -1) {
+            messages[user_message_index] = message;
+            messages[user_message_index].files = message.meta.json;
+        } else {
+            messages.push(message);
+        }
     } else {
+        // This is a historical message from DB, just append it
         messages.push(message);
     }
 }

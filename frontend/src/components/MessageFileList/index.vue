@@ -14,8 +14,6 @@
     </div>
   </div>
   <imgModal v-if="list.length > 0" :url="imageUrl" v-model:visible="isModalVisible" @close="isModalVisible = false" />
-  <!-- COMPLETE OVERHAUL: Replace all video preview with bulletproof system -->
-  <VideoOverhaul />
 </template>
 <script setup>
 import { computed, ref } from "vue";
@@ -25,7 +23,6 @@ import imgModal from "@/components/file/imgModal.vue";
 import fileUtil from "@/utils/file";
 import workspaceService from "@/services/workspace";
 import { FileSearchOutlined } from "@ant-design/icons-vue";
-import VideoOverhaul from "@/components/VideoOverhaul.vue";
 
 import { storeToRefs } from "pinia";
 
@@ -148,10 +145,8 @@ const handleOpenFile = (file) => {
   }
   const ext = filePath.split(".").pop()?.toLowerCase();
   if (fileUtil.imgType.includes(ext)) {
-    // Keep existing image preview
-    workspaceService.getFile(filePath).then((res) => {
-      imageUrl.value = URL.createObjectURL(res);
-    });
+    // Use direct URL preview (no blob fetch) so <img> loads reliably
+    imageUrl.value = workspaceService.getPreviewUrl(filePath);
     isModalVisible.value = true;
   } else if (fileUtil.videoType?.includes(ext)) {
     // COMPLETE OVERHAUL: Use new bulletproof video system
@@ -165,6 +160,7 @@ const handleOpenFile = (file) => {
 // 查看所有文件
 const handleViewAllFiles = () => {
   // 这里可以触发一个事件或者打开一个模态框来显示所有文件
+  console.log('[MessageFileList] view all files clicked -> emitting file-explorer-visible')
   emitter.emit("file-explorer-visible", true);
 };
 </script>

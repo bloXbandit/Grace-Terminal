@@ -11,8 +11,18 @@ const fs = require('fs').promises;
 // Configure multer for TWIN-SPECIFIC file uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    // Dedicated directory for twin face images only
-    const uploadDir = path.join(process.cwd(), 'workspace', 'digital-twins', 'faces');
+    let uploadDir;
+    if (file.fieldname === 'face_image') {
+      // Directory for twin face images
+      uploadDir = path.join(process.cwd(), 'workspace', 'digital-twins', 'faces');
+    } else if (file.fieldname === 'voice_sample') {
+      // Directory for twin voice samples
+      uploadDir = path.join(process.cwd(), 'workspace', 'digital-twins', 'voices');
+    } else {
+      // Fallback directory
+      uploadDir = path.join(process.cwd(), 'workspace', 'digital-twins', 'uploads');
+    }
+    
     try {
       await fs.mkdir(uploadDir, { recursive: true });
     } catch (e) {}
@@ -21,7 +31,15 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     const userId = req.state?.user?.id || 'unknown';
-    cb(null, `twin_face_${userId}_${Date.now()}${ext}`);
+    const timestamp = Date.now();
+    
+    if (file.fieldname === 'face_image') {
+      cb(null, `twin_face_${userId}_${timestamp}${ext}`);
+    } else if (file.fieldname === 'voice_sample') {
+      cb(null, `twin_voice_${userId}_${timestamp}${ext}`);
+    } else {
+      cb(null, `twin_file_${userId}_${timestamp}${ext}`);
+    }
   }
 });
 
@@ -29,24 +47,42 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    // Strict validation for TWIN FACE photos only
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    
-    const ext = path.extname(file.originalname).toLowerCase();
-    
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed for twin photos.'), false);
-    }
-    
-    if (!allowedExtensions.includes(ext)) {
-      return cb(new Error('Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp files are allowed.'), false);
-    }
-    
-    // Additional validation: ensure filename doesn't suggest it's a document
-    const filename = file.originalname.toLowerCase();
-    if (filename.includes('doc') || filename.includes('pdf') || filename.includes('sheet') || filename.includes('presentation')) {
-      return cb(new Error('This appears to be a document file. Please upload a face photo for your digital twin.'), false);
+    if (file.fieldname === 'face_image') {
+      // Validation for face images
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+      
+      const ext = path.extname(file.originalname).toLowerCase();
+      
+      if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed for twin photos.'), false);
+      }
+      
+      if (!allowedExtensions.includes(ext)) {
+        return cb(new Error('Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp files are allowed.'), false);
+      }
+      
+      // Additional validation: ensure filename doesn't suggest it's a document
+      const filename = file.originalname.toLowerCase();
+      if (filename.includes('doc') || filename.includes('pdf') || filename.includes('sheet') || filename.includes('presentation')) {
+        return cb(new Error('This appears to be a document file. Please upload a face photo for your digital twin.'), false);
+      }
+    } else if (file.fieldname === 'voice_sample') {
+      // Validation for voice samples
+      const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/x-wav', 'audio/webm', 'audio/ogg'];
+      const allowedExtensions = ['.mp3', '.wav', '.webm', '.ogg'];
+      
+      const ext = path.extname(file.originalname).toLowerCase();
+      
+      if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error('Invalid audio file type. Only MP3, WAV, WebM, and OGG audio files are allowed for voice samples.'), false);
+      }
+      
+      if (!allowedExtensions.includes(ext)) {
+        return cb(new Error('Invalid audio file extension. Only .mp3, .wav, .webm, and .ogg files are allowed.'), false);
+      }
+    } else {
+      return cb(new Error('Unknown field name for file upload.'), false);
     }
     
     cb(null, true);
@@ -82,7 +118,7 @@ router.get("/:id", async ({ state, params, response }) => {
     where: { id: params.id, user_id: state.user.id }
   });
   if (!twin) {
-    return response.fail('Twin not found', 404);
+    return response.fail(null, 'Twin not found', 404);
   }
   return response.success(twin);
 });
@@ -95,11 +131,30 @@ router.get("/:id", async ({ state, params, response }) => {
  *     tags:
  *       - DigitalTwin
  */
-router.post("/", upload.single('face_image'), async ({ state, request, file, response }) => {
+router.post(
+  "/",
+  async (ctx, next) => {
+    try {
+      return await next()
+    } catch (err) {
+      console.error('[DigitalTwin API] Upload parse failed:', err)
+      return ctx.response.fail(null, err?.message || 'Upload failed', 400)
+    }
+  },
+  upload.fields([
+  { name: 'face_image', maxCount: 1 },
+  { name: 'voice_sample', maxCount: 1 }
+  ]),
+  async (ctx) => {
   try {
-    const { name, description, traits, model_type, voice_sample } = request.body || {};
+    const { state, request, response } = ctx;
+    const files = request.files || {};
+    const face_image = files['face_image']?.[0];
+    const voice_sample = files['voice_sample']?.[0];
     
-    if (!file) {
+    const { name, description, traits, model_type } = request.body || {};
+    
+    if (!face_image) {
       return response.fail(null, 'Face image is required', 400);
     }
     
@@ -111,7 +166,7 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     const twin = await service.createTwin({
       user_id: state.user.id,
       name,
-      face_image_path: file.path,
+      face_image_path: face_image.path,
       traits: traits ? JSON.parse(traits) : {},
       model_type: model_type || 'sadtalker_fast'
     });
@@ -119,8 +174,8 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     // Handle voice sample if provided
     if (voice_sample) {
       await twin.update({
-        voice_sample_path: voice_sample,
-        voice_cloned: true // Mark as having voice sample
+        voice_sample_path: voice_sample.path,
+        voice_cloned: true
       });
     }
 
@@ -135,7 +190,8 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     console.error('[DigitalTwin API] Create failed:', error);
     return response.fail(null, error.message || 'Failed to create twin', 500);
   }
-});
+  }
+);
 
 /**
  * @swagger
