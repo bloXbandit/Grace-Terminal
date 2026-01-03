@@ -25,6 +25,13 @@ instance.interceptors.request.use(
       config.headers['Content-Type'] = 'multipart/form-data'
     }
 
+    if ((typeof FormData !== 'undefined') && (config.data instanceof FormData)) {
+      if (config.headers) {
+        delete config.headers['Content-Type']
+        delete config.headers['content-type']
+      }
+    }
+
     const accessToken = localStorage.getItem('access_token');
     if (accessToken) {
       config.headers = {
@@ -71,11 +78,14 @@ const http = {
     return instance.get(url, { params: params });
   },
   post(url, params, header = {},responseType='json') {
+    const isFormData = (typeof FormData !== 'undefined') && (params instanceof FormData);
     const options = {
       url,
       method: "POST",
       data: params,
-      headers: Object.assign({ 'Content-Type': 'application/json' }, header),
+      headers: isFormData
+        ? Object.assign({}, header)
+        : Object.assign({ 'Content-Type': 'application/json' }, header),
       responseType:responseType,
     }
     return instance.request(options);

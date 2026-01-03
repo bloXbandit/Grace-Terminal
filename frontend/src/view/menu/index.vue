@@ -18,11 +18,6 @@
             <TwinIcon />
             <span class="truncate">Digital Twin</span>
           </div>
-          <!-- Backup Digital Twin button - guaranteed visibility -->
-          <div class="menu-button twin-backup-button" :class="{ active: isDigitalTwinPage }" @click="toDigitalTwin" style="background: #e8f4fd; border: 1px solid #1890ff;">
-            <TwinIcon />
-            <span class="truncate">Digital Twin</span>
-          </div>
         </div>
         <AgentList />
       </div>
@@ -102,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 

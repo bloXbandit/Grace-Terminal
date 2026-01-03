@@ -1,6 +1,7 @@
 <template>
   <div class="twin-page">
     <div class="twin-header">
+      <a-button @click="toGrace" style="margin-right: 10px;">← Back to Chat</a-button>
       <h1>Digital Twin</h1>
       <a-button type="primary" @click="showCreate = true">+ Create Twin</a-button>
     </div>
@@ -33,7 +34,7 @@
         </a-form-item>
         <a-form-item label="Face Photo" required>
           <a-upload 
-            :before-upload="false" 
+            :before-upload="() => false" 
             :file-list="files" 
             @change="handleFile"
             accept="image/*"
@@ -57,7 +58,7 @@
 
         <a-form-item label="Voice Sample (Optional)">
           <a-upload 
-            :before-upload="false" 
+            :before-upload="() => false" 
             :file-list="voiceFiles" 
             @change="handleVoiceFile"
             accept="audio/*"
@@ -90,14 +91,19 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { UserOutlined, AudioOutlined } from '@ant-design/icons-vue'
 import http from '@/utils/http'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const twins = ref([])
 const showCreate = ref(false)
 const showVideo = ref(false)
 const files = ref([])
 const voiceFiles = ref([])
+const faceFileObj = ref(null)
+const voiceFileObj = ref(null)
 const script = ref('')
 const selectedTwin = ref(null)
+const creating = ref(false)
 
 const form = ref({ name: '', traits: { gender: 'neutral' }, model_type: 'sadtalker_fast' })
 
@@ -116,6 +122,15 @@ function handleFile({ fileList: fl }) {
   const file = fl[fl.length - 1]
   if (!file) {
     files.value = []
+    faceFileObj.value = null
+    return
+  }
+
+  const raw = file.originFileObj
+  if (!raw) {
+    message.error('Upload failed to provide a file object')
+    files.value = []
+    faceFileObj.value = null
     return
   }
   
@@ -123,30 +138,41 @@ function handleFile({ fileList: fl }) {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
   const maxSize = 10 * 1024 * 1024 // 10MB
   
-  if (!allowedTypes.includes(file.type)) {
+  if (!allowedTypes.includes(raw.type)) {
     message.error('Only JPEG, PNG, GIF, and WebP images are allowed for twin photos')
     return
   }
   
-  if (file.size > maxSize) {
+  if (raw.size > maxSize) {
     message.error('File size must be under 10MB')
     return
   }
   
   // Check if filename suggests document
-  const filename = file.name.toLowerCase()
+  const filename = (raw.name || file.name || '').toLowerCase()
   if (filename.includes('doc') || filename.includes('pdf') || filename.includes('sheet')) {
     message.error('Please upload a face photo, not a document file')
     return
   }
   
+  // Keep only the latest file
   files.value = [file]
+  faceFileObj.value = raw
 }
 
 function handleVoiceFile({ fileList: fl }) {
   const file = fl[fl.length - 1]
   if (!file) {
     voiceFiles.value = []
+    voiceFileObj.value = null
+    return
+  }
+
+  const raw = file.originFileObj
+  if (!raw) {
+    message.error('Upload failed to provide a voice file object')
+    voiceFiles.value = []
+    voiceFileObj.value = null
     return
   }
   
@@ -154,47 +180,64 @@ function handleVoiceFile({ fileList: fl }) {
   const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a']
   const maxSize = 50 * 1024 * 1024 // 50MB for audio
   
-  if (!allowedTypes.includes(file.type) && !file.type.startsWith('audio/')) {
+  if (!allowedTypes.includes(raw.type) && !raw.type.startsWith('audio/')) {
     message.error('Only audio files (MP3, WAV, M4A) are allowed for voice samples')
     return
   }
   
-  if (file.size > maxSize) {
+  if (raw.size > maxSize) {
     message.error('Voice sample must be under 50MB')
     return
   }
   
   voiceFiles.value = [file]
+  voiceFileObj.value = raw
 }
 
 async function create() {
-  if (!form.value.name || !files.value.length) {
+  if (creating.value) return
+  if (!form.value.name || !files.value.length || !faceFileObj.value) {
     message.error('Fill all fields')
     return
   }
 
-  const fd = new FormData()
-  fd.append('face_image', files.value[0].originFileObj)
-  fd.append('name', form.value.name)
-  fd.append('traits', JSON.stringify(form.value.traits))
-  fd.append('model_type', form.value.model_type)
-  
-  // Add voice sample if provided
-  if (voiceFiles.value.length > 0) {
-    fd.append('voice_sample', voiceFiles.value[0].originFileObj)
-  }
+  try {
+    creating.value = true
+    const fd = new FormData()
+    fd.append('face_image', faceFileObj.value)
+    fd.append('name', form.value.name)
+    fd.append('traits', JSON.stringify(form.value.traits))
+    fd.append('model_type', form.value.model_type)
+    
+    if (voiceFileObj.value) {
+      fd.append('voice_sample', voiceFileObj.value)
+    }
 
-  await http.post('/api/digital-twin', fd)
-  message.success('Twin created')
-  showCreate.value = false
-  reset()
-  load()
+    await http.post('/api/digital-twin', fd)
+    message.success('Twin created')
+    showCreate.value = false
+    reset()
+    load()
+  } catch (e) {
+    const backendMsg = e?.response?.data?.msg
+    message.error(backendMsg || e?.message || 'Failed to create twin')
+  } finally {
+    creating.value = false
+  }
 }
 
 function reset() {
   form.value = { name: '', traits: { gender: 'neutral' }, model_type: 'sadtalker_fast' }
   files.value = []
   voiceFiles.value = []
+  faceFileObj.value = null
+  voiceFileObj.value = null
+  script.value = ''
+  selectedTwin.value = null
+}
+
+function toGrace() {
+  router.push('/grace')
 }
 
 function openVideo(t) {

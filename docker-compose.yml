@@ -58,6 +58,7 @@ services:
       - ./frontend/src/view/lemon/components/ChatHeader.vue:/app/frontend/src/view/lemon/components/ChatHeader.vue:cached  # Mount ChatHeader for voice feature hot-reload
       - ./frontend/src/view/lemon/message:/app/frontend/src/view/lemon/message:cached  # Mount message components for Vue render error fixes
       - ./frontend/src/view/digital-twin:/app/frontend/src/view/digital-twin:cached  # Mount Digital Twin page
+      - ./frontend/src/view/menu:/app/frontend/src/view/menu:cached  # Mount sidebar menu for Digital Twin button changes
       - ./frontend/src/utils/viewList.js:/app/frontend/src/utils/viewList.js:cached  # Mount file normalization used by previews
       
       # Local filesystem access - Mount entire home for fluid access

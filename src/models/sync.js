@@ -40,7 +40,13 @@ const tableSync = async () => {
   await DefaultModelSettingTable.sync({ alter: true });
   await SearchProviderTable.sync({ alter: true });
   await UserProviderConfigTable.sync({ alter: true });
-  await UserSearchSettingTable.sync({ alter: true });
+  try {
+    await sequelize.query('DROP TABLE IF EXISTS `user_search_setting_backup`;');
+    await UserSearchSettingTable.sync({ alter: true });
+  } catch (e) {
+    console.error('[sync:tableSync] UserSearchSetting alter sync failed; falling back to safe sync()', e);
+    await UserSearchSettingTable.sync();
+  }
   try {
     await sequelize.query('DROP TABLE IF EXISTS `llm_logs_backup`;');
     await LLMLogs.sync({ alter: true });

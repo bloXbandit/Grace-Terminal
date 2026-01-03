@@ -97,14 +97,14 @@ router.get("/:id", async ({ state, params, response }) => {
  */
 router.post("/", upload.single('face_image'), async ({ state, request, file, response }) => {
   try {
-    const { name, description, traits, model_type, voice_sample } = request.body;
+    const { name, description, traits, model_type, voice_sample } = request.body || {};
     
     if (!file) {
-      return response.fail('Face image is required', 400);
+      return response.fail(null, 'Face image is required', 400);
     }
     
     if (!name) {
-      return response.fail('Name is required', 400);
+      return response.fail(null, 'Name is required', 400);
     }
 
     const service = new DigitalTwinService();
@@ -133,7 +133,7 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     return response.success(twin);
   } catch (error) {
     console.error('[DigitalTwin API] Create failed:', error);
-    return response.fail(error.message || 'Failed to create twin', 500);
+    return response.fail(null, error.message || 'Failed to create twin', 500);
   }
 });
 
