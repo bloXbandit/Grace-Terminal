@@ -95,11 +95,21 @@ router.get("/:id", async ({ state, params, response }) => {
  *     tags:
  *       - DigitalTwin
  */
-router.post("/", upload.single('face_image'), async ({ state, request, file, response }) => {
+router.post("/", 
+  upload.fields([
+    { name: 'face_image', maxCount: 1 },
+    { name: 'voice_sample', maxCount: 1 }
+  ]), 
+  async (ctx) => {
   try {
-    const { name, description, traits, model_type, voice_sample } = request.body;
+    const { state, request, response } = ctx;
+    const files = request.files || {};
+    const face_image = files['face_image']?.[0];
+    const voice_sample = files['voice_sample']?.[0];
     
-    if (!file) {
+    const { name, description, traits, model_type } = request.body;
+    
+    if (!face_image) {
       return response.fail('Face image is required', 400);
     }
     
@@ -111,7 +121,7 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     const twin = await service.createTwin({
       user_id: state.user.id,
       name,
-      face_image_path: file.path,
+      face_image_path: face_image.path,
       traits: traits ? JSON.parse(traits) : {},
       model_type: model_type || 'sadtalker_fast'
     });
@@ -119,7 +129,7 @@ router.post("/", upload.single('face_image'), async ({ state, request, file, res
     // Handle voice sample if provided
     if (voice_sample) {
       await twin.update({
-        voice_sample_path: voice_sample,
+        voice_sample_path: voice_sample.path,
         voice_cloned: true // Mark as having voice sample
       });
     }
