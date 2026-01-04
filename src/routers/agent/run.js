@@ -487,6 +487,28 @@ router.post("/run", async (ctx, next) => {
       return true;
     }
     
+    // Pattern 7: "what kind/type/brand/color of [thing] do I [verb]"
+    // TRUE: "what kind of water do i drink", "what type of coffee do i like"
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+of\s+\w+\s+do\s+(i|we)\b/i.test(question)) {
+      return true;
+    }
+    // Also catch: "what [attribute] [thing] do I [verb]"
+    // TRUE: "what color car do i drive", "what brand shoes do i wear"
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+\w+\s+do\s+(i|we)\b/i.test(question)) {
+      return true;
+    }
+    // Also catch: "what [attribute] is/are my [thing]"
+    // TRUE: "what color is my car", "what size are my shoes"
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+(is|are)\s+(my|our|the)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 8: "when do i [verb] with [person/thing]"
+    // TRUE: "when do i meet with brenda", "when am i meeting john", "when is my appointment"
+    if (/\b(when|what\s+time)\s+(do|did|am|is|are)\s+(i|we|my|our)\b/i.test(question)) {
+      return true;
+    }
+    
     return false;
   })();
   
@@ -508,7 +530,12 @@ router.post("/run", async (ctx, next) => {
       console.log('[Run] User message saved for recall query');
       
       // Get top 5 relevant memories using smart scoring
-      const relevantMemories = await getRelevantMemories(user_id, question, { limit: 5 });
+      // For event queries, also search for date patterns in memory content
+      const isEventQuery = /\b(events?|appointments?|meetings?|plans?|trips?|schedule|coming\s+up)\b/i.test(question);
+      const relevantMemories = await getRelevantMemories(user_id, question, { 
+        limit: 5,
+        includeEventDates: isEventQuery // Flag to boost memories with date patterns
+      });
       
       if (relevantMemories.length > 0) {
         console.log(`[Run] Found ${relevantMemories.length} relevant memories - responding immediately`);

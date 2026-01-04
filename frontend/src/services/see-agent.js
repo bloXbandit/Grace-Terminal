@@ -166,11 +166,11 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         }
 
         if (currentMode === 'chat') {
-            // Allow structured progress messages to render during chat mode.
-            // Without this, the UI appears idle until the first model text token arrives.
+            // Handle structured messages (progress, auto_reply) in chat mode
             if (ch && ch.startsWith('{') && ch.endsWith('}')) {
                 try {
                     const obj = JSON.parse(ch);
+                    // Handle progress messages
                     if (obj && obj.meta && obj.meta.action_type === 'progress' && typeof obj.content === 'string') {
                         const messages = chatStore.messages;
                         if (messages.length > 0) {
@@ -179,6 +179,21 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
                                 lastMessage.content = obj.content;
                                 return;
                             }
+                        }
+                    }
+                    // Handle auto_reply messages (memory save, etc) as complete messages
+                    if (obj && obj.meta && obj.meta.action_type === 'auto_reply' && typeof obj.content === 'string') {
+                        const messages = chatStore.messages;
+                        const tempIndex = messages.findLastIndex(msg => msg.role === 'assistant' && msg.is_temp === true);
+                        if (tempIndex !== -1) {
+                            // Replace temp message with complete auto_reply
+                            messages[tempIndex] = {
+                                ...obj,
+                                is_temp: false,
+                                timestamp: new Date().getTime()
+                            };
+                            chatStore.scrollToBottom();
+                            return;
                         }
                     }
                 } catch (e) {
@@ -265,12 +280,14 @@ function updateChatToken(token, conversationId) {
     const messages = chatStore.messages;
     if (messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
-        //is_temp
+        
+        // CRITICAL: Filter backend control markers from UI
         if (token.includes('__lemon_out_end__')) {
             lastMessage.is_temp = false;
-            // Chat ended
+            // Don't append the marker to content - it's a control signal
             return;
         }
+        
         if (lastMessage) {
             lastMessage.content = (lastMessage.content || '') + token;
         }

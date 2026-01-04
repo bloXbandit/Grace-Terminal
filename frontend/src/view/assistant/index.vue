@@ -383,9 +383,24 @@ const loadMemories = async () => {
     const data = await res.json()
     if (data.success) {
       memories.value = data.memories || []
+      // Also load calendar events from memories
+      await loadCalendarEvents()
     }
   } catch (e) {
     console.error('Failed to load memories:', e)
+  }
+}
+
+const loadCalendarEvents = async () => {
+  try {
+    const res = await fetch('/api/assistant/calendar/events')
+    const data = await res.json()
+    if (data.success) {
+      calendarEvents.value = data.events || []
+      console.log(`Loaded ${calendarEvents.value.length} calendar events from memories`)
+    }
+  } catch (e) {
+    console.error('Failed to load calendar events:', e)
   }
 }
 

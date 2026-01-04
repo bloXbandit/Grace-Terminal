@@ -203,6 +203,47 @@ router.get("/howtos", async (ctx) => {
   };
 });
 
+// CALENDAR - GET events from memories
+router.get("/calendar/events", async (ctx) => {
+  try {
+    const userId = ctx.state?.user?.id || 1;
+    const { getCalendarEventsFromMemories } = require('@src/utils/dateParser');
+    
+    if (!UserMemory) {
+      ctx.status = 500;
+      ctx.body = { success: false, error: 'Memory system not initialized' };
+      return;
+    }
+    
+    // Get all memories for user
+    const memories = await UserMemory.findAll({
+      where: { user_id: userId },
+      order: [['created_at', 'DESC']]
+    });
+    
+    // Extract calendar events from memories with dates
+    const events = getCalendarEventsFromMemories(memories.map(m => ({
+      id: m.id,
+      title: m.title,
+      content: m.content,
+      tags: m.tags || [],
+      created_at: m.created_at
+    })));
+    
+    console.log(`[Assistant] Found ${events.length} calendar events from ${memories.length} memories`);
+    
+    ctx.body = {
+      success: true,
+      count: events.length,
+      events
+    };
+  } catch (error) {
+    console.error('[Assistant] Calendar events fetch error:', error);
+    ctx.status = 500;
+    ctx.body = { success: false, error: error.message };
+  }
+});
+
 // CALENDAR STATUS (placeholder)
 router.get("/calendar/status", async (ctx) => {
   ctx.body = { success: true, connected: false, message: 'Google Calendar integration coming soon' };

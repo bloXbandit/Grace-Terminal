@@ -45,7 +45,7 @@ const getAllMemories = async (user_id, options = {}) => {
  */
 const getRelevantMemories = async (user_id, query, options = {}) => {
   try {
-    const { limit = 5 } = options;
+    const { limit = 5, includeEventDates = false } = options;
     
     // Get all user memories
     const allMemories = await UserMemory.findAll({
@@ -57,12 +57,15 @@ const getRelevantMemories = async (user_id, query, options = {}) => {
     }
     
     // Extract keywords from query (remove common words)
-    const stopWords = ['do', 'i', 'have', 'any', 'what', 'when', 'where', 'who', 'how', 'is', 'are', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at'];
+    const stopWords = ['do', 'i', 'have', 'any', 'what', 'when', 'where', 'who', 'how', 'is', 'are', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'kind', 'type', 'brand'];
     const keywords = query.toLowerCase()
       .split(/\s+/)
       .filter(word => word.length > 2 && !stopWords.includes(word));
     
     console.log('[UserMemory] Scoring memories with keywords:', keywords);
+    if (includeEventDates) {
+      console.log('[UserMemory] Event query detected - boosting date-based memories');
+    }
     
     // Score each memory
     const scoredMemories = allMemories.map(memory => {
@@ -91,6 +94,20 @@ const getRelevantMemories = async (user_id, query, options = {}) => {
           }
         });
       });
+      
+      // EVENT DETECTION: Boost memories with date patterns (+15 for event queries)
+      if (includeEventDates) {
+        const hasDatePattern = /\b(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(memory.content);
+        const hasMeetingKeywords = /\b(meeting|appointment|event|call|conference|lunch|dinner|trip|visit|deadline|due)\b/i.test(memory.content);
+        
+        if (hasDatePattern) {
+          score += 15; // Strong boost for date patterns
+          console.log(`[UserMemory] Date pattern found in: "${memory.title}"`);
+        }
+        if (hasMeetingKeywords) {
+          score += 5; // Additional boost for meeting-related keywords
+        }
+      }
       
       // Pinned status (+10)
       if (memory.pinned) {

@@ -373,6 +373,22 @@ ${profileContext}
       return true;
     }
     
+    // Pattern 7: "what kind/type/brand/color of [thing] do I [verb]"
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+of\s+\w+\s+do\s+(i|we)\b/i.test(question)) {
+      return true;
+    }
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+\w+\s+do\s+(i|we)\b/i.test(question)) {
+      return true;
+    }
+    if (/\b(what|which)\s+(kind|type|brand|color|style|size)\s+(is|are)\s+(my|our|the)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 8: "when do i [verb] with [person/thing]"
+    if (/\b(when|what\s+time)\s+(do|did|am|is|are)\s+(i|we|my|our)\b/i.test(question)) {
+      return true;
+    }
+    
     return false;
   })();
   
@@ -382,7 +398,11 @@ ${profileContext}
       const { getRelevantMemories, formatMemoriesForResponse } = require('@src/services/userMemory');
       
       // Get top 5 relevant memories using smart scoring
-      const relevantMemories = await getRelevantMemories(user_id, question, { limit: 5 });
+      const isEventQuery = /\b(events?|appointments?|meetings?|plans?|trips?|schedule|coming\s+up)\b/i.test(question);
+      const relevantMemories = await getRelevantMemories(user_id, question, { 
+        limit: 5,
+        includeEventDates: isEventQuery
+      });
       
       if (relevantMemories.length > 0) {
         console.log(`[Chat] Found ${relevantMemories.length} relevant memories for recall`);

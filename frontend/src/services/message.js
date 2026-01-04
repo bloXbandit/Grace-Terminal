@@ -254,18 +254,18 @@ function handlePlan(message, messages) {
 function handleAutoReply(message, messages) {
     // Only mutate messages array if ChatPanel is still mounted
     if (window.isChatPanelMounted?.value) {
-        messages.push(message);
-        //update_status
-        messages.push(
-            {
-                content: i18n.global.t('lemon.message.botInitialPlan'),
-                role: 'assistant',
-                is_temp: true,
-                meta: {
-                    action_type: "update_status",
-                },
-            }
-        )
+        // Find and replace temp assistant message, but KEEP user message
+        const tempAssistantIndex = messages.findLastIndex(msg => msg.role === 'assistant' && msg.is_temp === true);
+        if (tempAssistantIndex !== -1) {
+            // Replace temp assistant message with auto_reply
+            messages[tempAssistantIndex] = message;
+        } else {
+            // No temp message found, just push
+            messages.push(message);
+        }
+        
+        // Don't add planning status for auto_reply - it's a complete response
+        // (Memory saves, quick replies, etc. are done immediately)
     }
 }
 function handleChatMessage(message, messages) {

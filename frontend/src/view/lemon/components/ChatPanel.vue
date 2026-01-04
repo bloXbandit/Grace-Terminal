@@ -76,8 +76,16 @@ window.isChatPanelMounted = isChatPanelMounted;
 
 watch(
   () => ({ id: route.params.id, agentId: route.params.agentId }),
-  async ({ id }) => {
+  async ({ id }, oldValue) => {
     console.log("route.params", route.params);
+    
+    // CRITICAL: Abort active SSE connection when switching conversations
+    if (oldValue?.id && id !== oldValue.id && chatStore.abortController) {
+      console.log('[ChatPanel] Aborting SSE for conversation switch:', oldValue.id, '→', id);
+      chatStore.abortController.abort();
+      chatStore.abortController = null;
+    }
+    
     conversationId.value = id || null;
 
     if (id) {

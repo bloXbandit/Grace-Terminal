@@ -105,21 +105,25 @@ export const useChatStore = defineStore('chat', {
       console.log('clearAgent', this.agent);
     },
     async initConversation(conversationId) {
-      console.log('initConversation');
+      console.log('[initConversation] Starting load for:', conversationId);
+      
+      // CRITICAL: Capture conversation ID at start to detect stale loads
+      const loadId = conversationId;
+      
       await this.resetChatInfo()
       
-      // CRITICAL: Check if conversation changed during async operation
-      if (this.conversationId !== conversationId) {
-        console.warn('[initConversation] Conversation changed during reset, aborting');
-        return; // Don't assign wrong messages!
+      // Check #1: After reset
+      if (this.conversationId !== loadId) {
+        console.warn('[initConversation] Conversation changed during reset, aborting load for:', loadId);
+        return;
       }
       
-      let res = await chat.messageList(conversationId);
+      let res = await chat.messageList(loadId);
       
-      // CRITICAL: Check if conversation changed during async operation
-      if (this.conversationId !== conversationId) {
-        console.warn('[initConversation] Conversation changed during load, aborting');
-        return; // Don't assign wrong messages!
+      // Check #2: After API call
+      if (this.conversationId !== loadId) {
+        console.warn('[initConversation] Stale load detected, discarding messages for:', loadId);
+        return;
       }
       
       if (!Array.isArray(res)) {
