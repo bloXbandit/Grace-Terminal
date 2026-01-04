@@ -426,6 +426,149 @@ router.post("/run", async (ctx, next) => {
     })));
   }
 
+  // MEMORY RECALL FAST-PATH: Check for memory recall requests BEFORE intent detection
+  // This prevents recall queries from being routed to agent mode
+  // IMPORTANT: Patterns are designed to avoid false positives from task instructions
+  
+  // Helper: Check if query is a recall request (not a task instruction)
+  const isRecallQuery = (() => {
+    const q = question.toLowerCase().trim();
+    
+    // Pattern 1: "what do you remember/recall/know" - but NOT "do you know what my [method/way/approach]"
+    // TRUE: "what do you remember about my trip", "do you recall my preferences"
+    // FALSE: "do you know what my fastest method would be"
+    if (/\b(what|do|did)\s+(do\s+)?(you\s+)?(remember|recall)\b/i.test(question)) {
+      return true;
+    }
+    if (/\bdo\s+you\s+know\b/i.test(question)) {
+      // Only trigger if followed by memory-related terms, not task terms
+      if (/\bdo\s+you\s+know\s+(about|if|whether|when|where|who)\s+(my|i|we)\b/i.test(question)) {
+        return true;
+      }
+      // Exclude task-related "do you know what my [method/way/approach/steps]"
+      if (/\bdo\s+you\s+know\s+what\s+(my|the)\s+(fastest|best|easiest|quickest|method|way|approach|steps?|process)\b/i.test(question)) {
+        return false;
+      }
+    }
+    
+    // Pattern 2: "do I have any [events/appointments/things]"
+    // TRUE: "do i have any events coming up"
+    // FALSE: "i did have some issues" (past tense, not a question)
+    if (/^(do|did)\s+i\s+have\s+(any|some)\s+(events?|appointments?|meetings?|plans?|trips?|things?)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 3: "what/show/list [my] events/appointments/memories"
+    // TRUE: "what events do i have", "show my appointments"
+    if (/\b(what|show|list)\s+(are\s+)?(my|our|the)?\s*(events?|appointments?|trips?|plans?|memories)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 4: "remind me" or "tell me about [my/specific memory]"
+    // TRUE: "remind me about my trip", "tell me what i said about coffee"
+    // FALSE: "tell me about python functions" (general knowledge, not personal memory)
+    if (/\bremind\s+me\b/i.test(question)) {
+      return true;
+    }
+    if (/\btell\s+me\s+(about|what)\s+(my|i|we|our)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 5: "what's my favorite/preferred/usual [thing]"
+    // TRUE: "whats my favorite team", "what is my preferred coffee"
+    if (/\b(what'?s?|what\s+is|what\s+are)\s+(my|our)\s+(favorite|preferred|usual)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 6: "what's my [thing] name"
+    // TRUE: "whats my dogs name", "what is my car name"
+    // FALSE: "what is my next step" (not asking for a name)
+    if (/\b(what'?s?|what\s+is|what\s+are)\s+(my|our|the)\s+\w+\s+name\b/i.test(question)) {
+      return true;
+    }
+    
+    return false;
+  })();
+  
+  if (isRecallQuery) {
+    console.log('[Run] 🔍 Memory recall fast-path triggered - bypassing intent detection');
+    try {
+      const { getRelevantMemories } = require('@src/services/userMemory');
+      const user_id = ctx.state.user.id;
+      
+      // CRITICAL: Save user message FIRST (before recall response)
+      const user_msg = Message.format({
+        role: 'user',
+        status: 'success',
+        content: question,
+        action_type: 'question',
+        task_id: conversation_id
+      });
+      await Message.saveToDB(user_msg, conversation_id);
+      console.log('[Run] User message saved for recall query');
+      
+      // Get top 5 relevant memories using smart scoring
+      const relevantMemories = await getRelevantMemories(user_id, question, { limit: 5 });
+      
+      if (relevantMemories.length > 0) {
+        console.log(`[Run] Found ${relevantMemories.length} relevant memories - responding immediately`);
+        
+        // Format memories for natural response (content only, no numbering)
+        const memoryLines = relevantMemories.map(m => m.content).join('\n');
+        
+        // Build context for LLM to generate concise, direct response
+        const recallContext = `The user asked: "${question}"\n\nRelevant saved memories:\n${memoryLines}\n\nProvide a brief, direct answer to their question using these memories. Do not list or enumerate the memories - just answer the question naturally and concisely.`;
+        
+        // Use chat completion to generate natural response
+        const response = await chat_completion(recallContext, { temperature: 0.7, messages: [] }, conversation_id, onTokenStream);
+        
+        // Save assistant message
+        const assistant_msg = Message.format({
+          role: 'assistant',
+          status: 'success',
+          content: response,
+          action_type: 'chat',
+          task_id: conversation_id
+        });
+        await Message.saveToDB(assistant_msg, conversation_id);
+        await Conversation.update({ status: 'done' }, { where: { conversation_id } });
+        
+        return ctx.body = { success: true, message: 'Memory recall completed' };
+      } else {
+        console.log('[Run] No relevant memories found - providing helpful empty response');
+        
+        // Detect if query is about events/appointments/plans
+        const isEventQuery = /\b(events?|appointments?|meetings?|plans?|trips?|schedule)\b/i.test(question);
+        
+        let emptyResponse;
+        if (isEventQuery) {
+          emptyResponse = "I don't see anything in your saved memories or calendar for the next 60 days. You can save events by saying 'remember that...' and I'll keep track of them for you!";
+        } else {
+          emptyResponse = "I don't have any saved memories about that yet. You can save information by saying 'remember that...' and I'll store it for you!";
+        }
+        
+        // Send response via streaming
+        onTokenStream(emptyResponse);
+        
+        // Save assistant message
+        const assistant_msg = Message.format({
+          role: 'assistant',
+          status: 'success',
+          content: emptyResponse,
+          action_type: 'chat',
+          task_id: conversation_id
+        });
+        await Message.saveToDB(assistant_msg, conversation_id);
+        await Conversation.update({ status: 'done' }, { where: { conversation_id } });
+        
+        return ctx.body = { success: true, message: 'Memory recall completed (empty)' };
+      }
+    } catch (err) {
+      console.error('[Run] Memory recall fast-path failed:', err.message);
+      // Fall through to normal intent detection
+    }
+  }
+  
   // 根据mode参数确定处理方式
   let intent;
   if (mode === 'auto') {
@@ -1198,6 +1341,157 @@ async function runChatPhase(params, isTwinsMode) {
     }
   }
   
+  // MEMORY SAVE FAST-PATH: Check for explicit memory save requests BEFORE chat completion
+  // This ensures "remember that..." goes to UserMemory table, not Knowledge table (user_profile)
+  let isMemorySaveRequest = false;
+  let memoryContent = null;
+  
+  // Pattern 1: "remember that X" or "save to memory that X"
+  let match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s+that\s+(.+)$/i);
+  if (match) {
+    memoryContent = match[4].trim();
+    isMemorySaveRequest = true;
+  }
+  
+  // Pattern 2: "remember: X" or "save to memory: X"
+  if (!match) {
+    match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s*:\s*(.+)$/i);
+    if (match) {
+      memoryContent = match[4].trim();
+      isMemorySaveRequest = true;
+    }
+  }
+  
+  // Pattern 3: "remember X" (everything after verb)
+  if (!match) {
+    match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(.+)$/i);
+    if (match) {
+      memoryContent = match[2].trim();
+      // Remove trailing "save it to memory" type phrases
+      memoryContent = memoryContent.replace(/,?\s*(save|store|keep)\s+(it|this|that)\s+(to|in)\s+(memory|mind)$/i, '');
+      isMemorySaveRequest = true;
+    }
+  }
+  
+  if (isMemorySaveRequest && memoryContent) {
+    console.log('[Chat] 💾 Memory save fast-path triggered');
+    console.log('[Chat] Extracted content:', memoryContent);
+    
+    try {
+      const axios = require('axios');
+      
+      // Clean up content: remove leading "that" if present
+      memoryContent = memoryContent.replace(/^that\s+/i, '');
+      
+      // Generate title (first 50 chars or first sentence)
+      let title;
+      if (memoryContent.length <= 50) {
+        title = memoryContent;
+      } else {
+        const firstSentence = memoryContent.match(/^[^.!?]+[.!?]/);
+        if (firstSentence) {
+          title = firstSentence[0].trim();
+        } else {
+          title = memoryContent.substring(0, 50) + '...';
+        }
+      }
+      
+      // Auto-tag based on content
+      const tags = ['user-requested'];
+      const lowerContent = memoryContent.toLowerCase();
+      
+      if (/\b(trip|travel|going to|visit|vacation)\b/i.test(lowerContent)) {
+        tags.push('travel');
+      }
+      if (/\b(meeting|appointment|event|schedule)\b/i.test(lowerContent)) {
+        tags.push('event');
+      }
+      if (/\b(prefer|like|favorite|love|enjoy)\b/i.test(lowerContent)) {
+        tags.push('preference');
+      }
+      if (/\b(want to|goal|plan|aim|objective)\b/i.test(lowerContent)) {
+        tags.push('goal');
+      }
+      if (/\b(remind|reminder|don't forget|remember to)\b/i.test(lowerContent)) {
+        tags.push('reminder');
+      }
+      if (/\b(birthday|name|email|phone|address)\b/i.test(lowerContent)) {
+        tags.push('personal');
+      }
+      
+      // Save to UserMemory via API
+      const response = await axios.post('http://localhost:3000/api/assistant/memories', {
+        title: title,
+        content: memoryContent,
+        tags: tags,
+        source: 'grace',
+        conversation_id: conversation_id
+      });
+      
+      if (response.data.success) {
+        console.log('[Chat] ✅ Memory saved to UserMemory table:', response.data.memory.id);
+        
+        // Generate concise, natural response - extract key phrase instead of full paraphrase
+        let naturalResponse;
+        const lowerContent = memoryContent.toLowerCase();
+        
+        // Extract key phrase (first 3-5 words or main subject)
+        let keyPhrase = memoryContent;
+        const words = memoryContent.split(/\s+/);
+        if (words.length > 6) {
+          // Extract main subject/action
+          keyPhrase = words.slice(0, 5).join(' ');
+          // Clean up trailing words
+          keyPhrase = keyPhrase.replace(/\b(that|the|a|an|to|in|on|at)$/i, '').trim();
+        }
+        
+        // Detect content type and craft concise response
+        if (/\b(prefer|like|favorite|love|enjoy|fan)\b/i.test(lowerContent)) {
+          // Preference - extract the thing they like
+          const match = memoryContent.match(/\b(fan|prefer|like|love|enjoy)\s+(.+?)(?:\s+and|\s+,|$)/i);
+          const thing = match ? match[2].trim() : keyPhrase;
+          naturalResponse = `Got it, ${thing} fan! Saved to memory.`;
+        } else if (/\b(moving|going to|visit|trip|travel)\b/i.test(lowerContent)) {
+          // Travel/event - extract destination/event
+          const match = memoryContent.match(/\b(moving|going|visit|trip|travel)\s+(?:to\s+)?(.+?)(?:\s+in|\s+on|$)/i);
+          const destination = match ? match[2].trim() : keyPhrase;
+          naturalResponse = `Noted, ${destination}. I've saved that.`;
+        } else if (/\b(meeting|appointment|event)\b/i.test(lowerContent)) {
+          // Appointment
+          naturalResponse = `Got it, I've saved that appointment.`;
+        } else if (/\b(name is|called)\b/i.test(lowerContent)) {
+          // Name/identity
+          const match = memoryContent.match(/(?:name is|called)\s+(.+?)(?:\s+and|\s+,|$)/i);
+          const name = match ? match[1].trim() : keyPhrase;
+          naturalResponse = `Perfect, ${name}. Saved.`;
+        } else {
+          // Generic - short and casual
+          naturalResponse = `Saved to memory!`;
+        }
+        
+        const successMsg = Message.format({
+          role: 'assistant',
+          status: 'success',
+          content: naturalResponse,
+          action_type: 'auto_reply',
+          task_id: conversation_id
+        });
+        
+        onTokenStream(successMsg);
+        await Message.saveToDB(successMsg, conversation_id);
+        await Conversation.update({ status: 'done' }, { where: { conversation_id } });
+        stream.end();
+        return;
+      } else {
+        console.error('[Chat] Memory save API returned failure:', response.data.error);
+        // Fall through to normal chat if save fails
+      }
+    } catch (error) {
+      console.error('[Chat] Memory save fast-path failed:', error?.message || error);
+      // Fall through to normal chat if save fails
+    }
+  }
+
   let sysPromptMessage = {
     role: 'system',
     content: `${MASTER_SYSTEM_PROMPT}

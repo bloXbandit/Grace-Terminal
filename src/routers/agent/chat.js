@@ -170,21 +170,280 @@ ${profileContext}
   // 调用大模型
   let content
 
-  // CRITICAL FIX: Synchronous profile extraction with timeout to prevent race conditions
-  try {
-    // Use Promise.race to ensure profile extraction completes within 2 seconds
-    await Promise.race([
-      extractProfileFromMessage(user_id, question, conversation_id),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
-      )
-    ]);
-    console.log('[Chat] Profile extraction completed successfully');
-  } catch (err) {
-    console.error('[Chat] Profile extraction failed (continuing anyway):', err.message);
-    // Continue with chat - profile extraction failure shouldn't block user
+  // MEMORY SAVE FAST-PATH: Check for explicit memory save requests BEFORE profile extraction
+  // This ensures "remember that..." goes to UserMemory table, not Knowledge table (user_profile)
+  let isMemorySaveRequest = false;
+  let memoryContent = null;
+  
+  // Pattern 1: "remember that X" or "save to memory that X"
+  let match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s+that\s+(.+)$/i);
+  if (match) {
+    memoryContent = match[4].trim();
+    isMemorySaveRequest = true;
+  }
+  
+  // Pattern 2: "remember: X" or "save to memory: X"
+  if (!match) {
+    match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(to|in)?\s*(memory|mind|assistant)?\s*:\s*(.+)$/i);
+    if (match) {
+      memoryContent = match[4].trim();
+      isMemorySaveRequest = true;
+    }
+  }
+  
+  // Pattern 3: "remember X" (everything after verb)
+  if (!match) {
+    match = question.match(/\b(save|remember|store|record|note|memorize|keep)\s+(.+)$/i);
+    if (match) {
+      memoryContent = match[2].trim();
+      // Remove trailing "save it to memory" type phrases
+      memoryContent = memoryContent.replace(/,?\s*(save|store|keep)\s+(it|this|that)\s+(to|in)\s+(memory|mind)$/i, '');
+      isMemorySaveRequest = true;
+    }
+  }
+  
+  if (isMemorySaveRequest && memoryContent) {
+    console.log('[Chat] 💾 Memory save fast-path triggered');
+    console.log('[Chat] Extracted content:', memoryContent);
+    
+    try {
+      const axios = require('axios');
+      
+      // Clean up content: remove leading "that" if present
+      memoryContent = memoryContent.replace(/^that\s+/i, '');
+      
+      // Generate title (first 50 chars or first sentence)
+      let title;
+      if (memoryContent.length <= 50) {
+        title = memoryContent;
+      } else {
+        const firstSentence = memoryContent.match(/^[^.!?]+[.!?]/);
+        if (firstSentence) {
+          title = firstSentence[0].trim();
+        } else {
+          title = memoryContent.substring(0, 50) + '...';
+        }
+      }
+      
+      // Auto-tag based on content
+      const tags = ['user-requested'];
+      const lowerContent = memoryContent.toLowerCase();
+      
+      if (/\b(trip|travel|going to|visit|vacation)\b/i.test(lowerContent)) {
+        tags.push('travel');
+      }
+      if (/\b(meeting|appointment|event|schedule)\b/i.test(lowerContent)) {
+        tags.push('event');
+      }
+      if (/\b(prefer|like|favorite|love|enjoy)\b/i.test(lowerContent)) {
+        tags.push('preference');
+      }
+      if (/\b(want to|goal|plan|aim|objective)\b/i.test(lowerContent)) {
+        tags.push('goal');
+      }
+      if (/\b(remind|reminder|don't forget|remember to)\b/i.test(lowerContent)) {
+        tags.push('reminder');
+      }
+      if (/\b(birthday|name|email|phone|address)\b/i.test(lowerContent)) {
+        tags.push('personal');
+      }
+      
+      // Save to UserMemory via API
+      const response = await axios.post('http://localhost:3000/api/assistant/memories', {
+        title: title,
+        content: memoryContent,
+        tags: tags,
+        source: 'grace',
+        conversation_id: conversation_id
+      });
+      
+      if (response.data.success) {
+        console.log('[Chat] ✅ Memory saved to UserMemory table:', response.data.memory.id);
+        
+        // Generate concise, natural response - extract key phrase instead of full paraphrase
+        let naturalResponse;
+        const lowerContent = memoryContent.toLowerCase();
+        
+        // Extract key phrase (first 3-5 words or main subject)
+        let keyPhrase = memoryContent;
+        const words = memoryContent.split(/\s+/);
+        if (words.length > 6) {
+          // Extract main subject/action
+          keyPhrase = words.slice(0, 5).join(' ');
+          // Clean up trailing words
+          keyPhrase = keyPhrase.replace(/\b(that|the|a|an|to|in|on|at)$/i, '').trim();
+        }
+        
+        // Detect content type and craft concise response
+        if (/\b(prefer|like|favorite|love|enjoy|fan)\b/i.test(lowerContent)) {
+          // Preference - extract the thing they like
+          const match = memoryContent.match(/\b(fan|prefer|like|love|enjoy)\s+(.+?)(?:\s+and|\s+,|$)/i);
+          const thing = match ? match[2].trim() : keyPhrase;
+          naturalResponse = `Got it, ${thing} fan! Saved to memory.`;
+        } else if (/\b(moving|going to|visit|trip|travel)\b/i.test(lowerContent)) {
+          // Travel/event - extract destination/event
+          const match = memoryContent.match(/\b(moving|going|visit|trip|travel)\s+(?:to\s+)?(.+?)(?:\s+in|\s+on|$)/i);
+          const destination = match ? match[2].trim() : keyPhrase;
+          naturalResponse = `Noted, ${destination}. I've saved that.`;
+        } else if (/\b(meeting|appointment|event)\b/i.test(lowerContent)) {
+          // Appointment
+          naturalResponse = `Got it, I've saved that appointment.`;
+        } else if (/\b(name is|called)\b/i.test(lowerContent)) {
+          // Name/identity
+          const match = memoryContent.match(/(?:name is|called)\s+(.+?)(?:\s+and|\s+,|$)/i);
+          const name = match ? match[1].trim() : keyPhrase;
+          naturalResponse = `Perfect, ${name}. Saved.`;
+        } else {
+          // Generic - short and casual
+          naturalResponse = `Saved to memory!`;
+        }
+        
+        const successMsg = Message.format({
+          role: 'assistant',
+          status: 'success',
+          content: naturalResponse,
+          action_type: 'chat',
+          task_id: conversation_id,
+          type: 'chat',
+          pid: new_pid
+        });
+        
+        onTokenStream(successMsg);
+        let savedMessage = await Message.saveToDB(successMsg, conversation_id);
+        onCompleted(savedMessage.id, new_pid);
+        await Conversation.update({ status: 'done' }, { where: { conversation_id } });
+        return;
+      } else {
+        console.error('[Chat] Memory save API returned failure:', response.data.error);
+        // Fall through to normal chat if save fails
+      }
+    } catch (error) {
+      console.error('[Chat] Memory save fast-path failed:', error?.message || error);
+      // Fall through to normal chat if save fails
+    }
   }
 
+  // MEMORY RECALL FAST-PATH: Check for memory recall requests
+  // IMPORTANT: Patterns are designed to avoid false positives from task instructions
+  let memoryRecallContext = '';
+  
+  const isRecallQuery = (() => {
+    const q = question.toLowerCase().trim();
+    
+    // Pattern 1: "what do you remember/recall/know" - but NOT "do you know what my [method/way/approach]"
+    if (/\b(what|do|did)\s+(do\s+)?(you\s+)?(remember|recall)\b/i.test(question)) {
+      return true;
+    }
+    if (/\bdo\s+you\s+know\b/i.test(question)) {
+      // Only trigger if followed by memory-related terms, not task terms
+      if (/\bdo\s+you\s+know\s+(about|if|whether|when|where|who)\s+(my|i|we)\b/i.test(question)) {
+        return true;
+      }
+      // Exclude task-related "do you know what my [method/way/approach/steps]"
+      if (/\bdo\s+you\s+know\s+what\s+(my|the)\s+(fastest|best|easiest|quickest|method|way|approach|steps?|process)\b/i.test(question)) {
+        return false;
+      }
+    }
+    
+    // Pattern 2: "do I have any [events/appointments/things]"
+    if (/^(do|did)\s+i\s+have\s+(any|some)\s+(events?|appointments?|meetings?|plans?|trips?|things?)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 3: "what/show/list [my] events/appointments/memories"
+    if (/\b(what|show|list)\s+(are\s+)?(my|our|the)?\s*(events?|appointments?|trips?|plans?|memories)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 4: "remind me" or "tell me about [my/specific memory]"
+    if (/\bremind\s+me\b/i.test(question)) {
+      return true;
+    }
+    if (/\btell\s+me\s+(about|what)\s+(my|i|we|our)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 5: "what's my favorite/preferred/usual [thing]"
+    if (/\b(what'?s?|what\s+is|what\s+are)\s+(my|our)\s+(favorite|preferred|usual)\b/i.test(question)) {
+      return true;
+    }
+    
+    // Pattern 6: "what's my [thing] name"
+    if (/\b(what'?s?|what\s+is|what\s+are)\s+(my|our|the)\s+\w+\s+name\b/i.test(question)) {
+      return true;
+    }
+    
+    return false;
+  })();
+  
+  if (isRecallQuery) {
+    console.log('[Chat] 🔍 Memory recall fast-path triggered');
+    try {
+      const { getRelevantMemories, formatMemoriesForResponse } = require('@src/services/userMemory');
+      
+      // Get top 5 relevant memories using smart scoring
+      const relevantMemories = await getRelevantMemories(user_id, question, { limit: 5 });
+      
+      if (relevantMemories.length > 0) {
+        console.log(`[Chat] Found ${relevantMemories.length} relevant memories for recall`);
+        
+        // Format memories for context injection (content only, no numbering)
+        const memoryLines = relevantMemories.map(m => m.content).join('\n');
+        
+        memoryRecallContext = `\n## Relevant Saved Memories:\n${memoryLines}\n\nProvide a brief, direct answer to the user's question using these memories. Do not list or enumerate the memories - just answer the question naturally and concisely.\n`;
+        console.log('[Chat] Memory recall context injected');
+      } else {
+        console.log('[Chat] No relevant memories found - providing helpful empty response');
+        
+        // Provide helpful context for "nothing found" scenario
+        // Detect if query is about events/appointments/plans
+        const isEventQuery = /\b(events?|appointments?|meetings?|plans?|trips?|schedule)\b/i.test(question);
+        
+        if (isEventQuery) {
+          memoryRecallContext = `\n## Memory Search Result:\nNo saved memories found matching this query.\n\nRespond naturally that you don't see anything in their saved memories or calendar for the next 60 days. Be helpful and suggest they can save events/plans by saying "remember that..." or check back later.\n`;
+        } else {
+          memoryRecallContext = `\n## Memory Search Result:\nNo saved memories found matching this query.\n\nRespond naturally that you don't have any saved memories about that topic yet. Be helpful and suggest they can save information by saying "remember that..."\n`;
+        }
+      }
+    } catch (err) {
+      console.error('[Chat] Memory recall failed (continuing anyway):', err.message);
+    }
+  }
+  
+  // CONDITIONAL PROFILE EXTRACTION: Only run when message contains personal info
+  // This saves 0-2s latency on messages that don't need profile extraction
+  // CRITICAL: Keep pattern broad to avoid missing important profile updates
+  const needsProfileExtraction = 
+    /\b(my name|I am|I'm|I live|my email|my phone|my address|my birthday|my age|prefer|favorite|like|love|hate|enjoy|dislike)\b/i.test(question) ||
+    /\b(call me|known as|go by|refer to me)\b/i.test(question) ||
+    /\b(remember|note|keep in mind|don't forget)\b/i.test(question);
+  
+  if (needsProfileExtraction) {
+    console.log('[Chat] Profile extraction triggered for:', question.substring(0, 50));
+    try {
+      await Promise.race([
+        extractProfileFromMessage(user_id, question, conversation_id),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
+        )
+      ]);
+      console.log('[Chat] Profile extraction completed successfully');
+    } catch (err) {
+      console.error('[Chat] Profile extraction failed (continuing anyway):', err.message);
+    }
+  } else {
+    console.log('[Chat] Skipping profile extraction - no personal info detected');
+  }
+
+  // Inject memory recall context into messages if available
+  if (memoryRecallContext) {
+    // Add memory context as a system message at the end
+    messagesContext.push({
+      role: 'system',
+      content: memoryRecallContext
+    });
+  }
+  
   // Check if we should route to specialist
   let responsePromise;
   if (useSpecialist) {

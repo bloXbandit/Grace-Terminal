@@ -14,7 +14,7 @@ class DigitalTwinService {
     // Replicate models for talking head generation
     this.models = {
       sadtalker: 'cjwbw/sadtalker:a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3',
-      sadtalker_fast: 'lucataco/sadtalker:82a1e14e0d338dd65a526a0fc538d6c6a5e4c5ae013a8c7a5093d8b6e425e3a5'
+      sadtalker_fast: 'lucataco/sadtalker:85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b'
     };
     
     // TTS service (using OpenAI by default)
@@ -100,8 +100,8 @@ class DigitalTwinService {
       console.log('[DigitalTwin] Step 1: Generating audio from script...');
       const audioPath = await this._generateAudio(script, twin, output_dir);
       
-      // Upload audio to get public URL
-      const audioUrl = await this._uploadFile(audioPath);
+      // Convert audio to base64 data URL for Replicate (localhost URLs won't work)
+      const audioUrl = await this._fileToDataUrl(audioPath);
       
       await video.update({
         audio_path: audioPath,
@@ -110,8 +110,14 @@ class DigitalTwinService {
 
       // Step 2: Generate video using SadTalker (or other model)
       console.log('[DigitalTwin] Step 2: Generating talking head video...');
+      
+      // Convert face_image_path to base64 data URL for Replicate (localhost URLs won't work)
+      const face_image_data_url = twin.face_image_path 
+        ? await this._fileToDataUrl(twin.face_image_path)
+        : twin.face_image_url;
+      
       const videoPath = await this._generateTalkingHead({
-        face_image_url: twin.face_image_url,
+        face_image_url: face_image_data_url,
         audio_url: audioUrl,
         audio_path: audioPath,
         model_type: twin.hf_model_type,
@@ -337,7 +343,7 @@ class DigitalTwinService {
     }
 
     // Validate audio duration (check file size as proxy)
-    const audioStats = await fs.stat(audio_path);
+    const audioStats = audio_path ? await fs.stat(audio_path) : { size: 0 };
     const audioSizeMB = audioStats.size / (1024 * 1024);
     
     // Rough estimate: 1MB ≈ 1 minute of audio at 128kbps
@@ -349,12 +355,14 @@ class DigitalTwinService {
     const modelVersion = this.models[model_type] || this.models.sadtalker_fast;
     console.log('[DigitalTwin] Using Replicate model:', modelVersion);
     console.log('[DigitalTwin] Audio size:', audioSizeMB.toFixed(2), 'MB');
+    console.log('[DigitalTwin] Face image URL type:', face_image_url.substring(0, 50) + '...');
+    console.log('[DigitalTwin] Audio URL type:', audio_url.substring(0, 50) + '...');
 
     // Start prediction
     const startResponse = await axios.post(
       'https://api.replicate.com/v1/predictions',
       {
-        version: modelVersion,
+        version: modelVersion.split(':')[1],
         input: {
           source_image: face_image_url,
           driven_audio: audio_url,
@@ -434,6 +442,39 @@ class DigitalTwinService {
       return publicUrl;
     } catch (error) {
       console.error('[DigitalTwin] File upload failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Convert file to base64 data URL
+   * Used for files that need to be sent to Replicate API (localhost URLs don't work)
+   * @private
+   */
+  async _fileToDataUrl(filePath) {
+    try {
+      const fileBuffer = await fs.readFile(filePath);
+      const base64 = fileBuffer.toString('base64');
+      
+      // Detect mime type from extension
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg'
+      };
+      const mimeType = mimeTypes[ext] || 'application/octet-stream';
+      
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      console.log('[DigitalTwin] Converted file to base64 data URL:', filePath, `(${(base64.length / 1024).toFixed(2)} KB)`);
+      return dataUrl;
+    } catch (error) {
+      console.error('[DigitalTwin] File to data URL conversion failed:', error);
       throw error;
     }
   }

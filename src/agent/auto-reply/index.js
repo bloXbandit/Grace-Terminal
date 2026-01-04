@@ -107,63 +107,6 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
     }
   }
 
-  // FAST-PATH: User memory recall ("what's my X", "tell me my X", "do you know my X")
-  // This queries UserMemory table and returns the answer immediately
-  // CRITICAL: Works across all conversations (user_id based, not conversation_id)
-  const recallPattern = goal && goal.match(/^(?:what'?s|whats|what\s+is|tell\s+me|do\s+you\s+know|remind\s+me)\s+(?:my|about\s+my|what\s+my)\s+(.+?)(?:\s+(?:is|was|are|were|name))?$/i);
-  
-  if (recallPattern) {
-    console.log('[AutoReply] 🧠 User memory recall request detected');
-    console.log('[AutoReply] Recall pattern matched:', recallPattern[0]);
-    console.log('[AutoReply] Searching for:', recallPattern[1]);
-    
-    try {
-      const axios = require('axios');
-      const searchQuery = recallPattern[1].trim();
-      
-      // Query UserMemory table via API (searches across all user's memories)
-      const response = await axios.get('http://localhost:3000/api/assistant/memories');
-      
-      if (response.data.success && response.data.memories && response.data.memories.length > 0) {
-        // Search for matching memory by content or title
-        const matchedMemory = response.data.memories.find(mem => {
-          const contentLower = (mem.content || '').toLowerCase();
-          const titleLower = (mem.title || '').toLowerCase();
-          const queryLower = searchQuery.toLowerCase();
-          
-          // Match if query appears in content or title
-          return contentLower.includes(queryLower) || titleLower.includes(queryLower);
-        });
-        
-        if (matchedMemory) {
-          console.log('[AutoReply] ✅ Memory found:', matchedMemory.id, matchedMemory.title);
-          
-          // Extract the specific answer from the memory content
-          // e.g., "my dogs name is menace" -> extract "menace"
-          const answerMatch = matchedMemory.content.match(new RegExp(`${searchQuery}\\s+(?:is|was|are|were)\\s+(.+?)(?:\\.|$)`, 'i'));
-          const answer = answerMatch ? answerMatch[1].trim() : matchedMemory.content;
-          
-          return {
-            handledBySpecialist: true,
-            specialist: 'user_memory_recall',
-            taskType: 'general_chat',
-            result: `Your ${searchQuery} is ${answer}.`
-          };
-        } else {
-          console.log('[AutoReply] No matching memory found for:', searchQuery);
-          // Fall back to agentic if no match
-          return null;
-        }
-      } else {
-        console.log('[AutoReply] No memories found in UserMemory table');
-        return null; // Fall back to agentic
-      }
-    } catch (e) {
-      console.error('[AutoReply] User memory recall fast-path failed:', e?.message || e);
-      return null; // Fall back to agentic
-    }
-  }
-
   if (isTwinVideoRequestEarly) {
     let progressInterval = null;
     try {
@@ -287,13 +230,13 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
       }
       console.error('[AutoReply] Digital Twin video fast-path failed:', e?.message || e);
       
-      // CRITICAL: Return simple unavailable message instead of null to prevent agentic fallback
-      // User wants ONLY fast-path for digital twin requests, no planning cycle, no detailed errors
+      // CRITICAL: Return error message instead of null to prevent agentic fallback
+      // Digital twin requests should fail gracefully, not go to full agent
       return {
         handledBySpecialist: true,
         specialist: 'digital_twin_video',
         taskType: 'general_chat',
-        result: 'Digi-Twin is not available at this time.'
+        result: '⚠️ Digital Twin video generation is not available at this time. Please try again later or contact support if the issue persists.'
       };
     }
   }

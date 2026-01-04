@@ -554,6 +554,35 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         action_result = await context.runtime.execute_action(action, context, task.id);
         console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
         
+        // CRITICAL: Auto-execute Python files after write_code
+        // Full agent writes .py files but doesn't auto-execute them (unlike ultra-fast-path)
+        // This ensures Python scripts are run after being written
+        if (action.type === 'write_code' && action_result.status === 'success') {
+          const filepath = action_result.meta?.filepath;
+          if (filepath && filepath.endsWith('.py')) {
+            console.log('[CodeAct] 🐍 Python file detected - auto-executing:', filepath);
+            
+            // Create terminal_run action to execute the Python file
+            const filename = path.basename(filepath);
+            const terminalAction = {
+              type: 'terminal_run',
+              params: {
+                command: 'python3',
+                args: filename,
+                cwd: './' // Will be resolved to conversation directory by runtime
+              }
+            };
+            
+            // Execute the Python script
+            console.log('[CodeAct] Executing Python script:', filename);
+            const execResult = await context.runtime.execute_action(terminalAction, context, task.id);
+            console.log('[CodeAct] Python execution result:', JSON.stringify(execResult).substring(0, 300));
+            
+            // Use execution result as the action result (contains actual output)
+            action_result = execResult;
+          }
+        }
+        
         // CRITICAL: Mask /workspace/... Python file success messages from UI
         if (action_result.content && /^File \/workspace\/.*\.py written successfully\.?\s*$/.test(action_result.content)) {
           console.log('[CodeAct] Masking Python file success message from UI');
