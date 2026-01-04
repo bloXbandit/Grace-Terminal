@@ -247,10 +247,25 @@ const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
 }
 
-onMounted(() => {
+onMounted(async () => {
+  console.log('[Assistant] Component mounted')
   window.addEventListener('resize', handleResize)
-  loadMemories()
-  refreshNews()
+  
+  try {
+    await loadMemories()
+    
+    // Call calendar API directly - loadCalendarEvents() wasn't executing
+    const calRes = await fetch('/api/assistant/calendar/events')
+    const calData = await calRes.json()
+    if (calData.success) {
+      calendarEvents.value = calData.events || []
+      console.log(`[Calendar] Loaded ${calendarEvents.value.length} events`)
+    }
+    
+    await refreshNews()
+  } catch (error) {
+    console.error('[Assistant] Error during mount:', error)
+  }
 })
 
 onUnmounted(() => {
@@ -333,7 +348,11 @@ const selectedDateEvents = computed(() => {
 
 const getEventsForDate = (date) => {
   const dateStr = dayjs(date).format('YYYY-MM-DD')
-  return calendarEvents.value.filter(e => e.date === dateStr)
+  const events = calendarEvents.value.filter(e => e.date === dateStr)
+  if (events.length > 0) {
+    console.log(`[Calendar] Events for ${dateStr}:`, events)
+  }
+  return events
 }
 
 const onDateSelect = (date) => {
@@ -383,21 +402,43 @@ const loadMemories = async () => {
     const data = await res.json()
     if (data.success) {
       memories.value = data.memories || []
-      // Also load calendar events from memories
-      await loadCalendarEvents()
     }
   } catch (e) {
     console.error('Failed to load memories:', e)
   }
 }
 
-const loadCalendarEvents = async () => {
+const loadCalendarEvents = async (showNotification = false) => {
   try {
+    // Store previous events for comparison
+    const previousEvents = [...calendarEvents.value]
+    
     const res = await fetch('/api/assistant/calendar/events')
     const data = await res.json()
     if (data.success) {
-      calendarEvents.value = data.events || []
+      const newEvents = data.events || []
+      calendarEvents.value = newEvents
       console.log(`Loaded ${calendarEvents.value.length} calendar events from memories`)
+      
+      // Show notification if requested and there are changes
+      if (showNotification && previousEvents.length > 0) {
+        const previousIds = new Set(previousEvents.map(e => e.id))
+        const newIds = new Set(newEvents.map(e => e.id))
+        
+        // Check for added events
+        const addedEvents = newEvents.filter(e => !previousIds.has(e.id))
+        if (addedEvents.length > 0) {
+          const eventTitles = addedEvents.map(e => e.title).join(', ')
+          message.success(`📅 Calendar updated: ${addedEvents.length} event(s) added - ${eventTitles}`, 4)
+        }
+        
+        // Check for removed events
+        const removedEvents = previousEvents.filter(e => !newIds.has(e.id))
+        if (removedEvents.length > 0) {
+          const eventTitles = removedEvents.map(e => e.title).join(', ')
+          message.info(`📅 Calendar updated: ${removedEvents.length} event(s) removed - ${eventTitles}`, 4)
+        }
+      }
     }
   } catch (e) {
     console.error('Failed to load calendar events:', e)
@@ -436,6 +477,8 @@ const deleteMemory = async (item) => {
     if (data.success) {
       memories.value = memories.value.filter(m => m.id !== item.id)
       message.success('Memory deleted')
+      // Refresh calendar after deleting memory
+      await loadCalendarEvents(true)
     }
   } catch (e) {
     console.error('Failed to delete memory:', e)
@@ -466,6 +509,8 @@ const saveNewMemory = async () => {
       showAddMemory.value = false
       newMemory.value = { title: '', content: '', tagsInput: '' }
       message.success('Memory saved!')
+      // Refresh calendar after adding memory
+      await loadCalendarEvents(true)
     } else {
       message.error(data.error || 'Failed to save memory')
     }

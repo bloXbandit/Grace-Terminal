@@ -99,18 +99,31 @@ const extractEventTitle = (content, dateInfo) => {
   // Remove the date from content to get cleaner title
   let cleanContent = content.replace(dateInfo.originalText, '').trim();
   
+  // Remove trailing "on" or "at" if left after date removal
+  cleanContent = cleanContent.replace(/\s+(on|at)\s*$/i, '').trim();
+  
   // Common patterns for event descriptions
   const patterns = [
-    /(?:i'm|i am|im)\s+(.+?)(?:\s+on|\s+at|$)/i,
-    /(?:meeting|meet)\s+(?:with|up with)?\s*(.+?)(?:\s+on|\s+at|$)/i,
-    /(?:appointment|call|conference)\s+(?:with)?\s*(.+?)(?:\s+on|\s+at|$)/i,
-    /(.+?)(?:\s+on|\s+at|$)/i
+    // "i have a [event]" format
+    /(?:i\s+have\s+a?n?)\s+(.+)/i,
+    // "i'm [doing something]" format
+    /(?:i'm|i am|im)\s+(.+)/i,
+    // "meeting/meet with [person]" format
+    /(?:meeting|meet)\s+(?:with|up with)?\s*(.+)/i,
+    // "[type] appointment/call/conference with [person]" format
+    /(?:appointment|call|conference)\s+(?:with)?\s*(.+)/i,
+    // Fallback: everything
+    /(.+)/i
   ];
   
   for (const pattern of patterns) {
     const match = cleanContent.match(pattern);
     if (match && match[1]) {
       let title = match[1].trim();
+      // Skip if title is too short or just a preposition
+      if (title.length < 2 || /^(on|at|in|with)$/i.test(title)) {
+        continue;
+      }
       // Capitalize first letter
       title = title.charAt(0).toUpperCase() + title.slice(1);
       // Limit length

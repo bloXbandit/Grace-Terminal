@@ -229,6 +229,12 @@ I'm back to helping with your projects and tasks!
 
 Self-modification tools are enabled. I can modify my own code.
 
+**Repository Context:**
+- GitHub: https://github.com/bloXbandit/Grace-Terminal (digi-twins branch)
+- Local: /Users/wonkasworld/Downloads/GRACEai
+- Container: grace-app with Docker sandbox runtime
+- Framework: Multi-agent system with fast-path routing
+
 **Commands:**
 - \`/normal\` - Exit dev mode
 - \`/dev status\` - Show this status`
