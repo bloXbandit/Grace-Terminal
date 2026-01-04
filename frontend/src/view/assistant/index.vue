@@ -224,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { message } from 'ant-design-vue'
@@ -257,9 +257,14 @@ onMounted(async () => {
     // Call calendar API directly - loadCalendarEvents() wasn't executing
     const calRes = await fetch('/api/assistant/calendar/events')
     const calData = await calRes.json()
+    console.log('[Calendar] API response:', calData);
     if (calData.success) {
-      calendarEvents.value = calData.events || []
-      console.log(`[Calendar] Loaded ${calendarEvents.value.length} events`)
+      calendarEvents.value = calData.events || [];
+      console.log(`[Calendar] Loaded ${calendarEvents.value.length} events`);
+      console.log('[Calendar] Event dates:', calendarEvents.value.map(e => e.date));
+      console.log('[Calendar] calendarEvents.value is now:', calendarEvents.value);
+    } else {
+      console.error('[Calendar] API returned error:', calData.error);
     }
     
     await refreshNews()
@@ -347,17 +352,40 @@ const selectedDateEvents = computed(() => {
 })
 
 const getEventsForDate = (date) => {
-  const dateStr = dayjs(date).format('YYYY-MM-DD')
-  const events = calendarEvents.value.filter(e => e.date === dateStr)
-  if (events.length > 0) {
-    console.log(`[Calendar] Events for ${dateStr}:`, events)
+  // Handle both dayjs objects and date strings
+  let dateStr;
+  if (date && typeof date === 'object' && date.format) {
+    // It's a dayjs object from Ant Design Calendar
+    dateStr = date.format('YYYY-MM-DD');
+  } else if (typeof date === 'string') {
+    dateStr = dayjs(date).format('YYYY-MM-DD');
+  } else {
+    dateStr = dayjs(date).format('YYYY-MM-DD');
   }
-  return events
+  
+  const events = calendarEvents.value.filter(e => e.date === dateStr);
+  
+  // Debug logging (remove after fixing)
+  if (events.length > 0) {
+    console.log(`[Calendar] ✅ Found ${events.length} event(s) for ${dateStr}:`, events);
+  }
+  
+  return events;
 }
 
 const onDateSelect = (date) => {
-  calendarDate.value = date
+  calendarDate.value = date;
+  console.log('[Calendar] Date selected:', date.format('YYYY-MM-DD'));
+  console.log('[Calendar] Events for selected date:', selectedDateEvents.value);
 }
+
+// Watch for changes to calendarEvents
+watch(calendarEvents, (newVal, oldVal) => {
+  console.log('[Calendar] calendarEvents changed!');
+  console.log('[Calendar] Old length:', oldVal?.length || 0);
+  console.log('[Calendar] New length:', newVal?.length || 0);
+  console.log('[Calendar] New events:', newVal);
+}, { deep: true })
 
 const connectCalendar = async () => {
   // Placeholder for Google OAuth flow
