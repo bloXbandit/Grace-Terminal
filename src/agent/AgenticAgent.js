@@ -828,36 +828,37 @@ class AgenticAgent {
 
       console.log('====== planning completed ======');
 
-      const uuid = uuidv4();
-      const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
+      // TODO.MD GENERATION DISABLED - User does not need todo list in UI
+      // const uuid = uuidv4();
+      // const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
 
-      await this._publishMessage({ action_type: 'write_code', status: 'running', content: "todo.md", json: {}, task_id: null, uuid });
+      // await this._publishMessage({ action_type: 'write_code', status: 'running', content: "todo.md", json: {}, task_id: null, uuid });
 
-      const todo_md = await getTodoMd(tasks);
-      const action = {
-        type: 'write_code',
-        params: {
-          path: `${dir_name}/todo.md`,
-          content: todo_md
-        }
-      };
-      const result = await write_code(action, uuid, this.context.user_id);
+      // const todo_md = await getTodoMd(tasks);
+      // const action = {
+      //   type: 'write_code',
+      //   params: {
+      //     path: `${dir_name}/todo.md`,
+      //     content: todo_md
+      //   }
+      // };
+      // const result = await write_code(action, uuid, this.context.user_id);
 
-      if (!this.context.generate_files) {
-        this.context.generate_files = [];
-      }
-      this.context.generate_files.push(result.meta.filepath);
+      // if (!this.context.generate_files) {
+      //   this.context.generate_files = [];
+      // }
+      // this.context.generate_files.push(result.meta.filepath);
 
-      await this._publishMessage({
-        action_type: result.meta.action_type,
-        status: result.status,
-        content: result.content || '',
-        filepath: result.meta.filepath,
-        json: {},
-        task_id: null,
-        uuid,
-        meta_content: todo_md
-      });
+      // await this._publishMessage({
+      //   action_type: result.meta.action_type,
+      //   status: result.status,
+      //   content: result.content || '',
+      //   filepath: result.meta.filepath,
+      //   json: {},
+      //   task_id: null,
+      //   uuid,
+      //   meta_content: todo_md
+      // });
 
       return true;
     } catch (error) {
@@ -879,37 +880,38 @@ class AgenticAgent {
     });
 
     if (status === 'completed') {
-      const uuid = uuidv4();
-      const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
-      const new_tasks = this.taskManager.getTasks();
-      const todo_md = await getTodoMd(new_tasks);
-      const action = {
-        type: 'write_code',
-        params: {
-          path: `${dir_name}/todo.md`,
-          content: todo_md
-        }
-      };
+      // TODO.MD GENERATION DISABLED - User does not need todo list in UI
+      // const uuid = uuidv4();
+      // const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
+      // const new_tasks = this.taskManager.getTasks();
+      // const todo_md = await getTodoMd(new_tasks);
+      // const action = {
+      //   type: 'write_code',
+      //   params: {
+      //     path: `${dir_name}/todo.md`,
+      //     content: todo_md
+      //   }
+      // };
 
-      await this._publishMessage({
-        action_type: 'write_code',
-        status: 'running',
-        content: "todo.md",
-        json: {},
-        task_id: task.id,
-        uuid
-      });
-      const todoRes = await write_code(action, uuid, this.context.user_id);
-      await this._publishMessage({
-        action_type: todoRes.meta.action_type,
-        status: todoRes.status,
-        content: todoRes.content || '',
-        filepath: todoRes.meta.filepath,
-        json: {},
-        task_id: task.id,
-        uuid,
-        meta_content: todo_md
-      });
+      // await this._publishMessage({
+      //   action_type: 'write_code',
+      //   status: 'running',
+      //   content: "todo.md",
+      //   json: {},
+      //   task_id: task.id,
+      //   uuid
+      // });
+      // const todoRes = await write_code(action, uuid, this.context.user_id);
+      // await this._publishMessage({
+      //   action_type: todoRes.meta.action_type,
+      //   status: todoRes.status,
+      //   content: todoRes.content || '',
+      //   filepath: todoRes.meta.filepath,
+      //   json: {},
+      //   task_id: task.id,
+      //   uuid,
+      //   meta_content: todo_md
+      // });
     }
   }
 
