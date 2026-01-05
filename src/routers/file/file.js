@@ -268,7 +268,11 @@ router.get('/preview', async ({ request, response }) => {
       '.mp3': 'audio/mpeg',
       '.wav': 'audio/wav',
       '.ogg': 'audio/ogg',
-      '.m4a': 'audio/mp4'
+      '.m4a': 'audio/mp4',
+      '.html': 'text/html',
+      '.htm': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript'
     };
 
     const stream = fs.createReadStream(filePath);
