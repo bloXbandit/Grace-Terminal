@@ -454,6 +454,13 @@ class MultiAgentCoordinator {
       return 'code_generation'; // Claude Sonnet 4.5 - best for code
     }
     
+    // 1.5 HTML/Webpage/Landing page -> Route to code generation
+    const hasWebpageKeywords = /\b(landing page|webpage|website|html page|html file|web page)\b/i.test(message);
+    if (hasWebpageKeywords) {
+      console.log('[Coordinator] HTML/webpage request → routing to code_generation');
+      return 'code_generation';
+    }
+    
     // 2. Photo/Video generation -> Route to photo_video_generation specialist
     const hasPhotoVideoKeywords = /\b(photo|image|video|movie|film|edit|generate|create|make|produce|render)\b/i.test(message);
     if (hasPhotoVideoKeywords && !hasCodeKeywords && !hasFiles) {

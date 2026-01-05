@@ -2628,7 +2628,7 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     // These task types need AgenticAgent to continue to planning and tool execution
     const requiresToolExecution = [
       'data_generation',      // Creating files, documents, etc.
-      'code_generation',      // Writing code files
+      // 'code_generation' removed - let specialist handle code generation directly
       'system_design',        // Creating diagrams, architecture files
       'web_research'          // Fetching and saving research data
     ];
@@ -2664,6 +2664,18 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
           console.log('[AutoReply] Falling back to default model');
           // Fall through to default model handling
         } else {
+          // CRITICAL: For code_generation, return needsExecution so planning can extract Python code
+          // Planning module already has logic to extract ```python blocks from specialistResponse
+          if (taskType === 'code_generation') {
+            console.log('[AutoReply] Code generation specialist succeeded - passing to planning for execution');
+            return {
+              needsExecution: true,
+              specialistResponse: result.result,
+              specialist: result.specialist,
+              taskType: taskType
+            };
+          }
+          
           // For tasks that don't need tools (like chat, analysis), mark as handled
           return {
             handledBySpecialist: true,
