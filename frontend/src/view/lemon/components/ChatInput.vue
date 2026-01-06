@@ -1307,11 +1307,11 @@ const keydown = (e) => {
 @media (max-width: 768px) {
   .chat-input .input-actions {
     height: auto;
-    gap: 50px;
+    gap: 12px; /* Reduced from 50px for better layout */
     span {
-      height: 24px !important;
-      max-height: 24px !important;
-      line-height: 24px !important;
+      height: 32px !important; /* Increased from 24px for better touch targets */
+      max-height: 32px !important;
+      line-height: 32px !important;
     }
   }
   .chat-input .left-actions {
@@ -1327,8 +1327,8 @@ const keydown = (e) => {
   .chat-input .left-actions .button-row {
     display: flex !important;
     align-items: center;
-    gap: 4px;
-    height: 24px;
+    gap: 6px; /* Increased from 4px */
+    height: 32px; /* Increased from 24px */
   }
 
   .chat-input .left-actions .first-row {
@@ -1341,16 +1341,20 @@ const keydown = (e) => {
 
   /* 第一行按钮样式 */
   .chat-input .left-actions .first-row > * {
-    height: 24px;
+    height: 32px; /* Increased from 24px for better touch */
+    min-height: 32px;
     display: flex;
     align-items: center;
+    padding: 0 6px; /* Add padding for easier tapping */
   }
 
   /* 第二行按钮样式 */
   .chat-input .left-actions .second-row > * {
-    height: 24px;
+    height: 32px; /* Increased from 24px for better touch */
+    min-height: 32px;
     display: flex;
     align-items: center;
+    padding: 0 6px; /* Add padding for easier tapping */
   }
 
   /* 上传按钮固定宽度 */
@@ -1389,24 +1393,24 @@ const keydown = (e) => {
     justify-content: center;
   }
   .chat-input .left-actions .mode-selector-dropdown {
-    height: 24px;
-    font-size: 10px;
+    height: 32px; /* Increased from 24px */
+    font-size: 13px; /* Increased from 10px for readability */
 
     div {
-      height: 24px !important;
-      max-height: 24px !important;
+      height: 32px !important;
+      max-height: 32px !important;
       width: 100% !important;
     }
   }
   /** 修改 ant-select-selection-item 字体大小 - 限定在chat-input内 */
   .chat-input .left-actions .mode-select-dropdown .ant-select-selection-item {
-    font-size: 10px !important;
+    font-size: 13px !important; /* Increased from 10px */
     padding-inline-end: 0px !important;
-    line-height: 24px !important;
+    line-height: 32px !important; /* Increased from 24px */
   }
   .chat-input .left-actions .mode-select-dropdown .ant-select-selector {
-    padding: 0px 2px !important;
-    height: 24px !important;
+    padding: 0px 4px !important;
+    height: 32px !important; /* Increased from 24px */
   }
   .chat-input .left-actions .mode-select-dropdown .ant-select-arrow {
     display: none !important;
@@ -1414,15 +1418,16 @@ const keydown = (e) => {
 
   /** 针对可视选择下拉框的特殊样式 - 限定在chat-input内 */
   .chat-input .left-actions .visibility-select .ant-select-selection-item {
-    font-size: 10px !important;
+    font-size: 13px !important; /* Increased from 10px */
     padding-inline-end: 0px !important;
-    line-height: 24px !important;
+    line-height: 32px !important; /* Increased from 24px */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .chat-input .left-actions .visibility-select .ant-select-selector {
-    padding: 0px 2px !important;
+    padding: 0px 4px !important;
+    height: 32px !important;
   }
   .chat-input .left-actions .visibility-select .ant-select-arrow {
     display: none !important;
@@ -1430,22 +1435,22 @@ const keydown = (e) => {
 
   /** 可视选择样式 - 限定在chat-input内 */
   .chat-input .left-actions .visibility-toggle {
-    height: 24px;
-    font-size: 11px;
+    height: 32px; /* Increased from 24px */
+    font-size: 13px; /* Increased from 11px */
 
     div {
-      height: 24px !important;
-      max-height: 24px !important;
+      height: 32px !important;
+      max-height: 32px !important;
       width: 100% !important;
     }
   }
 
   /** MCP按钮样式 - 限定在chat-input内 */
   .chat-input .left-actions .mcp-button {
-    height: 24px !important;
-    max-height: 24px !important;
-    font-size: 10px !important;
-    padding: 0px 2px !important;
+    height: 32px !important; /* Increased from 24px */
+    max-height: 32px !important;
+    font-size: 13px !important; /* Increased from 10px */
+    padding: 0px 6px !important; /* Increased from 2px */
 
     .anticon {
       display: none !important;
