@@ -56,6 +56,18 @@ const tableSync = async () => {
   }
   await Task.sync({ alter: true });
   await Message.sync({ alter: true });
+  
+  // Add index on conversation_id for faster message queries
+  try {
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_message_conversation_id 
+      ON messages (conversation_id)
+    `);
+    console.log('[sync] Created index on messages.conversation_id');
+  } catch (e) {
+    console.log('[sync] Index on messages.conversation_id may already exist:', e.message);
+  }
+  
   await McpServer.sync({ alter: true });
   await Agent.sync({ alter: true });
   await FileVersion.sync({ alter: true });

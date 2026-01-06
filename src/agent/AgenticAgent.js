@@ -439,7 +439,9 @@ class AgenticAgent {
           const workspacePath = `/app/workspace/user_1/Conversation_${this.context.conversation_id.substring(0, 6)}`;
           const allFiles = await fs.readdir(workspacePath);
           const documentFiles = allFiles.filter(file => 
-            file.endsWith('.docx') || file.endsWith('.xlsx') || file.endsWith('.pdf')
+            file.endsWith('.docx') || file.endsWith('.xlsx') || file.endsWith('.pdf') ||
+            file.endsWith('.html') || file.endsWith('.css') || file.endsWith('.js') ||
+            file.endsWith('.json') || file.endsWith('.xml') || file.endsWith('.svg')
           );
           
           // Convert back to Set to ensure deduplication

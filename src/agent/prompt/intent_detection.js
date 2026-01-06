@@ -27,6 +27,7 @@ CRITICAL FILE GENERATION KEYWORDS - Always classify as "agent":
 - "create/make/generate" + "pdf/report"
 - "create/make/generate" + "powerpoint/presentation/pptx"
 - "create/make/generate" + "file/data/csv/json"
+- "create/make/generate/build" + "website/landing page/webpage/html/web page/web app"
 - "write" + "code/script/program"
 
 Examples: "Check the weather in New York today," "Write a Python script to analyze this file," "Create a dashboard for me," "Make an Excel with states and capitals," "Create an Excel file with 100 artists and their Grammys," "Write a rap song about love," "Create a poem," "Generate a story," or, in a planning context, "I lift weights, want to lose fat, and go to the gym 2-3 times a week."

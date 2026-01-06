@@ -148,7 +148,7 @@ onMounted(() => {
   height: 100%;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding-bottom: 174px;
+  padding-bottom: max(220px, env(safe-area-inset-bottom) + 200px);
 }
 
 .chat-messages::-webkit-scrollbar {
@@ -158,6 +158,8 @@ onMounted(() => {
 .message-list {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  padding: 16px;
 }
 
 .message-item {
@@ -257,5 +259,34 @@ onMounted(() => {
   display: inline-block;
   margin-bottom: 8px;
   max-width: 80%;
+}
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+  .chat-messages {
+    padding-bottom: max(240px, env(safe-area-inset-bottom) + 220px);
+  }
+
+  .message-item {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .message-content {
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
 }
 </style>

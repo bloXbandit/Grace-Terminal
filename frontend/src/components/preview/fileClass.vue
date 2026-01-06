@@ -1,5 +1,5 @@
 <template>
-  <a-modal :open="fileExplorerVisible" :footer="null" :z-index="10500" style="
+  <a-modal v-model:open="fileExplorerVisible" :footer="null" :z-index="10500" style="
     width: 600px; background-color: #fff; border-color: hsla(0, 0%, 100%, .05);
     border-width: 1px; border-radius: 20px; overflow: auto;
     flex-direction: column; max-width: 95%; max-height: 95%;
@@ -37,7 +37,7 @@
                                       <div class="fileNameContainer">
                                           <div class="fileNameDiv">
                                               <span class="fileNameSpan">{{
-                                                      file.filename.split('/').pop().split('\\').pop()
+                                                      file.filename?.split('/').pop().split('\\').pop() || 'Unnamed File'
                                               }}</span>
                                           </div>
                                           <span class="time">{{ formatTimeWithHMS(file.timestamp) }}</span>
@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount, reactive } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
@@ -174,6 +174,45 @@ files.forEach(file => {
 updateFileList()
 watch(messages, updateFileList, { deep: true })
 
+// DEBUG: Track component lifecycle
+onMounted(() => {
+  console.log('[fileClass] Component mounted')
+  console.log('[fileClass] Initial fileExplorerVisible:', fileExplorerVisible.value)
+  console.log('[fileClass] Initial fileListState length:', fileListState.length)
+})
+
+// DEBUG: Watch fileExplorerVisible changes
+watch(fileExplorerVisible, (newVal, oldVal) => {
+  console.log('[fileClass] fileExplorerVisible changed:', { oldVal, newVal })
+  console.log('[fileClass] fileListState length:', fileListState.length)
+  
+  // Check if modal element exists in DOM
+  setTimeout(() => {
+    const modalElement = document.querySelector('.ant-modal')
+    const modalWrap = document.querySelector('.ant-modal-wrap')
+    console.log('[fileClass] Modal element exists:', !!modalElement)
+    console.log('[fileClass] Modal wrap exists:', !!modalWrap)
+    if (modalElement) {
+      const styles = window.getComputedStyle(modalElement)
+      console.log('[fileClass] Modal display:', styles.display)
+      console.log('[fileClass] Modal visibility:', styles.visibility)
+      console.log('[fileClass] Modal opacity:', styles.opacity)
+    }
+    if (modalWrap) {
+      const wrapStyles = window.getComputedStyle(modalWrap)
+      console.log('[fileClass] Modal wrap display:', wrapStyles.display)
+    }
+  }, 100)
+}, { immediate: true })
+
+// DEBUG: Watch fileListState changes
+watch(() => fileListState.length, (newLen) => {
+  console.log('[fileClass] fileListState length changed:', newLen)
+  if (newLen > 0) {
+    console.log('[fileClass] First 3 files:', fileListState.slice(0, 3).map(f => f.filename))
+  }
+})
+
 // 文件类型
 const fileTypes = ['all', 'document', 'image', 'codeFile', 'link']
 
@@ -190,6 +229,7 @@ console.log('chooseClassType.value', chooseClassType.value)
 return chooseClassType.value === 'all'
   ? fileListState
   : fileListState.filter(file => {
+      if (!file.filename) return false
       const ext = file.filename.split('.').pop().toLowerCase()
       return fileTypeExtensions[chooseClassType.value]?.includes(ext)
     })
@@ -470,6 +510,8 @@ onBeforeUnmount(() => {
                   box-shadow: none;
                   border: 1px solid #0000001f;
                   line-height: 38px;
+                  cursor: pointer;
+                  user-select: none;
 
                   &.active {
                       background-color: #1a1a19;

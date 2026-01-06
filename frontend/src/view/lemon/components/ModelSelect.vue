@@ -299,11 +299,14 @@ const initModel = async () => {
       selectedModelValue.value = defaultId
       console.log('[ModelSelect] Using backend default model:', defaultId)
     } else if (modelList.value.length > 0) {
-      // Fallback to first model if no default setting exists
-      const defaultId = modelList.value[0].id * 1
+      // Fallback: Prefer Gemini 3 Pro if available, otherwise use first model
+      const gemini3ProModel = modelList.value.find(m => 
+        m.model_id && (m.model_id.toLowerCase().includes('gemini-3-pro') || m.model_id.toLowerCase().includes('gemini 3 pro'))
+      )
+      const defaultId = (gemini3ProModel?.id || modelList.value[0].id) * 1
       model_id.value = defaultId
       selectedModelValue.value = defaultId
-      console.log('[ModelSelect] No backend default found, using first model:', defaultId)
+      console.log('[ModelSelect] No backend default found, using preferred model:', defaultId, gemini3ProModel ? '(Gemini 3 Pro)' : '(first available)')
     }
   } catch (e) {
     console.error('Failed to fetch default model setting, using first available model', e)

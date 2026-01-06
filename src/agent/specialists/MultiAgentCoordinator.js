@@ -65,6 +65,14 @@ class MultiAgentCoordinator {
   detectTaskType(userMessage, context = {}) {
     const message = userMessage.toLowerCase();
     
+    // CRITICAL: Check for webpage/website/landing page requests FIRST
+    // This must happen before other patterns to avoid misclassification
+    const hasWebpageKeywords = /\b(landing page|webpage|website|html page|html file|web page|web site)\b/i.test(message);
+    if (hasWebpageKeywords) {
+      console.log('[Coordinator] HTML/webpage request detected → routing to code_generation');
+      return 'code_generation';
+    }
+    
     // Context-aware creative detection (before keyword matching)
     // Detects artistic/creative intent even without specific keywords
     const creativeIndicators = [
@@ -716,7 +724,7 @@ class MultiAgentCoordinator {
           const conversationDir = path.join(WORKSPACE_DIR, dir_name);
           
           const files = await getAllFilesRecursively(conversationDir);
-          const TRACKED_EXTENSIONS = ['.docx', '.docm', '.dotx', '.dotm', '.pdf', '.xlsx', '.xlsm', '.csv', '.pptx', '.txt', '.md'];
+          const TRACKED_EXTENSIONS = ['.docx', '.docm', '.dotx', '.dotm', '.pdf', '.xlsx', '.xlsm', '.csv', '.pptx', '.txt', '.md', '.html', '.css', '.js', '.json', '.xml', '.svg'];
           const docFiles = files.filter(f => TRACKED_EXTENSIONS.some(ext => f.toLowerCase().endsWith(ext)));
           const formattedDocFiles = docFiles.map(f => `- ${path.basename(f)}`).join('\n');
 

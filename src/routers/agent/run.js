@@ -623,8 +623,16 @@ router.post("/run", async (ctx, next) => {
         }
       }
 
+      // WEBSITE GENERATION FAST-PATH: Skip intent detection for obvious website requests
+      // Saves ~4.5s by avoiding LLM call for clear website/landing page generation
+      const hasWebsiteKeywords = /\b(make|create|build|generate)\s+(me\s+)?(a\s+)?(landing\s+page|website|webpage|html|web\s+page|web\s+app|web\s+site)\b/i.test(q);
+      if (hasWebsiteKeywords) {
+        intent = 'agent';
+        console.log('[AUTO Mode] 🌐 Website generation detected, skipping intent detection -> agent');
+      }
+
       if (intent) {
-        // intent decided by voice fast-path
+        // intent decided by voice fast-path or website fast-path
       } else {
         // 自动选择：使用意图识别
         console.log('自动模式：开始意图识别...');

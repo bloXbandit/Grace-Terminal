@@ -266,7 +266,7 @@ const handleRejectConfirm = () => {
   border: 1px solid #0000000f;
   background: #fff;
   position: sticky;
-  bottom: 150px;
+  bottom: 180px;
   z-index: 1000;
   left: 50%;
   border-radius: 9999999px;
@@ -279,6 +279,15 @@ const handleRejectConfirm = () => {
   box-shadow:
     0px 5px 16px 0px #00000014,
     0px 0px 1.25px 0px #00000014;
+}
+
+/* Mobile adjustment for scroll-to-bottom button */
+@media (max-width: 768px) {
+  .scroll-to-bottom {
+    bottom: 200px;
+    width: 44px;
+    height: 44px;
+  }
 }
 
 .chat-panel {

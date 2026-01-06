@@ -42,6 +42,46 @@ const finish_action = async (action, context, task_id) => {
     }, 0);
   }
 
+  // CRITICAL: Scan for newly created files if context.generate_files is empty
+  // This handles regular planning tasks where files were created but not tracked
+  if (!context.generate_files || context.generate_files.length === 0) {
+    const fs = require('fs');
+    const path = require('path');
+    const { getDirpath } = require('@src/utils/electron');
+    
+    try {
+      const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', user_id);
+      const dir_name = 'Conversation_' + conversation_id.slice(0, 6);
+      const conversationDir = path.join(WORKSPACE_DIR, dir_name);
+      
+      if (fs.existsSync(conversationDir)) {
+        const files = fs.readdirSync(conversationDir);
+        const now = Date.now();
+        
+        if (!context.generate_files) {
+          context.generate_files = [];
+        }
+        
+        for (const file of files) {
+          const filepath = path.join(conversationDir, file);
+          const stats = fs.statSync(filepath);
+          const ageMs = now - stats.mtimeMs;
+          
+          // If file was modified in last 30 seconds (generous window for planning tasks)
+          if (ageMs < 30000) {
+            // Skip .py files and todo.md
+            if (!file.endsWith('.py') && file !== 'todo.md') {
+              console.log(`[FinishAction] Found newly created file: ${file}`);
+              context.generate_files.push(filepath);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[FinishAction] File scanning failed:', err);
+    }
+  }
+
   // 2. Process files and create versions
   const { createVersion } = require('@src/utils/versionManager');
   const { extractRelativePath } = require('@src/utils/filePathHelper');
