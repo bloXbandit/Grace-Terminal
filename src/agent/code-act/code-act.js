@@ -312,6 +312,12 @@ const completeCodeAct = async (task = {}, context = {}) => {
         content = await thinking(requirement, context);
         // console.log("thinking.result", content);
 
+        // CRITICAL FIX: Handle empty/error responses from thinking
+        if (!content || typeof content !== 'string') {
+          console.error('[CodeAct] Invalid thinking response:', typeof content);
+          throw new Error('LLM returned empty or invalid response');
+        }
+
         // 2. Parse Action
         // try to parse action directly avoid llm don't continue
         const actions = await resolveActions(content);
@@ -738,7 +744,14 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
           const result = await finish_action(finish_result, contextWithTask, task.id);
           return result;
         }
-        continue;
+        
+        // CRITICAL FIX: If action succeeded and no specific tool required, finish task
+        // Don't continue loop unnecessarily - this causes false retries
+        console.log('[CodeAct] Action succeeded, finishing task');
+        const finish_result = { params: { message: content || 'Task completed successfully' } };
+        const contextWithTask = { ...context, task };
+        const result = await finish_action(finish_result, contextWithTask, task.id);
+        return result;
       } else if (status === "failure") {
         // use retryHandle to handle retry logic
         const { shouldContinue, result } = retryHandle(retryCount, totalRetryAttempts, maxRetries, maxTotalRetries, comments);

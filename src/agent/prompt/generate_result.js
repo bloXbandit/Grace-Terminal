@@ -26,9 +26,11 @@ const resolveResultPrompt = async (goal, tasks, generatedFiles = [], staticUrl =
 
   // 处理生成的文件信息
   let filesInfo = '';
+  let exactFileNames = [];
   if (generatedFiles && generatedFiles.length > 0) {
     // 提取文件名
     const fileNames = generatedFiles.map(file => file.filename);
+    exactFileNames = fileNames.filter(name => name && !name.endsWith('.py') && name !== 'todo.md');
     filesInfo = `\n3. Generated files: ${JSON.stringify(fileNames)}`;
     
     // 检查是否有HTML文件
@@ -60,6 +62,7 @@ ${profileContext ? `**USER PROFILE:**\n${profileContext}\n\n` : ''}Summarize tas
 - Add personality with emojis and casual tone
 - Just state what was accomplished - files appear in UI automatically
 - Use the user's actual name from profile if available (NEVER use placeholder names)
+- **CRITICAL: Use ONLY the exact filenames from the "Generated files" list below - DO NOT invent, modify, or add version suffixes like "_v2" to filenames**
 
 **EXAMPLES (GOOD):**
 "✅ Whipped up random_text.md with some sample content! File's ready in your workspace."
@@ -74,7 +77,15 @@ Phase 2: Delivery was also completed. The document was saved to the specified lo
 **EXAMPLE (BAD - TECHNICAL LEAKAGE):**
 "Updated love_document.docx with your name as the author at the top!"
 
-Goal: ${goal}
+**EXAMPLE (BAD - HALLUCINATED FILENAME):**
+"✅ Created celebrity_realtor_landing_v2.html" (when actual file is celebrity_realtor_landing.html)
+
+${exactFileNames.length > 0 ? `**MANDATORY: You MUST reference these EXACT filenames (copy them exactly as shown):**
+${exactFileNames.map(name => `- ${name}`).join('\n')}
+
+DO NOT add "_v2", "_updated", or any other suffixes. Use the filenames EXACTLY as listed above.
+
+` : ''}Goal: ${goal}
 Tasks: ${JSON.stringify(newTasks)}${filesInfo}
 
 Provide a BRIEF summary in English only.`

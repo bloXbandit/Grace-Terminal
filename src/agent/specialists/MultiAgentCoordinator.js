@@ -73,6 +73,23 @@ class MultiAgentCoordinator {
       return 'code_generation';
     }
     
+    // CRITICAL: Check for HTML/website EDIT requests
+    // Catches: "change the avatar on the page", "add a button to the website", "remove the section"
+    const htmlEditPatterns = [
+      /\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b.*\b(to|on|in)?\s*(the|my|this)\s*(page|website|site|landing\s*page|html)\b/i,
+      /\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b.*\b(avatar|image|photo|color|text|button|section|header|footer|nav|menu)\b.*\b(to|on|in)\s*(the|my|this)\s*(page|website|site)\b/i,
+      /\b(on|in|to)\s*(the|my|this)\s*(page|website|site|landing\s*page)\b.*\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b/i,
+      // CRITICAL: Catch implicit HTML edits when conversation context has HTML files
+      // Matches: "change the color scheme to red", "update the colors", "make it darker"
+      /\b(change|update|modify|edit|alter)\b.*\b(color|colour|colors|colours|scheme|theme|style|font|layout|design)\b/i
+    ];
+    
+    const isHtmlEdit = htmlEditPatterns.some(pattern => pattern.test(message));
+    if (isHtmlEdit) {
+      console.log('[Coordinator] HTML/webpage EDIT request detected → routing to code_generation');
+      return 'code_generation';
+    }
+    
     // Context-aware creative detection (before keyword matching)
     // Detects artistic/creative intent even without specific keywords
     const creativeIndicators = [
