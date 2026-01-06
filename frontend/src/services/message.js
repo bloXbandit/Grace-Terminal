@@ -181,10 +181,20 @@ function handleFinishSummaryAddId(message, messages) {
         // This creates a single updating line instead of multiple message items
         if (message.meta?.action_type === 'progress') {
             const taskId = message.meta?.task_id;
-            // Find existing progress message for this task
-            const existingIdx = messages.findIndex(m => 
-                m.meta?.action_type === 'progress' && m.meta?.task_id === taskId
-            );
+            const currentTime = message.timestamp || Date.now();
+            const TIME_WINDOW = 10000; // Only update messages from last 10 seconds
+            
+            // Find existing RECENT progress message for this task
+            const existingIdx = messages.findIndex(m => {
+                if (m.meta?.action_type !== 'progress' || m.meta?.task_id !== taskId) {
+                    return false;
+                }
+                // Only update if message is recent (within 10 seconds)
+                const messageTime = m.timestamp || 0;
+                const timeDiff = currentTime - messageTime;
+                return timeDiff < TIME_WINDOW;
+            });
+            
             if (existingIdx !== -1) {
                 // Update existing progress message content in place
                 messages[existingIdx].content = message.content;
