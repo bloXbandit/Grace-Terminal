@@ -190,6 +190,12 @@ Now fix the error and return ONLY the XML action:`,
       } catch (error) {
         console.log('[Thinking] GPT-OSS failed, using default model:', error.message);
         content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
+        
+        // CRITICAL FIX: Check if fallback also returned error object
+        if (content && typeof content === 'object' && content.error) {
+          console.error('[Thinking] Fallback model also returned error object:', content.message);
+          throw new Error(content.message || 'LLM call failed');
+        }
       }
     } else {
       content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
