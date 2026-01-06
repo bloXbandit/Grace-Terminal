@@ -73,20 +73,47 @@ class MultiAgentCoordinator {
       return 'code_generation';
     }
     
-    // CRITICAL: Check for HTML/website EDIT requests
+    // CRITICAL: Check for HTML/website EDIT requests with context awareness
     // Catches: "change the avatar on the page", "add a button to the website", "remove the section"
     const htmlEditPatterns = [
+      // Explicit page/website edits
       /\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b.*\b(to|on|in)?\s*(the|my|this)\s*(page|website|site|landing\s*page|html)\b/i,
       /\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b.*\b(avatar|image|photo|color|text|button|section|header|footer|nav|menu)\b.*\b(to|on|in)\s*(the|my|this)\s*(page|website|site)\b/i,
       /\b(on|in|to)\s*(the|my|this)\s*(page|website|site|landing\s*page)\b.*\b(change|update|modify|edit|fix|adjust|alter|add|remove|delete|insert)\b/i,
-      // CRITICAL: Catch implicit HTML edits when conversation context has HTML files
-      // Matches: "change the color scheme to red", "update the colors", "make it darker"
-      /\b(change|update|modify|edit|alter)\b.*\b(color|colour|colors|colours|scheme|theme|style|font|layout|design)\b/i
+      
+      // Implicit edits (require HTML context)
+      /\b(change|update|modify|edit|alter)\b.*\b(color|colour|colors|colours|scheme|theme|style|font|layout|design)\b/i,
+      /\b(should be|needs to be|want it|make it)\b.*\b(bigger|smaller|darker|lighter|responsive|mobile|centered|aligned)\b/i,
+      /\b(but|just|except)\b.*\b(bigger|smaller|darker|lighter|different|another|responsive)\b/i,
+      
+      // Modern web terminology
+      /\b(mobile-friendly|responsive|hover|animation|transition|effect)\b/i,
+      
+      // Removal/deletion
+      /\b(remove|delete|get rid of|take out)\b.*\b(the|that|this)\b.*\b(section|header|footer|button|image|div)\b/i,
+      
+      // CSS properties
+      /\b(padding|margin|border|background|width|height|opacity|z-index)\b/i,
+      
+      // "Should be" style edits
+      /\b(the|this|that)\s*(button|header|footer|section|nav|menu|text|image)\b.*\b(should|needs to|ought to)\s*be\b/i
     ];
     
     const isHtmlEdit = htmlEditPatterns.some(pattern => pattern.test(message));
-    if (isHtmlEdit) {
-      console.log('[Coordinator] HTML/webpage EDIT request detected → routing to code_generation');
+    
+    // Check if conversation has HTML context
+    const hasHtmlContext = context.files?.some(f => 
+      f.file_type === '.html' || f.file_type === '.htm'
+    ) || context.lastAction === 'html_generation' || context.lastAction === 'code_generation';
+    
+    // Route to code_generation if:
+    // 1. Explicit HTML edit (with page/website/site keywords) OR
+    // 2. Implicit edit (style/layout) AND has HTML context
+    const explicitHtmlEdit = /\b(page|website|site|html)\b/i.test(message) && isHtmlEdit;
+    const implicitHtmlEdit = isHtmlEdit && hasHtmlContext;
+    
+    if (explicitHtmlEdit || implicitHtmlEdit) {
+      console.log(`[Coordinator] HTML/webpage EDIT request detected (explicit: ${explicitHtmlEdit}, context: ${hasHtmlContext}) → routing to code_generation`);
       return 'code_generation';
     }
     
@@ -487,7 +514,11 @@ class MultiAgentCoordinator {
     }
     
     // 2. Photo/Video generation -> Route to photo_video_generation specialist
-    const hasPhotoVideoKeywords = /\b(photo|image|video|movie|film|edit|generate|create|make|produce|render)\b/i.test(message);
+    // REFINED: Requires BOTH media type AND action to prevent false positives like "make it darker"
+    const hasPhotoVideoKeywords = (
+      /\b(photo|image|video|movie|film)\b.*\b(edit|generate|create|produce|render)\b/i.test(message) ||
+      /\b(generate|create|produce|render)\b.*\b(photo|image|video|movie|film)\b/i.test(message)
+    );
     if (hasPhotoVideoKeywords && !hasCodeKeywords && !hasFiles) {
       console.log('[Coordinator] Photo/Video generation request → routing to photo_video_generation');
       return 'photo_video_generation'; // Sora-2-Pro/Gemini-3-Pro - specialized for media
