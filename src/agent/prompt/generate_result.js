@@ -59,6 +59,8 @@ ${profileContext ? `**USER PROFILE:**\n${profileContext}\n\n` : ''}Summarize tas
 - NO file:// links or download instructions (files appear as icons automatically)
 - NO unnecessary details or formal language
 - NO technical processing notes (e.g., "Updated X with Y", "Loaded existing document")
+- **CRITICAL: NO shell command output (e.g., "total 84K", "drwxr-xr-x", "ls -lah" results)**
+- **CRITICAL: NO raw file listings or directory contents - files appear in UI automatically**
 - Add personality with emojis and casual tone
 - Just state what was accomplished - files appear in UI automatically
 - Use the user's actual name from profile if available (NEVER use placeholder names)

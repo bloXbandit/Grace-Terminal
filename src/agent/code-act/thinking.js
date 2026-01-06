@@ -179,6 +179,13 @@ Now fix the error and return ONLY the XML action:`,
           prompt,
           options
         );
+        
+        // CRITICAL FIX: Check if gptOssResult is an error object
+        if (gptOssResult && typeof gptOssResult === 'object' && gptOssResult.error) {
+          console.error('[Thinking] GPT-OSS returned error object:', gptOssResult.message);
+          throw new Error(gptOssResult.message || 'Specialist call failed');
+        }
+        
         content = gptOssResult;
       } catch (error) {
         console.log('[Thinking] GPT-OSS failed, using default model:', error.message);
@@ -188,6 +195,13 @@ Now fix the error and return ONLY the XML action:`,
       content = await call(prompt, context.conversation_id, DEVELOP_MODEL, options);
     }
   }
+  
+  // CRITICAL FIX: Check if fallback model also returned error object
+  if (content && typeof content === 'object' && content.error) {
+    console.error('[Thinking] Fallback model also returned error object:', content.message);
+    throw new Error(content.message || 'LLM call failed');
+  }
+  
   global.logging(context, 'thinking', content);
   if (prompt) {
     await memory.addMessage('user', prompt);
