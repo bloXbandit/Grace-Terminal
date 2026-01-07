@@ -229,7 +229,7 @@ class DockerRuntime {
         break;
       case 'read_file':
         if (action.params.path) {
-          action.params.path = path.join(dir_name, action.params.path)
+          action.params.path = path.join(`user_${this.user_id}`, dir_name, action.params.path)
         }
         result = await this.read_file(action, uuid);
         break;
