@@ -42,44 +42,61 @@ const finish_action = async (action, context, task_id) => {
     }, 0);
   }
 
-  // CRITICAL: Scan for newly created files if context.generate_files is empty
-  // This handles regular planning tasks where files were created but not tracked
-  if (!context.generate_files || context.generate_files.length === 0) {
-    const fs = require('fs');
-    const path = require('path');
-    const { getDirpath } = require('@src/utils/electron');
+  // CRITICAL: ALWAYS scan for newly created OR modified files
+  // This handles both:
+  // 1. Regular planning tasks where files were created but not tracked
+  // 2. File modifications where the file already exists but was updated
+  const fs = require('fs');
+  const path = require('path');
+  const { getDirpath } = require('@src/utils/electron');
+  
+  try {
+    const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', user_id);
+    const dir_name = 'Conversation_' + conversation_id.slice(0, 6);
+    const conversationDir = path.join(WORKSPACE_DIR, dir_name);
     
-    try {
-      const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', user_id);
-      const dir_name = 'Conversation_' + conversation_id.slice(0, 6);
-      const conversationDir = path.join(WORKSPACE_DIR, dir_name);
+    console.log(`[FinishAction] Scanning for files in: ${conversationDir}`);
+    
+    if (fs.existsSync(conversationDir)) {
+      const files = fs.readdirSync(conversationDir);
+      const now = Date.now();
       
-      if (fs.existsSync(conversationDir)) {
-        const files = fs.readdirSync(conversationDir);
-        const now = Date.now();
+      console.log(`[FinishAction] Found ${files.length} files in directory`);
+      console.log(`[FinishAction] Current generate_files:`, context.generate_files || []);
+      
+      if (!context.generate_files) {
+        context.generate_files = [];
+      }
+      
+      for (const file of files) {
+        const filepath = path.join(conversationDir, file);
+        const stats = fs.statSync(filepath);
+        const ageMs = now - stats.mtimeMs;
+        const ageSec = Math.round(ageMs / 1000);
         
-        if (!context.generate_files) {
-          context.generate_files = [];
-        }
-        
-        for (const file of files) {
-          const filepath = path.join(conversationDir, file);
-          const stats = fs.statSync(filepath);
-          const ageMs = now - stats.mtimeMs;
-          
-          // If file was modified in last 30 seconds (generous window for planning tasks)
-          if (ageMs < 30000) {
-            // Skip .py files and todo.md
-            if (!file.endsWith('.py') && file !== 'todo.md') {
-              console.log(`[FinishAction] Found newly created file: ${file}`);
+        // If file was modified in last 30 seconds (generous window for planning tasks)
+        if (ageMs < 30000) {
+          // Skip .py files and todo.md
+          if (!file.endsWith('.py') && file !== 'todo.md') {
+            if (!context.generate_files.includes(filepath)) {
+              console.log(`[FinishAction] Found newly created file: ${file} (age: ${ageSec}s)`);
               context.generate_files.push(filepath);
+            } else {
+              console.log(`[FinishAction] Found modified file: ${file} (age: ${ageSec}s) - already tracked`);
             }
           }
+        } else {
+          console.log(`[FinishAction] Skipping old file: ${file} (age: ${ageSec}s)`);
         }
       }
-    } catch (err) {
-      console.error('[FinishAction] File scanning failed:', err);
+      
+      console.log(`[FinishAction] Final generate_files count: ${context.generate_files.length}`);
+      console.log(`[FinishAction] Final generate_files:`, context.generate_files);
+    } else {
+      console.log(`[FinishAction] Conversation directory does not exist: ${conversationDir}`);
     }
+  } catch (err) {
+    console.error('[FinishAction] File scanning failed:', err);
   }
 
   // 2. Process files and create versions
@@ -87,17 +104,23 @@ const finish_action = async (action, context, task_id) => {
   const { extractRelativePath } = require('@src/utils/filePathHelper');
   const filesWithVersions = [];
   
+  console.log(`[FinishAction] Processing ${context.generate_files?.length || 0} files for version creation`);
+  
   if (context.generate_files?.length > 0) {
     for (const filepath of context.generate_files) {
       try {
         const relativePath = extractRelativePath(filepath);
         const stats = fs.statSync(filepath);
         
+        console.log(`[FinishAction] Creating version for: ${path.basename(filepath)} (${stats.size} bytes)`);
+        
         // Create version for each file
-        await createVersion(filepath, conversation_id, { 
+        const versionResult = await createVersion(filepath, conversation_id, { 
           action: 'Agent Coding',
           user_id: user_id
         });
+        
+        console.log(`[FinishAction] Version created:`, versionResult ? 'success' : 'failed');
         
         // Build object matching AgenticAgent's structure
         filesWithVersions.push({
@@ -108,10 +131,14 @@ const finish_action = async (action, context, task_id) => {
           id: undefined,  // Will be populated later
           version: undefined  // Will be populated later
         });
+        
+        console.log(`[FinishAction] Added to filesWithVersions: ${path.basename(filepath)}`);
       } catch (err) {
         console.error('[finish_action] Version creation failed:', err);
       }
     }
+    
+    console.log(`[FinishAction] Fetching version IDs for ${filesWithVersions.length} files`);
     
     // NEW: Fetch version IDs (same as AgenticAgent)
     const FileVersion = require('@src/models/FileVersion');
@@ -122,17 +149,30 @@ const finish_action = async (action, context, task_id) => {
             conversation_id: context.conversation_id,
             filepath: file.relativePath,
             active: true
-          }
+          },
+          order: [['create_at', 'DESC']]
         });
         
         if (version) {
           file.id = version.getDataValue('id'); // Correct Sequelize property access
           file.version = version.getDataValue('version');
+          console.log(`[FinishAction] Version ID fetched for ${file.filename}: id=${file.id}, version=${file.version}`);
+        } else {
+          console.log(`[FinishAction] No version found for ${file.filename}`);
         }
       } catch (err) {
         console.error('[finish_action] Version fetch failed:', err);
       }
     }
+    
+    console.log(`[FinishAction] filesWithVersions final count: ${filesWithVersions.length}`);
+    console.log(`[FinishAction] filesWithVersions details:`, JSON.stringify(filesWithVersions.map(f => ({
+      filename: f.filename,
+      id: f.id,
+      version: f.version
+    }))));
+  } else {
+    console.log(`[FinishAction] No files to process - generate_files is empty`);
   }
   
   // 3. Prepare the actual result with improved summary for ultra tasks
