@@ -424,16 +424,27 @@ class AgenticAgent {
     
     if (!hasPreGeneratedAction) {
       try {
-        // Check if this is a document revision task (avoid unnecessary scanning)
-        const isDocumentRevision = tasks.some(task => 
-          task.description && task.description.toLowerCase().includes('document') &&
-          (task.description.toLowerCase().includes('update') || 
-           task.description.toLowerCase().includes('modify') || 
-           task.description.toLowerCase().includes('author') ||
-           task.description.toLowerCase().includes('revision'))
-        );
+        // Check if this is a document/HTML/webpage revision task (avoid unnecessary scanning)
+        const isDocumentOrWebpageRevision = tasks.some(task => {
+          if (!task.description) return false;
+          
+          const desc = task.description.toLowerCase();
+          const isModification = desc.includes('update') || desc.includes('modify') || 
+                                 desc.includes('author') || desc.includes('revision') ||
+                                 desc.includes('change') || desc.includes('edit');
+          
+          // Check for document modifications
+          const isDocumentMod = desc.includes('document') && isModification;
+          
+          // Check for HTML/webpage/CSS modifications
+          const isWebpageMod = (desc.includes('html') || desc.includes('webpage') || 
+                                desc.includes('website') || desc.includes('color scheme') ||
+                                desc.includes('css') || desc.includes('style')) && isModification;
+          
+          return isDocumentMod || isWebpageMod;
+        });
         
-        if (isDocumentRevision) {
+        if (isDocumentOrWebpageRevision) {
           // CRITICAL FIX: Use correct workspace path with user_1 prefix
           // Documents are saved to /app/workspace/user_1/Conversation_XXXXXX/ not /app/workspace/Conversation_XXXXXX/
           const workspacePath = `/app/workspace/user_1/Conversation_${this.context.conversation_id.substring(0, 6)}`;
