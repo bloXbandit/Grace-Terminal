@@ -447,14 +447,26 @@ class AgenticAgent {
           // Convert back to Set to ensure deduplication
           const filesToProcessSet = new Set(filesToProcess);
           
+          const now = Date.now();
+          
           for (const docFile of documentFiles) {
             const fullPath = path.join(workspacePath, docFile);
             const stats = await fs.stat(fullPath);
+            const ageMs = now - stats.mtimeMs;
             
-            // Only include document files created/modified during this session
-            if (stats.mtime >= this.sessionStartTime) {
+            // CRITICAL FIX: Include files modified in last 30 seconds OR created during this session
+            // This handles both:
+            // 1. Files created in this session (mtime >= sessionStartTime)
+            // 2. Files modified recently (ageMs < 30000) - for HTML edits
+            if (stats.mtime >= this.sessionStartTime || ageMs < 30000) {
               filesToProcessSet.add(fullPath);
-              console.log(`[AgenticAgent] Added session-created document file to delivery: ${docFile}`);
+              if (ageMs < 30000) {
+                console.log(`[AgenticAgent] Added recently modified file to delivery: ${docFile} (age: ${Math.round(ageMs/1000)}s)`);
+              } else {
+                console.log(`[AgenticAgent] Added session-created document file to delivery: ${docFile}`);
+              }
+            } else {
+              console.log(`[AgenticAgent] Skipping old file: ${docFile} (age: ${Math.round(ageMs/1000)}s)`);
             }
           }
           
