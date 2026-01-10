@@ -46,6 +46,8 @@ const throttledScrollToBottom = () => {
 
 let pending = false;
 
+let lastFinishSummaryReloadByConversation = {};
+
 async function sendMessage(question, conversationId, files, mcp_server_ids = [], workMode = "auto") {
     // Abort any existing SSE connection before starting new one
     if (chatStore.abortController && typeof chatStore.abortController.abort === 'function') {
@@ -254,14 +256,29 @@ function update(ch, conversationId) {
     // messages.push(json);
     messageFun.handleMessage(json, messages);
 
+    // CRITICAL: Some finish_summery deliveries are persisted but not reflected in the live UI
+    // (user sees files only after refresh). To make deliveries reliable, refresh the conversation
+    // once after a successful finish_summery arrives.
+    try {
+        if (json?.meta?.action_type === 'finish_summery' && (json.status === 'success' || json.status === 'completed')) {
+            const now = Date.now();
+            const last = lastFinishSummaryReloadByConversation[conversationId] || 0;
+            if (now - last > 1500) {
+                lastFinishSummaryReloadByConversation[conversationId] = now;
+                setTimeout(() => {
+                    if (chatStore.conversationId === conversationId) {
+                        chatStore.initConversation(conversationId);
+                    }
+                }, 300);
+            }
+        }
+    } catch (e) {
+        // best-effort
+    }
+
     if (json.meta && typeof json.meta === 'string') {
         json.meta = JSON.parse(message.meta);
     }
-    // setTimeout(() => {
-    //     if (json.meta.action_type === 'finish_summery') {
-    //         chatStore.initConversation(conversationId);
-    //     }
-    // }, 500);
     chatStore.scrollToBottom()
 }
 function updateChatToken(token, conversationId) {

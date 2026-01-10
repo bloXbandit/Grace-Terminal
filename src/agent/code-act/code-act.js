@@ -129,15 +129,37 @@ const finish_action = async (action, context, task_id) => {
     timestamp: new Date().valueOf()
   };
   
+  let actionTypeToSend = 'finish_summery';
+  let jsonToSend = result.meta.json;
+  try {
+    const webExts = ['.html', '.css', '.js', '.json', '.xml', '.svg'];
+    const hasWebFiles = Array.isArray(filesWithVersions) && filesWithVersions.some(f => {
+      const name = String(f?.filename || f?.filepath || '').toLowerCase();
+      return webExts.some(ext => name.endsWith(ext));
+    });
+    const tasks = context.task_manager?.getTasks?.();
+    const hasRemainingTasks = Array.isArray(tasks) && tasks.some(t => {
+      if (!t) return false;
+      if (t.id === task_id) return false;
+      return t.status !== 'completed';
+    });
+    if (!isUltraTask && hasWebFiles && hasRemainingTasks) {
+      actionTypeToSend = 'progress';
+      jsonToSend = [];
+    }
+  } catch (e) {
+    // best-effort
+  }
+
   // 4. Format and send the actual message
   const msg = Message.format({
     status: "success",
     task_id: task_id,
-    action_type: 'finish_summery',
+    action_type: actionTypeToSend,
     content: result.content,
     comments: result.comments,
     memorized: result.memorized,
-    json: result.meta.json
+    json: jsonToSend
   });
   
   // Send the message if we have a token stream

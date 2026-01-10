@@ -651,6 +651,10 @@ const keydown = (e) => {
 
 <style lang="scss" scoped>
 .mcp-button-container {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  
   button {
     display: flex;
     align-items: center;

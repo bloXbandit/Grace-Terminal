@@ -616,17 +616,22 @@ Script:`;
   
   // FAST-PATH: Photo/Video generation (instant response, no planning)
   // Catches: "create a video", "generate a photo", "make an image", etc.
-  const mediaFastPathHeuristic = (() => {
+  // CRITICAL: Check for website/webpage requests FIRST before any media detection
+  const isWebsiteRequest = /\b(website|webpage|web page|landing page|web site|html page|front page|home page)\b/i.test(String(goal || ''));
+  
+  const mediaFastPathHeuristic = isWebsiteRequest ? false : (() => {
     const q = String(goal || '');
     // Require BOTH an action verb and a media noun to avoid hijacking general chat.
     const hasAction = /\b(create|make|generate|produce|render|edit|enhance)\b/i.test(q);
     const hasMedia = /\b(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)\b/i.test(q);
     return mediaEarlyTrigger || (hasAction && hasMedia);
   })();
-
-  const photoVideoPattern = mediaFastPathHeuristic
-    ? [goal]
-    : goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|produce|render|edit|enhance)(?:(?:\s+(?!a\b|an\b|the\b|me\b|some\b|new\b|\d+\b)\w+)){0,3}\s+)?(a |an |the |me |some )?(?:new )?(?:(?:\d+\s*(?:seconds?|secs?|s|minutes?|mins?|m)\s+)?(?:\w+\s+){0,3})?(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:photo|image|video|movie|film|clip|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  
+  const photoVideoPattern = isWebsiteRequest
+    ? null  
+    : (mediaFastPathHeuristic
+        ? [goal]
+        : goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|produce|render|edit|enhance)(?:(?:\s+(?!a\b|an\b|the\b|me\b|some\b|new\b|\d+\b)\w+)){0,3}\s+)?(a |an |the |me |some )?(?:new )?(?:(?:\d+\s*(?:seconds?|secs?|s|minutes?|mins?|m)\s+)?(?:\w+\s+){0,3})?(photo|image|picture|snapshot|portrait|landscape|video|movie|film|clip|animation|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:photo|image|video|movie|film|clip|footage)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i));
   try {
     console.log('[AutoReply] Media fast-path check:', {
       mediaFastPathHeuristic,
@@ -2628,7 +2633,7 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     // These task types need AgenticAgent to continue to planning and tool execution
     const requiresToolExecution = [
       'data_generation',      // Creating files, documents, etc.
-      // 'code_generation' removed - let specialist handle code generation directly
+      'code_generation',      // Website/code generation - needs planning/execution
       'system_design',        // Creating diagrams, architecture files
       'web_research'          // Fetching and saving research data
     ];

@@ -177,6 +177,26 @@ function handleFinishSummaryAddId(message, messages) {
 
     // Only mutate messages array if ChatPanel is still mounted
     if (window.isChatPanelMounted?.value) {
+        if (message.meta?.action_type === 'finish_summery' && (message.status === 'success' || message.status === 'completed')) {
+            let lastUserTimestamp = 0;
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const m = messages[i];
+                if (m?.role === 'user' && typeof m?.timestamp === 'number') {
+                    lastUserTimestamp = m.timestamp;
+                    break;
+                }
+            }
+
+            if (lastUserTimestamp) {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    const m = messages[i];
+                    if (m?.role === 'assistant' && m?.meta?.action_type === 'finish_summery' && typeof m?.timestamp === 'number' && m.timestamp >= lastUserTimestamp) {
+                        messages.splice(i, 1);
+                    }
+                }
+            }
+        }
+
         // PROGRESS MESSAGES: Update in place instead of adding new messages
         // This creates a single updating line instead of multiple message items
         if (message.meta?.action_type === 'progress') {
