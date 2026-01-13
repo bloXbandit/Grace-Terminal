@@ -51,6 +51,7 @@ services:
       - ./frontend/src/components/preview/fullPreview.vue:/app/frontend/src/components/preview/fullPreview.vue:cached  # Mount FullPreview crash fix
       - ./frontend/src/components/preview/fileClass.vue:/app/frontend/src/components/preview/fileClass.vue:cached  # Mount file explorer video routing
       - ./frontend/src/components/MessageFileList/index.vue:/app/frontend/src/components/MessageFileList/index.vue:cached  # Mount message file list video routing
+      - ./frontend/src/components/GrapesJSEditor.vue:/app/frontend/src/components/GrapesJSEditor.vue:cached  # Mount GrapesJS editor for Studio SDK init fix
       - ./frontend/src/components/file/imgModal.vue:/app/frontend/src/components/file/imgModal.vue:cached  # Mount image modal so previews can be contained in Computer UI
       - ./frontend/src/services/message.js:/app/frontend/src/services/message.js:cached  # Mount message handlers for content type safety
       - ./frontend/src/services/workspace.js:/app/frontend/src/services/workspace.js:cached  # Mount workspace service for preview URLs & file access

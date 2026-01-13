@@ -307,6 +307,10 @@ const handleRejectConfirm = () => {
 .computer-ui-overlay {
   position: absolute;
   inset: 0;
+  pointer-events: auto;
+}
+
+.computer-ui-overlay:empty {
   pointer-events: none;
 }
 

@@ -13,7 +13,7 @@
       <div class="file-name">view all files in this task</div>
     </div>
   </div>
-  <imgModal v-if="list.length > 0" :url="imageUrl" v-model:visible="isModalVisible" @close="isModalVisible = false" />
+  <imgModal v-if="list.length > 0" :url="imageUrl" v-model:visible="isModalVisible" @close="() => { isModalVisible = false; imageUrl = ''; }" />
 </template>
 <script setup>
 import { computed, ref } from "vue";
@@ -32,8 +32,8 @@ const { messages } = storeToRefs(chatStore);
 
 const props = defineProps({
   message: {
-    type: Array,
-    default: () => [],
+    type: [Object, Array],
+    default: () => ({}),
   },
   role: {
     type: String,
@@ -45,10 +45,17 @@ const props = defineProps({
   },
 });
 
+const normalizedMessage = computed(() => {
+  if (Array.isArray(props.message)) {
+    return props.message[0] || {};
+  }
+  return props.message || {};
+});
+
 const isModalVisible = ref(false);
 const imageUrl = ref("");
 const list = computed(() => {
-  const json = props?.message?.meta?.json;
+  const json = normalizedMessage.value?.meta?.json;
   if (!json) {
     return [];
   }
@@ -69,7 +76,7 @@ const list = computed(() => {
 const displayedFiles = computed(() => {
   const types = new Set(["finish_summery", "question", "progress"]);
   if (types.has(props.action_type)) {
-    const currentMessageIndex = messages.value.findIndex((msg) => msg.id === props.message.id);
+    const currentMessageIndex = messages.value.findIndex((msg) => msg.id === normalizedMessage.value.id);
 
     let filteredFiles = [];
     let planMessage = null;

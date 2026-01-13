@@ -2,8 +2,8 @@
     <div class="image-zoom-container">
         <!-- Modal -->
         <transition name="fade">
-            <teleport :to="teleportTarget">
-                <div v-if="visible" class="modal" :class="{ 'modal--viewport': isViewportTarget }" @click="handleClose">
+            <teleport :to="teleportTarget" :disabled="!props.visible">
+                <div v-if="props.visible" class="modal" :class="{ 'modal--viewport': isViewportTarget }" @click="handleClose">
                     <!-- Loading Animation -->
                     <!-- <div v-if="isLoading" class="loader">loading...</div> -->
                     <!-- Large Image -->
@@ -28,7 +28,7 @@ const props = defineProps({
 });
 
 // Define Emits
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'update:visible']);
 
 // Loading state
 const isLoading = ref(true);
@@ -63,12 +63,14 @@ const onImageError = () => {
 
 // Close handler
 const handleClose = () => {
-    emit('close'); // Notify parent to close
+    emit('update:visible', false);
+    emit('close');
 };
 
 // ESC key handler
 const handleEsc = (e) => {
     if (e.key === 'Escape' && props.visible) {
+        emit('update:visible', false);
         emit('close');
     }
 };

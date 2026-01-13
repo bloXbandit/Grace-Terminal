@@ -332,6 +332,65 @@ export class IframeManager {
    * 设置事件监听
    */
   setupEventListeners() {
+    // Capture-phase anchor navigation guard to prevent iframe from navigating to SPA routes
+    this.document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href]');
+      if (!a) return;
+
+      const href = a.getAttribute('href');
+      if (!href) return;
+
+      // Allow pure fragment anchors (e.g., "#section")
+      if (href.startsWith('#')) {
+        // Optionally smooth-scroll to the element if it exists
+        const targetId = href.slice(1);
+        if (targetId) {
+          const targetEl = this.document.getElementById(targetId) || this.document.querySelector(`[name="${targetId}"]`);
+          if (targetEl) {
+            e.preventDefault();
+            targetEl.scrollIntoView({ behavior: 'smooth' });
+            console.log(`[iframeManager] Scrolled to anchor: ${href}`);
+            return;
+          }
+        }
+        return; // Let default behavior handle unknown fragments
+      }
+
+      // Rewrite unsafe "/#section" to "#section"
+      if (href.startsWith('/#')) {
+        e.preventDefault();
+        const cleanHash = href.slice(1); // Remove leading '/'
+        const targetId = cleanHash.slice(1); // Remove '#'
+        const targetEl = this.document.getElementById(targetId) || this.document.querySelector(`[name="${targetId}"]`);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth' });
+          console.log(`[iframeManager] Rewrote /# to # and scrolled to: ${cleanHash}`);
+        } else {
+          console.warn(`[iframeManager] Rewrote /# to # but anchor not found: ${cleanHash}`);
+        }
+        return;
+      }
+
+      // Block absolute paths to site root (e.g., "/", "/some/path")
+      if (href.startsWith('/') && !href.startsWith('/#')) {
+        e.preventDefault();
+        console.warn(`[iframeManager] Blocked navigation to absolute path: ${href}`);
+        // Optionally notify parent to open in new tab or ignore silently
+        return;
+      }
+
+      // Block .html/.htm file navigation (e.g., "index.html#section", "./page.html")
+      if (/\.html?(?:#.*)?$/.test(href)) {
+        e.preventDefault();
+        console.warn(`[iframeManager] blocked navigation to HTML file: ${href}`);
+        // Optionally emit to parent to open the file in preview
+        return;
+      }
+
+      // Allow other links (external, mailto, etc.) to proceed
+      console.log(`[iframeManager] Allowed navigation: ${href}`);
+    }, true); // Use capture phase to intercept before navigation
+
     // 点击事件 - 不要阻止默认行为，否则无法编辑
     this.document.addEventListener('click', async (e) => {
       // 只在选择元素时触发，不影响编辑

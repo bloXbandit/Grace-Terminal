@@ -50,39 +50,56 @@ const { getDirpath } = require('@src/utils/electron');
  *                 
  */
 router.post("/upload", async ({ state, request, response }) => {
-  const files = request.files.files;
-  const { conversation_id = '' } = request.body;
+  try {
+    const files = request.files?.files;
+    const { conversation_id = '' } = request.body;
 
-  // Handle both single and multiple file uploads
-  const fileArray = Array.isArray(files) ? files : [files];
-
-  const uploadedFiles = [];
-
-  const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', state.user.id);
-  
-  // PHASE 2: Use FileRegistry for unified file management
-  const FileRegistry = require('@src/context/FileRegistry');
-  const registry = new FileRegistry(conversation_id, state.user.id);
-
-  for (const file of fileArray) {
-    const uploadDir = path.join(WORKSPACE_DIR, 'upload');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!files) {
+      return response.error("No files provided");
     }
-    const filePath = path.join(uploadDir, file.originalFilename);
 
-    fs.copyFileSync(file.filepath, filePath);
-
-    // Use FileRegistry to register the file
-    const fileDoc = await registry.register(filePath, file.originalFilename);
+    // Handle both single and multiple file uploads
+    const fileArray = Array.isArray(files) ? files : [files];
     
-    // Add workspace_dir for backward compatibility
-    fileDoc.workspace_dir = WORKSPACE_DIR;
+    if (fileArray.length === 0) {
+      return response.error("No files provided");
+    }
 
-    uploadedFiles.push(fileDoc);
+    const uploadedFiles = [];
+    const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', state.user.id);
+    
+    // PHASE 2: Use FileRegistry for unified file management
+    const FileRegistry = require('@src/context/FileRegistry');
+    const registry = new FileRegistry(conversation_id, state.user.id);
+
+    for (const file of fileArray) {
+      try {
+        const uploadDir = path.join(WORKSPACE_DIR, 'upload');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const filePath = path.join(uploadDir, file.originalFilename);
+
+        fs.copyFileSync(file.filepath, filePath);
+
+        // Use FileRegistry to register the file
+        const fileDoc = await registry.register(filePath, file.originalFilename);
+        
+        // Add workspace_dir for backward compatibility
+        fileDoc.workspace_dir = WORKSPACE_DIR;
+
+        uploadedFiles.push(fileDoc);
+      } catch (fileError) {
+        console.error('[File API] Error processing file:', file?.originalFilename, fileError);
+        // Continue with other files, don't fail the entire upload
+      }
+    }
+
+    return response.success(uploadedFiles);
+  } catch (error) {
+    console.error('[File API] Upload error:', error);
+    return response.fail("Failed to upload files: " + error.message);
   }
-
-  return response.success(uploadedFiles);
 });
 
 /**
@@ -124,21 +141,28 @@ router.post("/upload", async ({ state, request, response }) => {
  *                   description: Message
  */
 router.put("/", async ({ request, response }) => {
-  const { id, conversation_id } = request.body || {};
-  if (!id || !conversation_id) {
-    return response.error("Missing id or conversation_id");
-  }
-
   try {
+    const { id, conversation_id } = request.body || {};
+    
+    if (!id || !conversation_id) {
+      console.warn('[File API] Missing required fields:', { id, conversation_id });
+      return response.error("Missing id or conversation_id");
+    }
+
     const file = await File.findOne({ where: { id } });
     if (!file) {
+      console.warn('[File API] File not found:', id);
       return response.error("File does not exist");
     }
+    
     file.conversation_id = conversation_id;
     await file.save();
+    
+    console.log('[File API] Updated file conversation_id:', { id, conversation_id });
     return response.success(file, "File updated successfully");
   } catch (error) {
-    return response.fail("Failed to update file");
+    console.error('[File API] Update error:', error);
+    return response.fail("Failed to update file: " + error.message);
   }
 });
 

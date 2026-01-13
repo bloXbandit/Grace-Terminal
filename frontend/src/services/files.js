@@ -5,15 +5,27 @@ const service = {
   ///api/file/upload
   async uploadFile(formData) {
     const uri = `/api/file/upload`;
-    return http.post(uri, formData);
+    try {
+      const result = await http.post(uri, formData);
+      return result;
+    } catch (error) {
+      console.error('[Files Service] Upload error:', error);
+      return [];
+    }
   },
   ///api/file put
   async putFile(id, conversation_id) {
     const uri = `/api/file`;
-    return http.put(uri, {
-      id: id,
-      conversation_id: conversation_id
-    });
+    try {
+      const result = await http.put(uri, {
+        id: id,
+        conversation_id: conversation_id
+      });
+      return result;
+    } catch (error) {
+      console.error('[Files Service] Put file error:', error);
+      return null;
+    }
   },
   // delete
   async deleteFile(id, conversation_id) {

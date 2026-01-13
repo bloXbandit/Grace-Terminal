@@ -21,7 +21,7 @@
               <div class="main">
                   <div class="classTitle">
                       <div v-for="type in fileTypes" :key="type" class="classBtn"
-                          :class="chooseClassType === type ? 'active' : ''" @click="chooseClassType = type">
+                          :class="chooseClassType === type ? 'active' : ''" @click="() => { console.log('[fileClass] Tab clicked:', type); chooseClassType = type; }">
                           {{ $t(`lemon.fileExplorer.fileTypes.${type}`) }}
                       </div>
                   </div>
@@ -116,7 +116,7 @@
           </div>
       </div>
   </a-modal>
-  <imgModal :url="imgUrl" :visible="imgVisable" @close="imgVisable = false" />
+  <imgModal :url="imgUrl" v-model:visible="imgVisable" @close="() => { imgVisable = false; imgUrl = ''; }" />
 </template>
 
 <script setup>
@@ -159,15 +159,20 @@ const fileListState = reactive([])
 
 // 同步 fileListState 与 messages
 const updateFileList = () => {
-const files = viewList.viewLocal(messages.value, false)
-const existingFiles = new Map(fileListState.map(file => [file.id, file.selected]))
-fileListState.length = 0
-files.forEach(file => {
-  fileListState.push({
-    ...file,
-    selected: existingFiles.get(file.id) ?? false
+  const files = viewList.viewLocal(messages.value, false)
+  const existingFiles = new Map(fileListState.map(file => [file.id, file.selected]))
+  fileListState.length = 0
+  files.forEach(file => {
+    // Skip files with blank/empty filename or missing filename
+    if (!file.filename || typeof file.filename !== 'string' || file.filename.trim() === '') {
+      console.log('[fileClass] Skipping file with blank/missing filename:', file)
+      return
+    }
+    fileListState.push({
+      ...file,
+      selected: existingFiles.get(file.id) ?? false
+    })
   })
-})
 }
 
 // 初始加载和监听 messages 变化
@@ -186,13 +191,15 @@ document: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'md']
 
 // 过滤文件
 const filteredFiles = computed(() => {
-console.log('chooseClassType.value', chooseClassType.value)
-return chooseClassType.value === 'all'
-  ? fileListState
-  : fileListState.filter(file => {
-      const ext = file.filename.split('.').pop().toLowerCase()
-      return fileTypeExtensions[chooseClassType.value]?.includes(ext)
-    })
+  console.log('[fileClass] filteredFiles recomputing. chooseClassType:', chooseClassType.value, 'fileListState.length:', fileListState.length)
+  const result = chooseClassType.value === 'all'
+    ? fileListState
+    : fileListState.filter(file => {
+        const ext = file.filename.split('.').pop().toLowerCase()
+        return fileTypeExtensions[chooseClassType.value]?.includes(ext)
+      })
+  console.log('[fileClass] filteredFiles result length:', result.length)
+  return result
 })
 
 // 按时间分组

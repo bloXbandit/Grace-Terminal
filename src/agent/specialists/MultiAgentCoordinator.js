@@ -67,9 +67,23 @@ class MultiAgentCoordinator {
     
     // CRITICAL: Check for webpage/website/landing page requests FIRST
     // This must happen before other patterns to avoid misclassification
-    const hasWebpageKeywords = /\b(landing page|webpage|website|html page|html file|web page|web site)\b/i.test(message);
+    const hasWebpageKeywords = /\b(landing page|webpage|html page|html file|web page)\b/i.test(message);
     if (hasWebpageKeywords) {
-      console.log('[Coordinator] HTML/webpage request detected → routing to code_generation');
+      console.log('[Coordinator] Landing page request detected → routing to code_generation');
+      return 'code_generation';
+    }
+    
+    // Check for multi-page website requests (more complex than landing pages)
+    const hasWebsiteKeywords = /\b(website|web site|multi.?page|full.?site|complete.?site)\b/i.test(message);
+    if (hasWebsiteKeywords) {
+      console.log('[Coordinator] Website request detected → routing to code_generation');
+      return 'code_generation';
+    }
+    
+    // Check for portfolio requests (often multi-page)
+    const hasPortfolioKeywords = /\b(portfolio|showcase|gallery|projects)\b/i.test(message);
+    if (hasPortfolioKeywords) {
+      console.log('[Coordinator] Portfolio request detected → routing to code_generation');
       return 'code_generation';
     }
     
@@ -463,9 +477,16 @@ class MultiAgentCoordinator {
     }
     
     // 1.5 HTML/Webpage/Landing page -> Route to code generation
-    const hasWebpageKeywords = /\b(landing page|webpage|website|html page|html file|web page)\b/i.test(message);
-    if (hasWebpageKeywords) {
-      console.log('[Coordinator] HTML/webpage request → routing to code_generation');
+    const hasLandingPageKeywords = /\b(landing page|webpage|html page|html file|web page)\b/i.test(message);
+    if (hasLandingPageKeywords) {
+      console.log('[Coordinator] Landing page request → routing to code_generation');
+      return 'code_generation';
+    }
+    
+    // 1.6 Website requests -> Route to code generation
+    const hasWebsiteKeywords = /\b(website|web site|multi.?page|full.?site|complete.?site)\b/i.test(message);
+    if (hasWebsiteKeywords) {
+      console.log('[Coordinator] Website request → routing to code_generation');
       return 'code_generation';
     }
     

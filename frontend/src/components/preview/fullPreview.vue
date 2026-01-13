@@ -169,13 +169,14 @@
           :filepath="file.filepath"
           :htmlContent="content"
           @save="handleEditorSave"
+          @saved="handleEditorSaved"
           @close="editMode = false"
           class="grapesjs-editor"
         />
         <!-- Html rendering -->
         <template v-else-if="rendering && canBeHtml">
           <RenderComponent v-if="editable" :path="file.filepath" class="html-render-iframe" />
-          <iframe v-else :srcdoc="content" class="html-render-iframe" frameborder="0"></iframe>
+          <iframe v-else ref="srcdocIframe" :srcdoc="content" class="html-render-iframe" frameborder="0" @load="handleSrcdocIframeLoad"></iframe>
         </template>
         <!-- Diff rendering -->
 
@@ -227,7 +228,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, computed } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import emitter from "@/utils/emitter";
 import { message } from "ant-design-vue";
@@ -324,6 +325,7 @@ const officePreviewType = ref(["pdf", "xlsx", "xls", "docx", "pptx"]);
 const videoPreviewType = ref(["mp4", "webm", "ogg", "mov"]);
 const videoUrl = ref("");
 let lastVideoObjectUrl = null;
+const srcdocIframe = ref(null);
 // Local file list
 const fileList = ref([]);
 
@@ -582,6 +584,115 @@ async function handleEditorSave(data) {
     message.error(t('lemon.fullPreview.editorSaveFailed'));
   }
 }
+
+// Handle GrapesJS editor saved event (refresh preview without closing editor)
+async function handleEditorSaved(data) {
+  try {
+    console.log('[fullPreview] Editor saved event:', data);
+    
+    // Reload file content to show updated version
+    const res = await workspaceService.getFile(data.filepath);
+    const resString = typeof res === 'string' ? res : JSON.stringify(res);
+    content.value = handleFileContent(resString);
+    
+    // If still in edit mode, keep editing; otherwise ensure rendering is true
+    if (!editMode.value) {
+      rendering.value = true;
+    }
+  } catch (error) {
+    console.error('[fullPreview] Failed to refresh preview after save:', error);
+  }
+}
+
+// Watch editMode to enforce clean render when exiting edit mode
+watch(editMode, (newMode, oldMode) => {
+  if (oldMode && !newMode) {
+    // Force a brief re-render to clear any leftover UI fragments
+    rendering.value = false;
+    nextTick(() => {
+      rendering.value = true;
+    });
+  }
+});
+
+// Handle srcdoc iframe load to inject anchor navigation guard
+const handleSrcdocIframeLoad = () => {
+  const iframe = srcdocIframe.value;
+  if (!iframe) return;
+
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      console.warn('[fullPreview] Could not access srcdoc iframe document');
+      return;
+    }
+
+    // Inject the same anchor navigation guard logic as a script
+    const script = doc.createElement('script');
+    script.textContent = `
+      (function() {
+        document.addEventListener('click', function(e) {
+          var a = e.target.closest('a[href]');
+          if (!a) return;
+
+          var href = a.getAttribute('href');
+          if (!href) return;
+
+          // Allow pure fragment anchors (e.g., "#section")
+          if (href.startsWith('#')) {
+            var targetId = href.slice(1);
+            if (targetId) {
+              var targetEl = document.getElementById(targetId) || document.querySelector('[name="' + targetId + '"]');
+              if (targetEl) {
+                e.preventDefault();
+                targetEl.scrollIntoView({ behavior: 'smooth' });
+                console.log('[srcdocIframe] Scrolled to anchor: ' + href);
+                return;
+              }
+            }
+            return;
+          }
+
+          // Rewrite unsafe "/#section" to "#section"
+          if (href.startsWith('/#')) {
+            e.preventDefault();
+            var cleanHash = href.slice(1);
+            var targetId = cleanHash.slice(1);
+            var targetEl = document.getElementById(targetId) || document.querySelector('[name="' + targetId + '"]');
+            if (targetEl) {
+              targetEl.scrollIntoView({ behavior: 'smooth' });
+              console.log('[srcdocIframe] Rewrote /# to # and scrolled to: ' + cleanHash);
+            } else {
+              console.warn('[srcdocIframe] Rewrote /# to # but anchor not found: ' + cleanHash);
+            }
+            return;
+          }
+
+          // Block absolute paths to site root (e.g., "/", "/some/path")
+          if (href.startsWith('/') && !href.startsWith('/#')) {
+            e.preventDefault();
+            console.warn('[srcdocIframe] Blocked navigation to absolute path: ' + href);
+            return;
+          }
+
+          // Block .html/.htm file navigation (e.g., "index.html#section", "./page.html")
+          if (/\\.html?(?:#.*)?$/.test(href)) {
+            e.preventDefault();
+            console.warn('[srcdocIframe] blocked navigation to HTML file: ' + href);
+            return;
+          }
+
+          // Allow other links (external, mailto, etc.) to proceed
+          console.log('[srcdocIframe] Allowed navigation: ' + href);
+        }, true);
+      })();
+    `;
+    doc.head.appendChild(script);
+    console.log('[fullPreview] Injected anchor navigation guard into srcdoc iframe');
+  } catch (error) {
+    console.error('[fullPreview] Failed to inject anchor guard into srcdoc iframe:', error);
+  }
+};
 
 emitter.on("fullPreviewVisable", (val) => {
   emitter.emit("preview-close");

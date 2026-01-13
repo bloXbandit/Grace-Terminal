@@ -298,20 +298,22 @@ const initModel = async () => {
       model_id.value = defaultId
       selectedModelValue.value = defaultId
       console.log('[ModelSelect] Using backend default model:', defaultId)
-    } else if (modelList.value.length > 0) {
-      // Fallback to first model if no default setting exists
-      const defaultId = modelList.value[0].id * 1
-      model_id.value = defaultId
-      selectedModelValue.value = defaultId
-      console.log('[ModelSelect] No backend default found, using first model:', defaultId)
+    } else {
+      // Fallback to Gemini 3 Pro if no default setting exists
+      const gemini3Pro = modelList.value.find(m => m.model_key === 'gemini/gemini-3-pro-preview')
+      const fallbackId = gemini3Pro ? gemini3Pro.id : modelList.value[0].id
+      model_id.value = fallbackId
+      selectedModelValue.value = fallbackId
+      console.log('[ModelSelect] No backend default found, using Gemini 3 Pro as fallback:', fallbackId)
     }
   } catch (e) {
-    console.error('Failed to fetch default model setting, using first available model', e)
-    // Fallback to first model on error
+    console.error('Failed to fetch default model setting, using Gemini 3 Pro as fallback', e)
+    // Fallback to Gemini 3 Pro on error
     if (modelList.value.length > 0) {
-      const defaultId = modelList.value[0].id * 1
-      model_id.value = defaultId
-      selectedModelValue.value = defaultId
+      const gemini3Pro = modelList.value.find(m => m.model_key === 'gemini/gemini-3-pro-preview')
+      const fallbackId = gemini3Pro ? gemini3Pro.id : modelList.value[0].id
+      model_id.value = fallbackId
+      selectedModelValue.value = fallbackId
     }
   }
 }

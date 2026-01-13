@@ -194,6 +194,30 @@ const TEST_CASES = {
       }
     },
     {
+      name: 'Black Hair Styling Website (Debug 20992eed)',
+      goal: 'make me a website for a black girl hair styling company, make the color scheme pink and orange',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /.*hair_styling.*\.html$/i,
+        location: '/workspace'
+      }
+    },
+    {
+      name: 'Black Hair Styling Landing Page (Debug 20992eed)',
+      goal: 'make me a landing page for a black girl hair styling company, make the color scheme pink and orange',
+      mode: 'task',
+      expectedActions: ['plan', 'write_code', 'finish_summery'],
+      breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
+      verifyExecution: {
+        type: 'file',
+        pattern: /.*hair_styling.*\.html$/i,
+        location: '/workspace'
+      }
+    },
+    {
       name: 'Phi-4 Frontend Test',
       goal: 'Create a beautiful HTML landing page with a hero section, navigation bar, and call-to-action button using modern CSS',
       mode: 'task',

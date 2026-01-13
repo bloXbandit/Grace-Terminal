@@ -100,6 +100,11 @@ const beforeUpload = async (file) => {
         formData.append('files', file);
 
         const result = await files.uploadFile(formData);
+        
+        if (!result || result.length === 0) {
+          throw new Error('Upload failed - no files returned');
+        }
+        
         let upload = result[0];
         console.log('upload', upload);
         // 上传成功，替换列表中对应的临时文件

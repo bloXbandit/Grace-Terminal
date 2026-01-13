@@ -1,29 +1,29 @@
 <template>
   <!-- <div>{{ message }}</div> -->
-  <div style="display: flex; align-items: center" v-if="message.role === 'assistant' && message.is_temp && !message.meta">{{ content }} <LoadingDots /></div>
-  <div v-else-if="message?.meta?.action_type === 'plan'">
+  <div style="display: flex; align-items: center" v-if="normalizedMessage.role === 'assistant' && normalizedMessage.is_temp && !normalizedMessage.meta">{{ content }} <LoadingDots /></div>
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'plan'">
     <Markdown :content="content" />
-    <Planing :planing="message?.meta?.json" />
+    <Planing :planing="normalizedMessage?.meta?.json" />
   </div>
-  <div v-else-if="message?.meta?.action_type === 'update_status'">
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'update_status'">
     <LoadingOutlined />
     <span style="margin-left: 5px">{{ content }}</span>
   </div>
   <!-- Progress messages (e.g., video generation progress) -->
-  <div v-else-if="message?.meta?.action_type === 'progress'" class="progress-message">
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'progress'" class="progress-message">
     <LoadingOutlined />
     <span style="margin-left: 5px">{{ content }}</span>
   </div>
   <!-- 代码编辑 -->
-  <div v-else-if="message?.meta?.action_type === 'coding'">
-    <CodingMessage :message="message" />
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'coding'">
+    <CodingMessage :message="normalizedMessage" />
   </div>
   <!-- 停止 -->
-  <div v-else-if="message?.meta?.action_type === 'stop'" class="stop">
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'stop'" class="stop">
     <Stop /> <span>{{ $t("stop_task") }}</span>
   </div>
   <!-- 任务异常 暂无积分-->
-  <div v-else-if="message?.meta?.action_type === 'error' && message?.content.includes('Insufficient credits balance')" class="credits">
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'error' && normalizedMessage.content.includes('Insufficient credits balance')" class="credits">
     <div style="display: flex; align-items: center">
       <ShoppingCartOutlined class="icon" />
       <span>The task has been paused. Please upgrade plan or buy credits to continue.</span>
@@ -31,13 +31,13 @@
     <a-button type="primary" v-if="route.name != 'share'" @click="handleUpgrade">Upgrade</a-button>
   </div>
   <!-- 任务异常 完成 -->
-  <div v-else-if="message?.meta?.action_type === 'error'" class="error">
-    <Failure /> <span>{{ $t("task_error") }}:{{ message?.content }}</span>
+  <div v-else-if="normalizedMessage?.meta?.action_type === 'error'" class="error">
+    <Failure /> <span>{{ $t("task_error") }}:{{ normalizedMessage?.content }}</span>
   </div>
-  <Markdown v-else-if="message.role === 'assistant'" :content="content" />
+  <Markdown v-else-if="normalizedMessage.role === 'assistant'" :content="content" />
   <span v-else>{{ content }}</span>
   <div class="file-list" v-if="showFiles">
-    <MessageFileList :message="message" :role="message.role" :action_type="message?.meta?.action_type" />
+    <MessageFileList :message="normalizedMessage" :role="normalizedMessage.role" :action_type="normalizedMessage?.meta?.action_type" />
   </div>
   <!-- <div v-if="message?.meta?.action_type === 'finish_summery'">
     <MessageRating :message="message" />
@@ -63,23 +63,28 @@ const route = useRoute();
 
 const props = defineProps({
   message: {
-    type: Object,
+    type: [Object, Array],
     required: true,
   },
 });
 
+const normalizedMessage = computed(() => {
+  if (Array.isArray(props.message)) {
+    return props.message[0] || { role: 'assistant', content: '', meta: {} };
+  }
+  return props.message;
+});
+
 const showFiles = computed(() => {
   const actions = new Set(["finish_summery", "question", "progress", "chat"]);
-  return actions.has(props.message?.meta?.action_type);
+  return actions.has(normalizedMessage.value?.meta?.action_type);
 });
 
 const content = computed(() => {
-  // Ensure content is always a string for markdown component
-  if (typeof props.message.content === 'string') {
-    return props.message.content;
+  if (typeof normalizedMessage.value.content === 'string') {
+    return normalizedMessage.value.content;
   }
-  // Convert objects/other types to string representation
-  return props.message.content ? String(props.message.content) : '';
+  return normalizedMessage.value.content ? String(normalizedMessage.value.content) : '';
 });
 
 // 安全的JSON解析函数
@@ -97,13 +102,13 @@ const parseJsonSafely = (jsonString) => {
 
 // 检查是否应该显示文件列表 props.message?.meta?.action_type
 const shouldShowFileList = () => {
-  const actionType = props.message?.meta?.action_type;
+  const actionType = normalizedMessage.value?.meta?.action_type;
   const isValidActionType = actionType === "finish_summery" || actionType === "question";
   console.log("isValidActionType", isValidActionType);
   if (!isValidActionType) {
     return false;
   }
-  const jsonData = props.message?.meta?.json;
+  const jsonData = normalizedMessage.value?.meta?.json;
   console.log("jsonData", jsonData);
   return jsonData && Array.isArray(jsonData) && jsonData.length > 0;
 };
