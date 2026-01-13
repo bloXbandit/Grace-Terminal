@@ -307,7 +307,7 @@ const handleRejectConfirm = () => {
 .computer-ui-overlay {
   position: absolute;
   inset: 0;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 @media (max-width: 768px) {

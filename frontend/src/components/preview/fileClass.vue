@@ -37,7 +37,7 @@
                                       <div class="fileNameContainer">
                                           <div class="fileNameDiv">
                                               <span class="fileNameSpan">{{
-                                                      file.filename.split('/').pop().split('\\').pop()
+                                                      (file.filename || '').split('/').pop().split('\\').pop()
                                               }}</span>
                                           </div>
                                           <span class="time">{{ formatTimeWithHMS(file.timestamp) }}</span>
