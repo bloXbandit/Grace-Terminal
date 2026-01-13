@@ -115,6 +115,30 @@
                   <eyeSvg />
                   {{ $t("lemon.fullPreview.preview") }}
                 </div>
+                <div
+                  class="svg-tooltip"
+                  v-if="canBeHtml && !editMode"
+                  @click="
+                    editMode = true;
+                    rendering = false;
+                    moreOptionsTooltipVisible = false;
+                  "
+                >
+                  <editSvg />
+                  {{ $t("lemon.fullPreview.edit") }}
+                </div>
+                <div
+                  class="svg-tooltip"
+                  v-if="canBeHtml && editMode"
+                  @click="
+                    editMode = false;
+                    rendering = true;
+                    moreOptionsTooltipVisible = false;
+                  "
+                >
+                  <eyeSvg />
+                  {{ $t("lemon.fullPreview.backToPreview") }}
+                </div>
               </div>
             </template>
             <button class="icon-bt">
@@ -139,6 +163,15 @@
         </div>
         <!-- Markdown rendering -->
         <MarkDown v-else-if="rendering && canBeMd" :content="content" />
+        <!-- GrapesJS Editor -->
+        <GrapesJSEditor
+          v-if="editMode && canBeHtml"
+          :filepath="file.filepath"
+          :htmlContent="content"
+          @save="handleEditorSave"
+          @close="editMode = false"
+          class="grapesjs-editor"
+        />
         <!-- Html rendering -->
         <template v-else-if="rendering && canBeHtml">
           <RenderComponent v-if="editable" :path="file.filepath" class="html-render-iframe" />
@@ -213,12 +246,14 @@ import pdfExportSvg from "@/assets/filePreview/pdfExport.svg";
 import copySvg from "@/assets/filePreview/copy.svg";
 import codeSvg from "@/assets/filePreview/code.svg";
 import eyeSvg from "@/assets/filePreview/eye.svg";
+import editSvg from "@/assets/filePreview/edit.svg";
 // Import content rendering components
 import MarkDown from "@/components/markdown/index.vue";
 import CodeViewer from "@/components/file/index.vue";
 import officePreview from "@/components/file/officePreview.vue";
 import RenderComponent from "@/view/editor/render/index.vue";
 import DiffViewer from "@/components/DiffViewer/index.vue";
+import GrapesJSEditor from "@/components/GrapesJSEditor.vue";
 import workspaceService from "@/services/workspace";
 import { useChatStore } from "@/store/modules/chat";
 import { storeToRefs } from "pinia";
@@ -248,6 +283,7 @@ const downloadTooltipVisible = ref(false);
 const canBeMd = ref(false);
 const canBeHtml = ref(false);
 const showHeader = ref(true);
+const editMode = ref(false);
 const canBeDiff = ref(false);
 const codePreviewType = ref([
   "js",
@@ -524,6 +560,27 @@ function handleExportPDF() {
 
   html2pdf().set(opt).from(element).save();
   message.info(t("lemon.fullPreview.exportPDFPending"));
+}
+
+// Handle GrapesJS editor save
+async function handleEditorSave(data) {
+  try {
+    console.log('[fullPreview] Editor saved:', data);
+    
+    // Reload file content to show updated version
+    const res = await workspaceService.getFile(data.filepath);
+    const resString = typeof res === 'string' ? res : JSON.stringify(res);
+    content.value = handleFileContent(resString);
+    
+    // Switch back to preview mode
+    editMode.value = false;
+    rendering.value = true;
+    
+    message.success(t('lemon.fullPreview.editorSaveSuccess'));
+  } catch (error) {
+    console.error('[fullPreview] Failed to reload after save:', error);
+    message.error(t('lemon.fullPreview.editorSaveFailed'));
+  }
 }
 
 emitter.on("fullPreviewVisable", (val) => {
@@ -858,6 +915,12 @@ const previewVisavleClose = async () => {
     0 0 #0000,
     0 0 #0000,
     0 4px 11px 0px #00000014;
+}
+
+.grapesjs-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 600px;
 
   .ant-tooltip-inner {
     padding: 0.25rem !important;

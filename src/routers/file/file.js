@@ -360,3 +360,76 @@ router.post('/read', async ({ request, response }) => {
 });
 
 module.exports = exports = router.routes()
+/**
+ * @swagger
+ * /api/file/save:
+ *   post:
+ *     summary: Save/update file content
+ *     tags:  
+ *       - File
+ *     description: Save or update file content (used by GrapesJS editor)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               filepath:
+ *                 type: string
+ *                 description: Absolute file path
+ *               content:
+ *                 type: string
+ *                 description: File content to save
+ *     responses:
+ *       200:
+ *         description: File saved successfully
+ */
+router.post("/save", async ({ state, request, response }) => {
+  const { filepath, content } = request.body;
+
+  if (!filepath) {
+    return response.fail(null, 'File path is required');
+  }
+
+  if (content === undefined || content === null) {
+    return response.fail(null, 'Content is required');
+  }
+
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(filepath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Write file content
+    fs.writeFileSync(filepath, content, 'utf8');
+
+    console.log('[File API] Saved file:', filepath, `(${content.length} bytes)`);
+
+    // Update file version in database if it exists
+    try {
+      const FileRegistry = require('@src/context/FileRegistry');
+      const conversationId = filepath.match(/Conversation_([^/]+)/)?.[1];
+      
+      if (conversationId) {
+        const registry = new FileRegistry(conversationId, state.user.id);
+        await registry.register(filepath, path.basename(filepath));
+        console.log('[File API] Updated file version in database');
+      }
+    } catch (dbError) {
+      console.warn('[File API] Failed to update file version:', dbError.message);
+      // Don't fail the request if DB update fails
+    }
+
+    return response.success({
+      filepath: filepath,
+      size: content.length,
+      saved: true
+    });
+  } catch (err) {
+    console.error('[File API] Failed to save file:', err);
+    return response.fail(null, 'Failed to save file: ' + err.message);
+  }
+});

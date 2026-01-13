@@ -31,6 +31,13 @@ const service = {
   getPreviewUrl(filepath) {
     const filePath = filepath;
     return `/api/file/preview?path=${encodeURIComponent(filePath)}`;
+  },
+
+  // Save file content (used by GrapesJS editor)
+  async saveFile(data) {
+    const baseUrl = `/api/file/save`;
+    const response = await http.post(baseUrl, data);
+    return response.data || {};
   }
 
 }
