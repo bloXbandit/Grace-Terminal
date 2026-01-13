@@ -14,6 +14,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.38.4",
+    "@grapesjs/studio-sdk": "^1.0.57",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@types/prismjs": "^1.26.5",
     "@vue-office/docx": "^1.6.3",
