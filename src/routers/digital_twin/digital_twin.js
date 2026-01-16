@@ -168,7 +168,7 @@ router.post(
       name,
       face_image_path: face_image.path,
       traits: traits ? JSON.parse(traits) : {},
-      model_type: model_type || 'sadtalker_fast'
+      model_type: model_type || 'longcat'
     });
 
     // Handle voice sample if provided
@@ -299,7 +299,8 @@ router.post("/:id/generate-video", async ({ state, params, request, response }) 
     return response.success(result);
   } catch (error) {
     console.error('[DigitalTwin API] Generate video failed:', error);
-    return response.fail(error.message || 'Failed to generate video', 500);
+    const errorMessage = error.response ? error.response.data : (error.message || 'Failed to generate video');
+    return response.fail(errorMessage, 500);
   }
 });
 

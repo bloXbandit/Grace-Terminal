@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.21",
+    "@fal-ai/serverless-client": "^0.15.0",
     "@gradio/client": "^2.0.1",
     "@koa/multer": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.13.0",
