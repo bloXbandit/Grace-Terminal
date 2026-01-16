@@ -1,6 +1,7 @@
 node_modules
 data/*
 public/files/*
+public/assets/
 .env
 *.local
 llm.json
