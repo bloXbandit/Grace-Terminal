@@ -60,8 +60,8 @@ const configs = [
   }, {
     channel: 'provider',
     service: 'moonshot',
-    name: '月之暗面',
-    host: `https://api.moonshot.cn/v1/chat/completions`,
+    name: 'Moonshot',
+    host: `https://api.moonshot.ai/v1/chat/completions`,
     config: {
       API_KEY: env.MOONSHOT_API_KEY
     }

@@ -254,6 +254,38 @@ const dataUpdate = async () => {
         await Platform.update({ is_enabled: true }, { where: { id: openRouterPlatform.id } });
       }
     }
+
+    const moonshotPlatform = await Platform.findOne({ where: { name: 'Moonshot' } });
+    if (moonshotPlatform) {
+      if ((!moonshotPlatform.api_key || !String(moonshotPlatform.api_key).trim()) && process.env.MOONSHOT_API_KEY) {
+        await Platform.update({ api_key: process.env.MOONSHOT_API_KEY }, { where: { id: moonshotPlatform.id } });
+        moonshotPlatform.api_key = process.env.MOONSHOT_API_KEY;
+      }
+
+      if (!moonshotPlatform.is_enabled && moonshotPlatform.api_key && String(moonshotPlatform.api_key).trim()) {
+        await Platform.update({ is_enabled: true }, { where: { id: moonshotPlatform.id } });
+      }
+
+      const ensureModel = async ({ model_id, model_name, group_name, model_types }) => {
+        const existing = await Model.findOne({ where: { platform_id: moonshotPlatform.id, model_id } });
+        if (existing) return;
+        await Model.create({
+          platform_id: moonshotPlatform.id,
+          model_id,
+          model_name,
+          group_name,
+          model_types,
+          logo_url: moonshotPlatform.logo_url || null,
+        });
+      };
+
+      await ensureModel({
+        model_id: 'kimi-k2-turbo-preview',
+        model_name: 'Kimi K2 Turbo Preview',
+        group_name: 'Kimi',
+        model_types: ['chat']
+      });
+    }
   } catch (e) {
     console.error('[sync:dataUpdate] Failed to ensure OpenAI models', e);
   }
