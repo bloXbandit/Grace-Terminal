@@ -51,7 +51,7 @@
               <a-radio-group v-model:value="preset" button-style="solid" size="small">
                 <a-radio-button value="youtube"><YoutubeOutlined /> YouTube</a-radio-button>
                 <a-radio-button value="instagram"><InstagramOutlined /> Instagram</a-radio-button>
-                <a-radio-button value="tiktok"><TikTokOutlined /> TikTok</a-radio-button>
+                <a-radio-button value="tiktok"><PlayCircleOutlined /> TikTok</a-radio-button>
               </a-radio-group>
             </div>
           </div>
@@ -207,7 +207,7 @@ import { message } from 'ant-design-vue'
 import { 
   UserOutlined, AudioOutlined, VideoCameraOutlined, 
   PlusOutlined, LeftOutlined, YoutubeOutlined, 
-  InstagramOutlined, TikTokOutlined, PlaySquareOutlined 
+  InstagramOutlined, PlayCircleOutlined, PlaySquareOutlined 
 } from '@ant-design/icons-vue'
 import http from '@/utils/http'
 import { useRouter } from 'vue-router'
