@@ -35,7 +35,10 @@ const summary_server = async (goal, conversation_id, tasks, generatedFiles = [],
 
 const summary_local = async (goal, conversation_id, tasks, generatedFiles = [], staticUrl = null, userId = null) => {
   const prompt = await resolveResultPrompt(goal, tasks, generatedFiles, staticUrl, userId);
-  const result = await call(prompt, conversation_id);
+  
+  // CRITICAL: Force streaming for summary to avoid 13-second delay
+  // GLM-4.6 defaults to non-streaming which blocks UI delivery
+  const result = await call(prompt, conversation_id, 'assistant', { stream: true }, undefined, 0, goal);
 
   // STRATEGIC: Validate file delivery claims in task summaries
   const ResponseValidator = require('@src/utils/responseValidator');

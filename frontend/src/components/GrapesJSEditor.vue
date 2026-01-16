@@ -22,6 +22,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import workspaceService from '@/services/workspace';
+import { createHtmlDocument } from './utils/htmlGenerator';
 
 const props = defineProps({
   filepath: {
@@ -440,82 +441,37 @@ const saveProject = async (projectData) => {
   try {
     console.log('[GrapesJS] Starting save process...');
     
-    // Get the current project from editor
-    const project = editor.value.getProject();
-    const pages = project.getPages();
+    // Use correct GrapesJS Studio SDK methods
+    const html = editor.value.getHtml();
+    const css = editor.value.getCss();
+    const js = editor.value.getJs();
     
-    console.log('[GrapesJS] Found pages:', pages.length);
+    console.log('[GrapesJS] Extracted content:', { html: !!html, css: !!css, js: !!js });
     
-    if (!pages || pages.length === 0) {
-      throw new Error('No pages to save');
+    if (!html) {
+      throw new Error('No HTML content to save');
     }
     
-    // Extract HTML content from pages
-    const savedFiles = [];
+    // Generate complete HTML document
+    const pageName = getPageName(props.filepath);
+    const fullHtml = createHtmlDocument(pageName, html, css, js);
     
-    for (const page of pages) {
-      const pageName = page.getName();
-      const pageComponent = page.getComponent();
-      
-      // Extract the HTML content from the component
-      let htmlContent = '';
-      
-      if (pageComponent) {
-        // Get the HTML from the component
-        htmlContent = pageComponent.toHTML();
-        
-        // Extract inline styles and create a complete HTML document
-        const css = editor.value.getCss();
-        const js = editor.value.getJs();
-        
-        // Create a complete HTML document
-        const fullHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${pageName}</title>
-    <style>
-${css}
-    </style>
-</head>
-<body>
-${htmlContent}
-    <script>
-${js}
-    </script>
-</body>
-</html>`;
-        
-        // Determine the save path
-        let filepath = props.filepath;
-        
-        // If this is not the main page, create a separate file
-        if (pageName !== 'index' && pages.length > 1) {
-          const baseDir = props.filepath.substring(0, props.filepath.lastIndexOf('/'));
-          filepath = `${baseDir}/${pageName}.html`;
-        }
-        
-        console.log(`[GrapesJS] Saving page: ${pageName} to ${filepath}`);
-        
-        // Save the HTML file
-        const result = await workspaceService.saveFile({
-          filepath: filepath,
-          content: fullHtml
-        });
-        
-        savedFiles.push({
-          filepath: filepath,
-          filename: pageName + '.html',
-          result: result
-        });
-      }
-    }
+    console.log(`[GrapesJS] Saving HTML to: ${props.filepath}`);
+    
+    // Save the HTML file
+    const result = await workspaceService.saveFile({
+      filepath: props.filepath,
+      content: fullHtml
+    });
     
     // Emit success event
     emit('save', {
       filepath: props.filepath,
-      files: savedFiles
+      files: [{
+        filepath: props.filepath,
+        filename: pageName + '.html',
+        result: result
+      }]
     });
     
     // Also emit a generic 'saved' event so parent can refresh preview
@@ -527,7 +483,7 @@ ${js}
     // Show success message
     message.success('Visual editor changes saved');
     
-    console.log('[GrapesJS] All files saved successfully:', savedFiles);
+    console.log('[GrapesJS] File saved successfully:', props.filepath);
     
   } catch (error) {
     console.error('[GrapesJS] Save failed:', error);

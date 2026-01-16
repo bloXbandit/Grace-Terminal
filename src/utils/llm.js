@@ -23,15 +23,15 @@ const LLM_LOGS = require('@src/models/LLMLogs.js');
  * @param {*} onTokenStream 
  * @returns {Promise<Object>}
  */
-const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, options = { temperature: 0 }, onTokenStream = defaultOnTokenStream, retryCount = 0) => {
+const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, options = { temperature: 0 }, onTokenStream = defaultOnTokenStream, retryCount = 0, goal = '') => {
   const MAX_RETRIES = 3;
   const RETRY_DELAYS = [2000, 5000, 10000]; // Exponential backoff: 2s, 5s, 10s
   
-  // SECURITY: Detect P6/XER requests in direct LLM calls
-  if (typeof prompt === 'string' && /\b(xer|primavera|p6|dcma)\b/i.test(prompt)) {
-    console.warn('[LLM Security] P6/XER request detected in direct LLM call');
-    console.warn('[LLM Security] This should use p6xer_tool via specialist routing');
-    console.warn('[LLM Security] Prompt preview:', prompt.substring(0, 100));
+  // SECURITY: Detect P6/XER requests in direct LLM calls (more specific pattern)
+  // Only trigger for actual P6/XER project management requests, not training courses
+  if (typeof prompt === 'string' && 
+      /\b(xer|primavera|p6\s+(project|schedule|planning|enterprise|construction)|dcma)\b/i.test(prompt)) {
+    console.warn('[LLM Security] P6/XER request detected - should use p6xer_tool');
     // Log for audit but don't block (MASTER_SYSTEM_PROMPT will still enforce)
   }
   
@@ -52,6 +52,7 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   
   const model = `provider#${model_info.platform_name}#${model_info.model_name}`;
   const llm = await createLLMInstance(model, onTokenStream, { model_info });
+  
   // 判断模型
   if (model_info.model_name === 'deepseek-v3-250324') {
     options.max_tokens = 16000;
@@ -60,7 +61,9 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   }
   
   const { response_format, messages = [], ...restOptions } = options;
-  const context = { messages };
+  
+  // Pass goal in context for prompt optimization
+  const context = { goal, messages };
 
   // call qwen3 model with no_think
   if (prompt && model_info.model_name.indexOf('qwen3') > -1) {

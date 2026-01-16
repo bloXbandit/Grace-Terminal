@@ -17,6 +17,10 @@ const resolveThinkingPrompt = async (requirement = '', context = {}) => {
 
   const { reflection = '', goal = '', depth = 1, profileContext = '' } = context;
   global.logging(context, 'thinking.prompt', `goal: ${goal}`);
+  
+  // TWEAK 1: Include previous task results for multi-phase flows
+  const previousTaskResult = context.previousTaskResult || context.researchResults || '';
+  const taskPreviousResult = context.task?.previousResult || '';
 
   const memory = await describeLocalMemory(context);
   const tools = await resolveToolPrompt(); // system tools
@@ -103,10 +107,15 @@ Results from multiple specialists are automatically synthesized and cross-valida
 Use specialists strategically to deliver the highest quality solutions!
 ` : '';
 
+  // TWEAK 1: Build research context from previous task results
+  const researchContext = previousTaskResult || taskPreviousResult 
+    ? `\n\n## Previous Task Results (Use this data!):\n${previousTaskResult || taskPreviousResult}\n`
+    : '';
+
   const thinking_options = {
     system, // 系统信息
     app_ports, // 端口信息
-    previous: previousResult, // 前置记录结果
+    previous: previousResult + researchContext, // 前置记录结果 + research from previous task
     memory, // 执行记录
     files: uploadFileDescription, // 上传文件信息
     goal, // 主任务目标

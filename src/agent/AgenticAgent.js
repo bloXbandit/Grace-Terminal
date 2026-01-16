@@ -926,6 +926,13 @@ class AgenticAgent {
       }
       global.logging(this.context, loggerKey, task);
       this.context.task = task;
+      
+      // TWEAK 1: Pass previous task results to current task for multi-phase flows
+      if (this.context.previousTaskResult) {
+        console.log('[AgenticAgent] Passing previous task result to current task');
+        task.previousResult = this.context.previousTaskResult;
+      }
+      
       try {
         const result = await completeCodeAct(task, this.context);
         global.logging(this.context, loggerKey, result);
@@ -951,6 +958,12 @@ class AgenticAgent {
           content: result.content,
           memorized: result.memorized || ''
         });
+        
+        // TWEAK 1: Store result for next task to use in multi-phase flows
+        if (result.content) {
+          console.log('[AgenticAgent] Storing task result for next task');
+          this.context.previousTaskResult = result.content;
+        }
       } catch (error) {
         await this.handle_task_status(task, 'failed', { error: error.message });
         global.logging(this.context, loggerKey, error);

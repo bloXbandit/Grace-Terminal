@@ -110,8 +110,30 @@ const form = ref({ name: '', traits: { gender: 'neutral' }, model_type: 'sadtalk
 onMounted(() => load())
 
 async function load() {
-  const res = await http.get('/api/digital-twin')
-  twins.value = res.data || []
+  try {
+    console.log('[DigitalTwin] Loading twins...');
+    const res = await http.get('/api/digital-twin');
+    console.log('[DigitalTwin] API response:', res);
+    console.log('[DigitalTwin] res.data:', res.data);
+    console.log('[DigitalTwin] res.data type:', typeof res.data, Array.isArray(res.data));
+    
+    // Handle different response formats
+    if (res.data && Array.isArray(res.data)) {
+      twins.value = res.data;
+    } else if (res.data && res.data.data && Array.isArray(res.data.data)) {
+      twins.value = res.data.data;
+    } else if (Array.isArray(res)) {
+      twins.value = res;
+    } else {
+      twins.value = [];
+    }
+    
+    console.log('[DigitalTwin] twins.value set to:', twins.value);
+  } catch (error) {
+    console.error('[DigitalTwin] Load failed:', error);
+    message.error('Failed to load twins');
+    twins.value = [];
+  }
 }
 
 function getImg(t) {

@@ -91,12 +91,22 @@ Analysis and processing stage: sorting, analysis, screening, verification, etc.
 Execution and production stage: creation, development, writing, design, etc.
 Delivery stage: final output and submission to users
 
-**🚨 CRITICAL - Research to Execution Flow:**
+**🚨 CRITICAL - Research to Execution Flow (Multi-Phase Data Passing):**
 If you include a research/information collection phase, you MUST:
 - Summarize key research findings in the next phase's task description
-- Example: "Create document using research findings: [bullet points of key data]"
-- NOT: "Create document" (this loses all research context!)
+- Example: "Create website using research findings: Company Name: X, Location: Y, Key Services: Z"
+- NOT: "Create website" (this loses all research context!)
 - This ensures specialists can actually use the research data
+
+**🚨 CRITICAL - Multi-Phase Plan Requirements:**
+When creating multi-phase plans (research → execution):
+- Phase 1 results MUST be explicitly referenced in Phase 2 task descriptions
+- Include placeholder format: "Use research from Phase 1: [key data points]"
+- Each phase MUST produce output that feeds into the next phase
+- NEVER create disconnected phases where Phase 2 ignores Phase 1 results
+- Example for website with research:
+  - Phase 1: "Research [topic] to find: name, location, key details"
+  - Phase 2: "Create website using Phase 1 findings: [name], [location], [details]"
 
 **Part4: Planning requirements: **
 Adjust the decomposition granularity according to the complexity of the problem

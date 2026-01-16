@@ -599,6 +599,9 @@ async function handleEditorSaved(data) {
     if (!editMode.value) {
       rendering.value = true;
     }
+    
+    // Emit event to refresh file list in parent component
+    emit('file-updated', { filepath: data.filepath, timestamp: data.timestamp });
   } catch (error) {
     console.error('[fullPreview] Failed to refresh preview after save:', error);
   }

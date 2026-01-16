@@ -363,7 +363,12 @@ class MultiAgentCoordinator {
       return 'backend_development';
     }
     
-    // Web Research (check before general reasoning)
+    // Website/Landing Page Generation (check BEFORE web research)
+    if (message.match(/website|landing page|create.*site|build.*site|make.*site|web.*page/i)) {
+      return 'document_generation';
+    }
+    
+    // Web Research (check after website generation)
     // CRITICAL: Exclude document generation requests from web research
     // Common knowledge topics (ADHD, planets, history, etc.) should use knowledge base, not web search
     const isDocumentGeneration = message.match(/create.*document|make.*document|generate.*document|word.*doc|create.*file|make.*file/i);

@@ -241,9 +241,16 @@ const completeCodeAct = async (task = {}, context = {}) => {
   const maxTotalRetries = context.max_total_retries || MAX_TOTAL_RETRIES; // use context or default value
 
   // Initialize memory and runtime
+  // TWEAK 2: Use shared memory across tasks for multi-phase flows
   const memory_dir = context.conversation_id.slice(0, 6);
-  const memory = new LocalMemory({ memory_dir: memory_dir, key: id });
+  const memory = context.sharedMemory || new LocalMemory({ memory_dir: memory_dir, key: id });
   context.memory = memory;
+  
+  // Store shared memory for subsequent tasks
+  if (!context.sharedMemory) {
+    context.sharedMemory = memory;
+  }
+  
   memory._loadMemory();
   // @ts-ignore
 
@@ -575,6 +582,39 @@ DO NOT include any text outside the XML tags. Try again with proper XML format.`
         console.log('[CodeAct] Executing action type:', action.type);
         action_result = await context.runtime.execute_action(action, context, task.id);
         console.log('[CodeAct] Action result:', JSON.stringify(action_result).substring(0, 300));
+        
+        // TWEAK 4 (generalized): Research → Execution Handoff
+        // If this action is an information-gathering step, persist its output so the next task can use it.
+        const isResearchLikeActionType = new Set(['web_search', 'browser', 'read_file', 'local_filesystem']);
+        const isLocalFsReadLike = action.type !== 'local_filesystem'
+          ? false
+          : (action?.params?.action === 'read' || action?.params?.action === 'list');
+
+        const shouldHandoffResearch =
+          action_result.status === 'success' &&
+          isResearchLikeActionType.has(action.type) &&
+          (action.type !== 'local_filesystem' || isLocalFsReadLike);
+
+        if (shouldHandoffResearch) {
+          const researchContent = action_result.content || '';
+          console.log(`[CodeAct] 🔍 Research-like action completed (${action.type}) - storing results for next task`);
+
+          context.researchResults = researchContent;
+          context.previousTaskResult = researchContent;
+
+          // Add research to memory so next task can access it (and so thinking() sees it via describeLocalMemory)
+          if (researchContent) {
+            await memory.addMessage('assistant', `Research completed (${action.type}):\n${researchContent}`);
+          }
+
+          // Return success with content so AgenticAgent.run_loop can pass it forward
+          return {
+            status: 'success',
+            content: researchContent,
+            memorized: action_result.memorized || '',
+            isResearchPhase: true
+          };
+        }
         
         // CRITICAL: Auto-execute Python files after write_code
         // Full agent writes .py files but doesn't auto-execute them (unlike ultra-fast-path)

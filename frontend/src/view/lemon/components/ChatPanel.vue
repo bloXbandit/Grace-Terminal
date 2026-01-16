@@ -4,6 +4,7 @@
     <template v-else-if="conversationId">
       <div class="chat-panel-content">
         <ChatHeader :title="currentChat?.title" @share="handleShare" />
+        <GenerationTimer />
         <ChatMessages :key="conversationId" :messages="messages" :mode="mode" />
         <ChatInput @send="handleSendMessage" />
         <div class="scroll-to-bottom" @click="scrollToBottom" v-if="isShowScrollToBottom">
@@ -30,6 +31,7 @@ import Preview from "@/components/preview/index.vue";
 import LocalPreview from "@/components/preview/fullPreview.vue";
 import VideoOverhaul from "@/components/VideoOverhaul.vue";
 import ChatInput from "./ChatInput.vue";
+import GenerationTimer from "@/components/GenerationTimer.vue";
 import seeAgent from "@/services/see-agent";
 import { useChatStore } from "@/store/modules/chat";
 import fullPreview from "@/components/preview/fullPreview.vue";
@@ -45,6 +47,10 @@ import AgentWelcome from "./AgentWelcome.vue";
 import chat from "@/utils/chat";
 import chatService from "@/services/chat";
 const { chatInfo, mode } = storeToRefs(chatStore);
+
+// Timer integration
+import { useGenerationTimer } from '@/composables/useGenerationTimer'
+const { startTimer, stopTimer } = useGenerationTimer()
 
 // 编辑器 coding 模式
 import { useEditorStore } from "@/store/modules/editor";
@@ -115,15 +121,42 @@ const inputText = ref("");
 
 const messages = computed(() => {
   console.log("出发了messages computed");
-  switch (mode.value) {
-    case "task":
-      return chatStore.messages || [];
-    case "chat":
-      console.log("chatInfo.value.msgList", chatInfo.value.msgList);
-      return chat.convertToTree(chatInfo.value.msgList);
-    default:
-      return chatStore.messages || [];
+  let msgs = [];
+  if (mode.value === "task") {
+    msgs = chatStore.messages || [];
+  } else if (mode.value === "chat") {
+    console.log("chatInfo.value.msgList", chatInfo.value.msgList);
+    msgs = chat.convertToTree(chatInfo.value.msgList);
+  } else {
+    msgs = chatStore.messages || [];
   }
+  
+  // Watch for website generation messages to control timer
+  const lastMessage = msgs[msgs.length - 1];
+  if (lastMessage) {
+    const content = lastMessage.content || '';
+    const meta = lastMessage.meta || {};
+    
+    // Detect website generation start
+    if (meta.action_type === 'plan' && 
+        (content.toLowerCase().includes('website') || 
+         content.toLowerCase().includes('html') ||
+         content.toLowerCase().includes('landing page'))) {
+      console.log('[ChatPanel] Website generation detected, starting timer');
+      startTimer(120000, 'Generating website...'); // 2 minutes
+    }
+    
+    // Stop timer on completion
+    if (meta.action_type === 'finish_summery' && 
+        (content.includes('✅ Website created') || 
+         content.includes('✅ Created') ||
+         content.toLowerCase().includes('website'))) {
+      console.log('[ChatPanel] Website generation completed, stopping timer');
+      stopTimer();
+    }
+  }
+  
+  return msgs;
 });
 
 const isShowScrollToBottom = ref(false);

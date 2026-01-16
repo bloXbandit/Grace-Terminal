@@ -196,15 +196,20 @@ class LLM {
 
   // 发起 HTTP 请求
   async call(prompt = '', context = {}, options = {}) {
-    console.log("prompt http call", prompt);
+    // Reduced logging for cleaner output
     const messages = context.messages || [];
     
-    // CRITICAL: Inject MASTER_SYSTEM_PROMPT as SYSTEM role message
-    const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+    // CRITICAL: Inject contextual MASTER_SYSTEM_PROMPT as SYSTEM role message
+    const { getContextualSystemPrompt } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+    
+    // Build contextual prompt based on goal if available
+    const goal = context.goal || prompt || '';
+    const taskType = context.taskType || '';
+    const contextualPrompt = getContextualSystemPrompt(goal, taskType);
     
     // Only add system message if not already present
     if (messages.length === 0 || messages[0].role !== 'system') {
-      messages.unshift({ "role": "system", "content": MASTER_SYSTEM_PROMPT });
+      messages.unshift({ "role": "system", "content": contextualPrompt });
     }
     
     if (prompt) {
@@ -272,9 +277,12 @@ class LLM {
       response.data.on("data", (chunk) => {
         content += chunk;
         
-        // Debug: Log first chunk to see format
+        // Debug: Log first chunk to see format (reduced verbosity)
         if (fullContent === "" && content.length > 0) {
-          console.log('[LLM Stream] First chunk received:', content.substring(0, 200));
+          // Only log first chunk in development mode
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[LLM Stream] First chunk format:', content.substring(0, 100));
+          }
           
           // Detect non-streaming response (single JSON object without "data: " prefix)
           if (!content.startsWith('data:') && content.trim().startsWith('{')) {

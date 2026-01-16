@@ -66,6 +66,7 @@ declare module 'vue' {
     FileSvg: typeof import('./src/components/fileClass/fileSvg.vue')['default']
     FileTree: typeof import('./src/components/vscode/fileTree.vue')['default']
     FullPreview: typeof import('./src/components/preview/fullPreview.vue')['default']
+    GenerationTimer: typeof import('./src/components/GenerationTimer.vue')['default']
     GrapesJSEditor: typeof import('./src/components/GrapesJSEditor.vue')['default']
     Image: typeof import('./src/components/browser/image.vue')['default']
     ImgModal: typeof import('./src/components/file/imgModal.vue')['default']
