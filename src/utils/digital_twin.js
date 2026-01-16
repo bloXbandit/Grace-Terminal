@@ -5,7 +5,8 @@ const fal = require('@fal-ai/serverless-client');
 
 /**
  * DigitalTwinService
- * Handles digital twin creation and video generation using LongCat-Video-Avatar via fal.ai
+ * Handles digital twin creation, "Sim-style" avatar generation, and video generation
+ * using LongCat-Video-Avatar via fal.ai.
  * Primary Voice: Fish Audio | Fallback: ElevenLabs
  */
 class DigitalTwinService {
@@ -15,8 +16,9 @@ class DigitalTwinService {
     this.elevenLabsKey = process.env.ELEVENLABS_API_KEY;
     this.openaiKey = process.env.OPENAI_API_KEY;
 
-    // fal.ai LongCat model endpoint
+    // fal.ai model endpoints
     this.longCatModel = 'fal-ai/longcat-video-avatar';
+    this.fluxModel = 'fal-ai/flux/schnell'; // Fast model for avatar generation
     
     // Initialize fal client
     if (this.falKey) {
@@ -27,10 +29,10 @@ class DigitalTwinService {
   }
 
   /**
-   * Create a new digital twin
+   * Create a new digital twin and generate a "Sim-style" avatar
    */
   async createTwin({ user_id, name, face_image_path, traits = {}, model_type = 'longcat' }) {
-    console.log('[DigitalTwin] Creating twin:', { user_id, name, model_type });
+    console.log('[DigitalTwin] Creating twin with Sim-style avatar:', { user_id, name });
     
     try {
       await fs.access(face_image_path);
@@ -39,27 +41,50 @@ class DigitalTwinService {
     }
 
     const face_image_url = await this._uploadFile(face_image_path);
-    const DigitalTwin = require('@src/models/DigitalTwin');
     
+    // Generate Sim-style avatar using Flux via fal.ai
+    let avatar_url = null;
+    let avatar_path = null;
+    try {
+      console.log('[DigitalTwin] Generating Sim-style avatar...');
+      const avatarResult = await fal.subscribe(this.fluxModel, {
+        input: {
+          prompt: `A high-quality 3D videogame character portrait of a person, stylized like The Sims 4 or a modern Pixar character. The character should have the facial features of the person in the reference image. Neutral expression, professional lighting, solid background.`,
+          image_url: face_image_url,
+          strength: 0.6, // Blend reference face with style
+          num_inference_steps: 4
+        }
+      });
+      
+      if (avatarResult && avatarResult.images && avatarResult.images[0]) {
+        avatar_url = avatarResult.images[0].url;
+        avatar_path = path.join(path.dirname(face_image_path), `avatar_${Date.now()}.png`);
+        await this._downloadFile(avatar_url, avatar_path);
+      }
+    } catch (e) {
+      console.warn('[DigitalTwin] Avatar generation failed, using original photo:', e.message);
+    }
+
+    const DigitalTwin = require('@src/models/DigitalTwin');
     const twin = await DigitalTwin.create({
       user_id,
       name,
       face_image_path,
       face_image_url,
-      traits,
+      traits: { ...traits, avatar_path: avatar_path || face_image_path, avatar_url: avatar_url || face_image_url },
       hf_model_type: model_type,
       status: 'active'
     });
 
-    console.log('[DigitalTwin] ✅ Twin created:', twin.id);
+    console.log('[DigitalTwin] ✅ Twin created with avatar:', twin.id);
     return twin;
   }
 
   /**
-   * Generate a hyper-realistic video using LongCat
+   * Generate a hyper-realistic video using LongCat with social media presets
    */
-  async generateVideo({ twin_id, script, user_id, conversation_id, background, output_dir }) {
-    console.log('[DigitalTwin] Generating LongCat video for twin:', twin_id);
+  async generateVideo({ twin_id, script, user_id, conversation_id, background, output_dir, preset = 'youtube' }) {
+    console.log('[DigitalTwin] Generating LongCat video for twin:', twin_id, 'Preset:', preset);
     const startTime = Date.now();
     
     const DigitalTwin = require('@src/models/DigitalTwin');
@@ -78,17 +103,11 @@ class DigitalTwinService {
     });
 
     try {
-      // Step 1: Generate Audio (Fish Audio -> ElevenLabs -> OpenAI)
-      console.log('[DigitalTwin] Step 1: Generating cloned voice audio...');
+      // Step 1: Generate Audio
       const audioPath = await this._generateAudio(script, twin, output_dir);
       
       // Step 2: Generate Video via fal.ai LongCat
-      console.log('[DigitalTwin] Step 2: Generating LongCat video via fal.ai...');
-      
-      // Construct scene description from traits
-      const sceneDescription = this._buildSceneDescription(twin, background);
-      
-      // Upload files to fal.ai or use data URLs
+      const sceneDescription = this._buildSceneDescription(twin, background, preset);
       const faceUrl = await this._fileToDataUrl(twin.face_image_path);
       const audioUrl = await this._fileToDataUrl(audioPath);
 
@@ -98,7 +117,8 @@ class DigitalTwinService {
           audio_url: audioUrl,
           prompt: sceneDescription,
           motion_scale: 1.0,
-          refinement: true
+          refinement: true,
+          aspect_ratio: preset === 'youtube' ? '16:9' : '9:16'
         },
         pollInterval: 3000,
       });
@@ -108,7 +128,7 @@ class DigitalTwinService {
       }
 
       const videoUrl = result.video.url;
-      const videoPath = path.join(output_dir, `twin_longcat_${Date.now()}.mp4`);
+      const videoPath = path.join(output_dir, `twin_${preset}_${Date.now()}.mp4`);
       await this._downloadFile(videoUrl, videoPath);
 
       const processingTime = Date.now() - startTime;
@@ -121,7 +141,6 @@ class DigitalTwinService {
         completed_at: new Date()
       });
 
-      // Update twin stats
       await twin.update({
         videos_generated: (twin.videos_generated || 0) + 1,
         last_used_at: new Date()
@@ -174,7 +193,6 @@ class DigitalTwinService {
    * Internal Audio Generation Logic
    */
   async _generateAudio(text, twin, output_dir) {
-    // 1. Try Fish Audio
     if (this.fishAudioKey && twin.voice_sample_path) {
       try {
         return await this._generateFishAudio(text, twin, output_dir);
@@ -182,8 +200,6 @@ class DigitalTwinService {
         console.warn('[DigitalTwin] Fish Audio failed, falling back to ElevenLabs:', e.message);
       }
     }
-
-    // 2. Try ElevenLabs
     if (this.elevenLabsKey && twin.voice_sample_path) {
       try {
         return await this._generateElevenLabsAudio(text, twin, output_dir);
@@ -191,13 +207,10 @@ class DigitalTwinService {
         console.warn('[DigitalTwin] ElevenLabs failed, falling back to OpenAI:', e.message);
       }
     }
-
-    // 3. Final Fallback: OpenAI
     return await this._generateOpenAIAudio(text, twin, output_dir);
   }
 
   async _generateFishAudio(text, twin, output_dir) {
-    console.log('[DigitalTwin] Using Fish Audio for voice cloning...');
     const response = await axios.post('https://api.fish.audio/v1/tts', {
       text: text,
       reference_id: twin.traits.fish_voice_id || null,
@@ -205,14 +218,12 @@ class DigitalTwinService {
       headers: { 'Authorization': `Bearer ${this.fishAudioKey}`, 'Content-Type': 'application/json' },
       responseType: 'arraybuffer'
     });
-
     const audioPath = path.join(output_dir, `audio_fish_${Date.now()}.mp3`);
     await fs.writeFile(audioPath, response.data);
     return audioPath;
   }
 
   async _generateElevenLabsAudio(text, twin, output_dir) {
-    console.log('[DigitalTwin] Using ElevenLabs for voice cloning...');
     const voiceId = twin.traits.eleven_voice_id || '21m00Tcm4TlvDq8ikWAM';
     const response = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       text: text,
@@ -221,14 +232,12 @@ class DigitalTwinService {
       headers: { 'xi-api-key': this.elevenLabsKey, 'Content-Type': 'application/json' },
       responseType: 'arraybuffer'
     });
-
     const audioPath = path.join(output_dir, `audio_eleven_${Date.now()}.mp3`);
     await fs.writeFile(audioPath, response.data);
     return audioPath;
   }
 
   async _generateOpenAIAudio(text, twin, output_dir) {
-    console.log('[DigitalTwin] Using OpenAI TTS fallback...');
     const OpenAI = require('openai');
     const openai = new OpenAI({ apiKey: this.openaiKey });
     const response = await openai.audio.speech.create({
@@ -242,13 +251,20 @@ class DigitalTwinService {
     return audioPath;
   }
 
-  _buildSceneDescription(twin, background) {
+  _buildSceneDescription(twin, background, preset) {
     const traits = twin.traits || {};
     const mood = traits.mood || 'professional';
     const style = traits.style || 'natural';
     const bg = background || traits.background || 'a neutral studio background';
     
-    return `A hyper-realistic video of a person with a ${mood} expression, ${style} movements, in ${bg}. The lighting is cinematic and the identity is perfectly preserved.`;
+    let presetContext = '';
+    if (preset === 'tiktok' || preset === 'instagram') {
+      presetContext = 'vertical 9:16 aspect ratio, social media influencer style, high engagement lighting.';
+    } else {
+      presetContext = 'horizontal 16:9 aspect ratio, high-quality cinematic production.';
+    }
+
+    return `A hyper-realistic video of a person with a ${mood} expression, ${style} movements, in ${bg}. ${presetContext} The lighting is cinematic and the identity is perfectly preserved.`;
   }
 
   async _fileToDataUrl(filePath) {

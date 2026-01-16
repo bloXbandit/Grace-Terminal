@@ -268,7 +268,7 @@ router.post("/:id/set-default", async ({ state, params, response }) => {
  */
 router.post("/:id/generate-video", async ({ state, params, request, response }) => {
   try {
-    const { script, background, conversation_id } = request.body;
+    const { script, background, conversation_id, preset } = request.body;
     
     if (!script) {
       return response.fail('Script is required', 400);
@@ -293,7 +293,8 @@ router.post("/:id/generate-video", async ({ state, params, request, response }) 
       user_id: state.user.id,
       conversation_id: conversation_id || null,
       background,
-      output_dir: outputDir
+      output_dir: outputDir,
+      preset: preset || 'youtube'
     });
 
     return response.success(result);
