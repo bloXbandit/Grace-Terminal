@@ -1,6 +1,7 @@
 const { SPECIALIST_ROUTING, DEFAULT_ROUTING } = require('./routing.config');
 const createLLMInstance = require("@src/completion/llm.one.js");
 const RoutingPreference = require('@src/models/RoutingPreference');
+const CodeReviewOrchestrator = require('./CodeReviewOrchestrator');
 
 /**
  * Multi-Agent Coordinator
@@ -65,26 +66,18 @@ class MultiAgentCoordinator {
   detectTaskType(userMessage, context = {}) {
     const message = userMessage.toLowerCase();
     
+    console.log('[Coordinator] detectTaskType called with message:', message.substring(0, 100));
+    
     // CRITICAL: Check for webpage/website/landing page requests FIRST
     // This must happen before other patterns to avoid misclassification
-    const hasWebpageKeywords = /\b(landing page|webpage|html page|html file|web page)\b/i.test(message);
-    if (hasWebpageKeywords) {
-      console.log('[Coordinator] Landing page request detected → routing to code_generation');
-      return 'code_generation';
-    }
+    // Comprehensive keyword matching for all website/page variations
+    const websiteKeywords = /\b(landing.?page|landingpage|webpage|web.?page|html.?page|html.?file|site|website|web.?site|homepage|home.?page|multi.?page|full.?site|complete.?site|portfolio|showcase|gallery)\b/i;
+    const frameworkKeywords = /\b(tailwind|bootstrap|react|vue|next\.?js|angular|svelte)\b.*\b(page|site|website|app)\b/i;
+    const htmlCssKeywords = /\b(html|css|javascript)\b.*\b(site|page|website)\b/i;
     
-    // Check for multi-page website requests (more complex than landing pages)
-    const hasWebsiteKeywords = /\b(website|web site|multi.?page|full.?site|complete.?site)\b/i.test(message);
-    if (hasWebsiteKeywords) {
-      console.log('[Coordinator] Website request detected → routing to code_generation');
-      return 'code_generation';
-    }
-    
-    // Check for portfolio requests (often multi-page)
-    const hasPortfolioKeywords = /\b(portfolio|showcase|gallery|projects)\b/i.test(message);
-    if (hasPortfolioKeywords) {
-      console.log('[Coordinator] Portfolio request detected → routing to code_generation');
-      return 'code_generation';
+    if (websiteKeywords.test(message) || frameworkKeywords.test(message) || htmlCssKeywords.test(message)) {
+      console.log('[Coordinator] Website generation request detected → routing to website_generation (Phi-4)');
+      return 'website_generation';
     }
     
     // Context-aware creative detection (before keyword matching)
@@ -272,6 +265,26 @@ class MultiAgentCoordinator {
     // If 3+ code indicators, determine specific code task type
     if (codeScore >= 3) {
       console.log(`[Coordinator] Code context detected (score: ${codeScore})`);
+      
+      // SMART TRIGGERS for code review orchestrator
+      const hasCodeFile = context.uploadedFiles?.some(f => 
+        /\.(py|js|ts|java|cpp|c|go|rs|rb|php)$/i.test(f)
+      );
+      
+      const reviewKeywords = /\b(review|analyze|audit|check|examine|debug|fix|improve)\b/i.test(message);
+      const codeKeywords = /\b(code|function|class|script|file|implementation|bug|error)\b/i.test(message);
+      
+      // Trigger if:
+      // 1. User uploaded code file AND mentions review/analyze
+      // 2. User explicitly asks to review code
+      // 3. User mentions fixing/improving code
+      if (
+        (hasCodeFile && reviewKeywords) ||
+        (reviewKeywords && codeKeywords) ||
+        /\b(review|analyze)\b.*\b(implement|fix|improve|refactor)\b/i.test(message)
+      ) {
+        return 'code_review_implement';
+      }
       
       // Determine specific code task based on action words
       if (message.match(/debug|fix|error|bug|issue|troubleshoot|broken|not.*working/i)) {
@@ -481,20 +494,6 @@ class MultiAgentCoordinator {
       return 'code_generation'; // Claude Sonnet 4.5 - best for code
     }
     
-    // 1.5 HTML/Webpage/Landing page -> Route to code generation
-    const hasLandingPageKeywords = /\b(landing page|webpage|html page|html file|web page)\b/i.test(message);
-    if (hasLandingPageKeywords) {
-      console.log('[Coordinator] Landing page request → routing to code_generation');
-      return 'code_generation';
-    }
-    
-    // 1.6 Website requests -> Route to code generation
-    const hasWebsiteKeywords = /\b(website|web site|multi.?page|full.?site|complete.?site)\b/i.test(message);
-    if (hasWebsiteKeywords) {
-      console.log('[Coordinator] Website request → routing to code_generation');
-      return 'code_generation';
-    }
-    
     // 2. Photo/Video generation -> Route to photo_video_generation specialist
     const hasPhotoVideoKeywords = /\b(photo|image|video|movie|film|edit|generate|create|make|produce|render)\b/i.test(message);
     if (hasPhotoVideoKeywords && !hasCodeKeywords && !hasFiles) {
@@ -685,13 +684,21 @@ class MultiAgentCoordinator {
    * Get routing config for a task type
    */
   getRouting(taskType) {
-    // Check custom routing first (user preferences)
+    // Check custom routing first (user preferences from Routing Preferences UI)
     if (this.customRouting[taskType]) {
+      console.log(`[Coordinator] Using custom routing preference for ${taskType}: ${this.customRouting[taskType].primary}`);
       return this.customRouting[taskType];
     }
     
-    // Use default routing
-    return SPECIALIST_ROUTING[taskType] || DEFAULT_ROUTING;
+    // Use default routing (specialist models for execution)
+    const defaultRouting = SPECIALIST_ROUTING[taskType] || DEFAULT_ROUTING;
+    console.log(`[Coordinator] Final routing decision:`, {
+      taskType,
+      primary: defaultRouting.primary,
+      fallback: defaultRouting.fallback,
+      hasCustomRouting: !!this.customRouting[taskType]
+    });
+    return defaultRouting;
   }
 
   /**
@@ -734,13 +741,24 @@ class MultiAgentCoordinator {
       // Create LLM instance with streaming support and model_info
       const llm = await createLLMInstance(model, onTokenStream, { model_info });
       
-      // CRITICAL: Prepend MASTER_SYSTEM_PROMPT to ensure Grace's identity and capabilities are always present
-      const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
-      const fullSystemPrompt = `${MASTER_SYSTEM_PROMPT}\n\n---\n\n${systemPrompt}`;
+      // CRITICAL: For website_generation, systemPrompt is already minimal (set in execute())
+      // Detect by checking if it's the minimal prompt we set
+      const isWebsiteGeneration = systemPrompt.includes('ABSOLUTE OUTPUT RULES') && systemPrompt.includes('<write_code file_path="index.html">');
+      
+      let fullSystemPrompt;
+      if (isWebsiteGeneration) {
+        // Already minimal - use as-is, don't add anything
+        fullSystemPrompt = systemPrompt;
+      } else {
+        // Full prompt for other tasks
+        const { MASTER_SYSTEM_PROMPT } = require('@src/agent/prompt/MASTER_SYSTEM_PROMPT');
+        fullSystemPrompt = `${MASTER_SYSTEM_PROMPT}\n\n---\n\n${systemPrompt}`;
+      }
       
       // CRITICAL: Get existing files in conversation for context
+      // Skip this entire section for website_generation (adds 10K+ irrelevant tokens)
       let existingFilesContext = '';
-      if (this.conversation_id) {
+      if (this.conversation_id && !isWebsiteGeneration) {
         try {
           const { getAllFilesRecursively } = require('@src/agent/fileUtils');
           const { getDirpath } = require('@src/utils/electron');
@@ -900,7 +918,8 @@ When user says "add X at the bottom" or "at the end":
       }
       
       // Add previous implementation context for revision continuity
-      if (options.routingContext && options.routingContext.previousImplementation) {
+      // Skip for website_generation (adds bloat)
+      if (options.routingContext && options.routingContext.previousImplementation && !isWebsiteGeneration) {
         const impl = options.routingContext.previousImplementation;
         const isHighConfidence = impl.confidence === 'high';
         const instruction = isHighConfidence ? 'SHOULD' : 'CONSIDER';
@@ -921,15 +940,17 @@ ${impl.method} (Confidence: ${impl.confidence})
       }
       
       // CRITICAL: Get user profile context for personalization
+      // Skip for website_generation (adds bloat)
       let userProfileContext = '';
-      if (options.profileContext) {
+      if (options.profileContext && !isWebsiteGeneration) {
         userProfileContext = `\n\n**USER PROFILE CONTEXT:**\n${options.profileContext}`;
         console.log('[Specialist] Adding user profile context');
       }
       
       // CRITICAL: Inject file analysis context for uploaded files
+      // Skip for website_generation (adds bloat)
       let fileAnalysisContext = '';
-      if (options.files && options.files.length > 0) {
+      if (options.files && options.files.length > 0 && !isWebsiteGeneration) {
         const { generateContextSummary } = require('@src/utils/fileAnalyzer');
         const analyses = options.files.map(f => f._analysis).filter(a => a);
         if (analyses.length > 0) {
@@ -941,8 +962,9 @@ ${impl.method} (Confidence: ${impl.confidence})
       }
       
       // CRITICAL: Extract filename from task description if present
+      // Skip for website_generation (adds bloat)
       let filenameContext = '';
-      if (options.taskDescription) {
+      if (options.taskDescription && !isWebsiteGeneration) {
         // Look for .docx, .xlsx, .pdf filenames in task description
         const filenameMatch = options.taskDescription.match(/([a-zA-Z0-9_-]+\.(docx|xlsx|pdf|pptx))/);
         if (filenameMatch) {
@@ -980,9 +1002,14 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       const context = { messages: contextMessages };
       
       // Call the model with streaming
+      // CRITICAL: Adjust max_tokens based on model context limits
+      // Phi-4 has 16K context limit, so reduce max_tokens to avoid 400 errors
+      const isPhi4 = modelPath.includes('phi-4');
+      const defaultMaxTokens = isPhi4 ? 1500 : 4000;
+      
       const llmOptions = {
         temperature: options.temperature || 0.7,
-        max_tokens: options.max_tokens || 4000,
+        max_tokens: options.max_tokens || defaultMaxTokens,
         stream: !!options.onTokenStream // Enable streaming if callback provided
       };
 
@@ -1191,6 +1218,24 @@ If this is a delivery task and the file already exists with this name, DO NOT co
   }
 
   /**
+   * Extract keywords from website generation prompt for unique filename
+   */
+  extractWebsiteFilename(prompt) {
+    // Extract main subject after "website for" or similar patterns
+    const match = prompt.match(/website\s+(?:for|about)\s+(?:a|an|the)?\s*([^,\.]+)/i);
+    if (match) {
+      let keywords = match[1].trim();
+      // Sanitize: lowercase, underscores, alphanumeric only
+      keywords = keywords.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '_')
+        .substring(0, 50); // limit length
+      return `${keywords}.html`;
+    }
+    return 'website.html'; // fallback
+  }
+
+  /**
    * Execute task with automatic specialist routing
    */
   async execute(userMessage, options = {}) {
@@ -1216,10 +1261,117 @@ If this is a delivery task and the file already exists with this name, DO NOT co
     const taskType = this.detectTaskType(userMessage, routingContext);
     console.log(`[Coordinator] Detected task type: ${taskType}`);
     
-    // Get routing config
+    // ROUTE TO CODE REVIEW ORCHESTRATOR if needed
+    if (taskType === 'code_review_implement') {
+      console.log('[Coordinator] Routing to CodeReviewOrchestrator');
+      const orchestrator = new CodeReviewOrchestrator(
+        this.user_id,
+        this.conversation_id
+      );
+      
+      const result = await orchestrator.execute(userMessage, {
+        files: options.files,
+        uploadedFiles: routingContext.uploadedFiles || [],
+        errorTraceback: options.errorTraceback
+      });
+      
+      // If orchestrator fails, fallback to normal code_generation
+      if (result.fallback) {
+        console.warn('[Coordinator] CodeReviewOrchestrator failed, using fallback');
+        // Continue with normal flow - will use code_generation task type
+      } else {
+        return result;
+      }
+    }
+    
+    // Get routing config (specialist models for execution)
     await this.ensureUserPreferencesLoaded();
     const routing = this.getRouting(taskType);
-    console.log(`[Coordinator] Using model: ${routing.primary}`);
+    console.log(`[Coordinator] Using specialist: ${routing.primary}`);
+    
+    // CRITICAL: Override bloated systemPrompt for website_generation
+    let systemPrompt = routing.systemPrompt;
+    if (taskType === 'website_generation') {
+      // Extract unique filename from prompt
+      const websiteFilename = this.extractWebsiteFilename(userMessage);
+      console.log(`[Coordinator] Using website filename: ${websiteFilename}`);
+      
+      systemPrompt = `You are an elite, highly-opinionated Senior Frontend Architect. Generate a premium, high-conversion, modern single-page UI.
+
+ABSOLUTE OUTPUT RULES (FAIL IF BROKEN):
+- Start your response with exactly: <write_code file_path="${websiteFilename}">
+- End your response with exactly: </write_code>
+- Output must be a complete HTML document starting with <!DOCTYPE html>
+- No markdown, no backticks, no explanations, no extra text before/after the XML tag.
+- Include exactly one <style> and exactly one <script>.
+
+GOAL / QUALITY BAR:
+- Must look like a polished premium SaaS landing page (modern typography, strong spacing rhythm, depth, tasteful gradients).
+- If it looks like a plain HTML doc (default fonts, no layout system, weak hierarchy), it is incorrect.
+
+CONSTRAINTS:
+- No external CSS/JS libraries (no Tailwind, Bootstrap, React, jQuery).
+- Allowed: one Google Font link (Inter or Manrope).
+- Keep JS lightweight and functional.
+
+STYLE DIRECTION:
+- Premium dark theme: near-black / deep red surfaces with metallic gold accents.
+- Add subtle background interest: gradient mesh / soft blobs / faint noise overlay (pure CSS/SVG).
+
+DESIGN SYSTEM (NON-NEGOTIABLE):
+- Container max-width: 1200px centered; responsive at ~480px, ~768px, ~1024px.
+- 8pt spacing system ONLY (8/16/24/32/40/48/64).
+- Type scale: H1 48–56, H2 32–40, body 16–18; strong line-height.
+- Define tokens in :root:
+  --bg, --surface, --surface2, --text, --muted, --accent, --accent2, --border, --shadow
+- Components must have: subtle shadows, hover lift/press states, smooth transitions, rounded corners.
+- Provide visible :focus-visible styles.
+
+REQUIRED STRUCTURE (MUST INCLUDE ALL):
+1) Sticky Nav:
+   - logo/brand
+   - nav links
+   - primary CTA button
+   - mobile menu toggle (works)
+   - active section highlight via IntersectionObserver (works)
+2) Hero:
+   - compelling headline + subtext
+   - 2 distinct CTAs
+   - right-side hero visual: an abstract SVG / CSS “product UI mock” card stack (no images required)
+3) Cards Grid:
+   - 3 or 4 cards
+   - each card includes: small icon (SVG), title, 2–3 bullet points
+   - hover: slight lift + border glow
+4) Social Proof:
+   - either 3 testimonials (name + role) OR 4 metrics (numbers)
+5) FAQ:
+   - accordion with 4–6 questions
+   - functional JS toggle
+6) Contact:
+   - styled form with name/email/message + submit
+7) Footer:
+   - links + copyright
+
+INTERACTIONS (MUST WORK):
+- Smooth scroll to sections
+- Active nav link updates on scroll (IntersectionObserver)
+- FAQ accordion open/close
+- Mobile nav open/close and closes on link click
+
+ACCESSIBILITY (MUST):
+- Use header/main/section/footer landmarks
+- Use <button> for interactive controls
+- Keyboard navigable menu + accordion
+- High contrast text and readable line-height
+
+DELIVERY:
+- Inline CSS in <style>, JS in <script>
+- Use realistic copy aligned to the user request (avoid lorem ipsum)
+- Sections must be clearly labeled with ids to support navigation.
+
+Now generate the website that satisfies the user request below:`;
+      console.log('[Coordinator] Using ultra-minimal prompt for website_generation');
+    }
     
     try {
       // Pass routing context to specialist (includes previousImplementation)
@@ -1231,17 +1383,18 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       // Try primary specialist
       const result = await this.callSpecialist(
         routing.primary,
-        routing.systemPrompt,
+        systemPrompt,
         userMessage,
         specialistOptions
       );
       
       // Check if specialist returned an error (graceful failure)
       if (result.error && result.fallback_needed) {
-        console.log(`[Coordinator] Primary specialist failed gracefully, trying fallback: ${routing.fallback}`);
+        console.log(`[Coordinator] Primary specialist (${routing.primary}) failed gracefully, trying fallback: ${routing.fallback}`);
         throw new Error(result.message); // Trigger fallback
       }
       
+      console.log(`[Coordinator] ✅ Successfully used ${routing.primary} for task`);
       const executionReport = this.generateExecutionReport({
         taskType,
         specialist: routing.primary,
@@ -1258,7 +1411,8 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       };
       
     } catch (primaryError) {
-      console.log(`[Coordinator] Primary failed, trying fallback: ${routing.fallback}`);
+      console.log(`[Coordinator] ⚠️  Primary specialist (${routing.primary}) failed, trying fallback: ${routing.fallback}`);
+      console.log(`[Coordinator] Primary error: ${primaryError.message}`);
       
       try {
         // Pass routing context to fallback specialist too
@@ -1267,10 +1421,10 @@ If this is a delivery task and the file already exists with this name, DO NOT co
           routingContext
         };
         
-        // Try fallback specialist
+        // Try fallback specialist (use same overridden systemPrompt)
         const result = await this.callSpecialist(
           routing.fallback,
-          routing.systemPrompt,
+          systemPrompt,
           userMessage,
           specialistOptions
         );
@@ -1281,6 +1435,7 @@ If this is a delivery task and the file already exists with this name, DO NOT co
           throw new Error(result.message);
         }
         
+        console.log(`[Coordinator] ✅ Fallback specialist (${routing.fallback}) succeeded`);
         const executionReport = this.generateExecutionReport({
           taskType,
           specialist: routing.fallback,

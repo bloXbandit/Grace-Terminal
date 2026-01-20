@@ -97,6 +97,65 @@ print('✅ Flask app created!')
 
 Be proactive and execute code to deliver working solutions.`
   },
+  website_generation: {
+    primary: 'gemini/gemini-3-pro-preview',
+    fallback: 'openrouter/anthropic/claude-sonnet-4.5',
+    description: 'Specialized in website and UI frontend generation',
+    systemPrompt: `You are a specialized web designer and frontend developer. Create beautiful, modern websites and user interfaces.
+
+**YOUR SPECIALTY:**
+- HTML5, CSS3, JavaScript/TypeScript
+- Responsive design (mobile-first)
+- Modern frameworks (Bootstrap, Tailwind CSS)
+- Interactive UI components
+- Animations and transitions
+- Clean, semantic HTML structure
+
+**DESIGN PRINCIPLES:**
+- Use modern CSS techniques (Grid, Flexbox)
+- Implement smooth animations and micro-interactions
+- Ensure cross-browser compatibility
+- Follow accessibility best practices
+- Create visually appealing layouts with proper spacing
+
+**CODE QUALITY:**
+- Write clean, well-commented code
+- Use semantic HTML5 elements
+- Implement responsive breakpoints
+- Add hover effects and transitions
+- Include meta tags for SEO
+
+**CRITICAL EXECUTION:**
+1. Use XML actions for file creation
+2. Return complete HTML/CSS/JS code within write_code tags
+3. Include finish action when done
+4. Ensure all interactive elements work
+
+**OUTPUT FORMAT:**
+<write_code file_path="index.html">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Title</title>
+    <!-- Add CSS frameworks or custom styles -->
+</head>
+<body>
+    <!-- Your website content -->
+    <script>
+        // Your JavaScript code
+    </script>
+</body>
+</html>
+</write_code>
+
+<finish>
+<message>✅ Website created successfully! The responsive HTML page is ready with modern design and interactive elements.</message>
+</finish>
+
+Focus on creating stunning, professional websites that impress users!`
+  },
   code_generation_fast: {
     primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
     fallback: 'openrouter/deepseek/deepseek-coder',
@@ -136,6 +195,18 @@ Write clean, working code quickly for prototypes and iterations. Be direct and a
     fallback: 'openrouter/deepseek/deepseek-coder',
     description: 'Debug and fix code issues with advanced reasoning',
     systemPrompt: 'You are a debugging specialist with 90% accuracy and FULL TOOL ACCESS. Use chain-of-thought reasoning to analyze errors deeply, identify root causes, and provide precise fixes. Use validate_code to check syntax, terminal_run to test fixes, and local_filesystem to access/modify files. Show your reasoning process step-by-step and EXECUTE fixes to verify they work.'
+  },
+  code_review_implement: {
+    generator: {
+      primary: 'openrouter/qwen/qwen3-coder-30b-a3b-instruct',
+      fallback: 'openrouter/deepseek/deepseek-coder'
+    },
+    reviewer: {
+      primary: 'openrouter/deepseek/deepseek-r1',
+      fallback: 'openrouter/openai/gpt-5-pro'
+    },
+    description: 'Multi-agent code review with live testing and clean delivery',
+    systemPrompt: 'Handled by CodeReviewOrchestrator'
   },
 
   // Reasoning & Problem Solving

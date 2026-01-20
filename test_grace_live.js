@@ -389,6 +389,41 @@ const TEST_CASES = {
         location: '/Users/wonkasworld/Downloads/GRACEai/workspace'
       }
     }
+  ],
+  code_review: [
+    {
+      name: 'Code Review - Uploaded Python File',
+      goal: 'Review this code and improve error handling',
+      mode: 'task',
+      filePath: './test/sample_code.py',
+      expectedActions: ['code_review_implement', 'finish_summery'],
+      breakPoints: [
+        'intent_detection',
+        'code_review_orchestrator',
+        'generator_call',
+        'sandbox_test',
+        'reviewer_call',
+        'consensus_reached'
+      ],
+      verifyExecution: {
+        type: 'multi_agent',
+        filesDelivered: 2, // code + markdown
+        consensusRequired: true
+      }
+    },
+    {
+      name: 'Code Review - Bug Fix Request',
+      goal: 'This function has a bug where it crashes on empty input. Fix it.',
+      mode: 'task',
+      expectedActions: ['code_review_implement'],
+      breakPoints: [
+        'bug_detection',
+        'sandbox_test',
+        'error_traceback',
+        'refinement',
+        'test_passed'
+      ]
+    }
   ]
 };
 
@@ -398,6 +433,84 @@ class GraceTester {
   constructor() {
     this.results = [];
     this.conversationId = null;
+  }
+
+  async runDigitalTwinVideoTest({ twinId, preset = 'youtube', background = 'podcast studio', scriptBase = 'digital twin test', pollIntervalMs = 3000, timeoutMs = 15 * 60 * 1000 }) {
+    const trace = `DT_VIDEO_TRACE_${Date.now()}_${uuidv4().slice(0, 8)}`;
+    const script = `${scriptBase} (${trace})`;
+    const startedAt = Date.now();
+
+    log.section('Digital Twin Video Test');
+    log.info(`Twin ID: ${twinId}`);
+    log.info(`Preset: ${preset}`);
+    log.info(`Background: ${background}`);
+    log.info(`Trace: ${trace}`);
+
+    let postRes;
+    try {
+      postRes = await axios.post(
+        `${GRACE_URL}/api/digital-twin/${twinId}/generate-video`,
+        { script, background, preset },
+        { timeout: 30000 }
+      );
+      log.success(`POST generate-video responded: HTTP ${postRes.status}`);
+      log.data('POST body', postRes.data);
+    } catch (e) {
+      const status = e?.response?.status;
+      const body = e?.response?.data;
+      log.error(`POST generate-video failed: HTTP ${status || 'N/A'} - ${e.message}`);
+      if (body) log.data('POST error body', body);
+      throw e;
+    }
+
+    const deadline = startedAt + timeoutMs;
+    let lastStatus = null;
+    let lastRow = null;
+    let foundId = null;
+
+    while (Date.now() < deadline) {
+      let videosRes;
+      try {
+        videosRes = await axios.get(`${GRACE_URL}/api/digital-twin/${twinId}/videos`, { timeout: 15000 });
+      } catch (e) {
+        log.warn(`GET videos failed: ${e.message}`);
+        await new Promise(r => setTimeout(r, pollIntervalMs));
+        continue;
+      }
+
+      const rows = videosRes?.data?.data || [];
+      const match = rows.find(r => typeof r?.script === 'string' && r.script.includes(trace));
+      if (match) {
+        lastRow = match;
+        foundId = match.id;
+        if (match.status !== lastStatus) {
+          lastStatus = match.status;
+          const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+          log.info(`Job ${foundId} status -> ${match.status} (${elapsedSec}s)`);
+          if (match.error_message) log.warn(`error_message: ${match.error_message}`);
+        }
+
+        if (match.status === 'completed') {
+          log.success(`✅ Completed in ${Math.round((Date.now() - startedAt) / 1000)}s`);
+          log.data('Final job', match);
+          return { ok: true, trace, job: match, post: postRes.data };
+        }
+        if (match.status === 'failed') {
+          log.error(`❌ Failed in ${Math.round((Date.now() - startedAt) / 1000)}s`);
+          log.data('Final job', match);
+          return { ok: false, trace, job: match, post: postRes.data };
+        }
+      } else {
+        const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+        log.info(`Waiting for job record... (${elapsedSec}s)`);
+      }
+
+      await new Promise(r => setTimeout(r, pollIntervalMs));
+    }
+
+    log.error('❌ Timeout waiting for completion');
+    if (lastRow) log.data('Last seen job', lastRow);
+    return { ok: false, trace, job: lastRow, timedOut: true, post: postRes?.data };
   }
 
   async uploadFileToConversation(conversationId, filePath) {
@@ -1274,6 +1387,15 @@ async function main() {
   if (command === 'monitor') {
     log.info('Starting log monitor (Ctrl+C to stop)...');
     await tester.monitorDockerLogs();
+  } else if (command === 'dt-video') {
+    const twinId = parseInt(args[1] || '7', 10);
+    const presetArg = args.find(a => a.startsWith('--preset='));
+    const bgArg = args.find(a => a.startsWith('--bg='));
+    const scriptArg = args.find(a => a.startsWith('--script='));
+    const preset = presetArg ? presetArg.split('=')[1] : 'youtube';
+    const background = bgArg ? bgArg.split('=')[1] : 'podcast studio';
+    const scriptBase = scriptArg ? scriptArg.split('=')[1] : 'digital twin test';
+    await tester.runDigitalTwinVideoTest({ twinId, preset, background, scriptBase });
   } else if (command === 'test') {
     const modeOrName = args[1];
     if (modeOrName) {
@@ -1308,6 +1430,7 @@ async function main() {
     console.log(`
 Usage:
   node test_grace_live.js test [mode|name]  - Run tests (all, by mode, or specific)
+  node test_grace_live.js dt-video [twinId] - Trigger digital twin video generation and poll until done
   node test_grace_live.js monitor           - Monitor Docker logs in real-time
 
 Modes: chat, task, auto, special
@@ -1317,6 +1440,7 @@ Examples:
   node test_grace_live.js test task         # Run all task mode tests
   node test_grace_live.js test chat         # Run all chat mode tests
   node test_grace_live.js test word         # Run Word document test
+  node test_grace_live.js dt-video 7 --preset=youtube --bg="podcast studio" --script="talk about space"
   node test_grace_live.js monitor           # Watch logs
     `);
   }
