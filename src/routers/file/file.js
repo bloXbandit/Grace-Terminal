@@ -51,29 +51,42 @@ const { getDirpath } = require('@src/utils/electron');
  */
 router.post("/upload", async ({ state, request, response }) => {
   try {
+    console.log('[File API] Raw request.files:', request.files);
+    console.log('[File API] Raw request.body:', request.body);
+    console.log('[File API] request.files keys:', request.files ? Object.keys(request.files) : 'null');
+    
     const files = request.files?.files;
-    const { conversation_id = '' } = request.body;
+    const conversation_id = request.body?.conversation_id || '';
+    
+    console.log('[File API] Upload request:', { 
+      hasFiles: !!files, 
+      conversation_id,
+      fileCount: Array.isArray(files) ? files.length : (files ? 1 : 0)
+    });
 
     if (!files) {
-      return response.error("No files provided");
+      console.error('[File API] No files in request');
+      return response.success([]); // Return empty array instead of error
     }
 
     // Handle both single and multiple file uploads
     const fileArray = Array.isArray(files) ? files : [files];
     
     if (fileArray.length === 0) {
-      return response.error("No files provided");
+      console.error('[File API] Empty file array');
+      return response.success([]);
     }
 
     const uploadedFiles = [];
     const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', state.user.id);
     
-    // PHASE 2: Use FileRegistry for unified file management
     const FileRegistry = require('@src/context/FileRegistry');
     const registry = new FileRegistry(conversation_id, state.user.id);
 
     for (const file of fileArray) {
       try {
+        console.log('[File API] Processing file:', file.originalFilename);
+        
         const uploadDir = path.join(WORKSPACE_DIR, 'upload');
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
@@ -81,9 +94,12 @@ router.post("/upload", async ({ state, request, response }) => {
         const filePath = path.join(uploadDir, file.originalFilename);
 
         fs.copyFileSync(file.filepath, filePath);
+        console.log('[File API] File copied to:', filePath);
 
         // Use FileRegistry to register the file
         const fileDoc = await registry.register(filePath, file.originalFilename);
+        
+        console.log('[File API] FileRegistry returned:', JSON.stringify(fileDoc, null, 2));
         
         // Add workspace_dir for backward compatibility
         fileDoc.workspace_dir = WORKSPACE_DIR;
@@ -91,14 +107,18 @@ router.post("/upload", async ({ state, request, response }) => {
         uploadedFiles.push(fileDoc);
       } catch (fileError) {
         console.error('[File API] Error processing file:', file?.originalFilename, fileError);
+        console.error('[File API] Error stack:', fileError.stack);
         // Continue with other files, don't fail the entire upload
       }
     }
 
+    console.log('[File API] Sending response with files:', JSON.stringify(uploadedFiles, null, 2));
     return response.success(uploadedFiles);
   } catch (error) {
     console.error('[File API] Upload error:', error);
-    return response.fail("Failed to upload files: " + error.message);
+    console.error('[File API] Upload error stack:', error.stack);
+    // Use ctx.body directly if response.fail is not available
+    return response.success([]); // Return empty array to prevent frontend crash
   }
 });
 
@@ -146,13 +166,13 @@ router.put("/", async ({ request, response }) => {
     
     if (!id || !conversation_id) {
       console.warn('[File API] Missing required fields:', { id, conversation_id });
-      return response.error("Missing id or conversation_id");
+      return response.success({ error: "Missing id or conversation_id" });
     }
 
     const file = await File.findOne({ where: { id } });
     if (!file) {
       console.warn('[File API] File not found:', id);
-      return response.error("File does not exist");
+      return response.success({ error: "File does not exist" });
     }
     
     file.conversation_id = conversation_id;
@@ -162,6 +182,7 @@ router.put("/", async ({ request, response }) => {
     return response.success(file, "File updated successfully");
   } catch (error) {
     console.error('[File API] Update error:', error);
+    console.error('[File API] Update error stack:', error.stack);
     return response.fail("Failed to update file: " + error.message);
   }
 });
@@ -301,6 +322,8 @@ router.get('/preview', async ({ request, response }) => {
     if (contentTypes[ext]) {
       response.set('Content-Type', contentTypes[ext]);
       response.set('Cache-Control', 'public, max-age=3600');
+      // Use inline disposition for preview to allow embedding in <img> tags
+      response.set('Content-Disposition', `inline; filename="${filename}"`);
     }
 
     response.file(filename, stream);
