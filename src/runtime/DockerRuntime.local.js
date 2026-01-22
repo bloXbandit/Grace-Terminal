@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const axios = require('axios');
 const Docker = require('dockerode');
@@ -440,7 +441,12 @@ class DockerRuntime {
   }
 
   async _call_docker_action(action, uuid) {
-    const host = DOCKER_HOST_ADDR ? DOCKER_HOST_ADDR : 'localhost'
+    // When running in Docker, use container name for inter-container communication
+    // When running locally, use localhost or DOCKER_HOST_ADDR
+    const isInDocker = fsSync.existsSync('/.dockerenv');
+    const host = isInDocker ? 'lemon-runtime-sandbox' : 
+                 (DOCKER_HOST_ADDR || 'localhost');
+    console.log(`[DockerRuntime] Sandbox connection: isInDocker=${isInDocker}, host=${host}, port=${this.host_port}`);
     const request = {
       method: 'POST',
       url: `http://${host}:${this.host_port}/execute_action`,

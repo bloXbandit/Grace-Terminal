@@ -71,6 +71,21 @@ const planning_local = async (goal, options = {}) => {
       }
     }
 
+    const writeCodeMatch = specialistResponse.match(/<write_code[\s\S]*?<\/write_code>/);
+    if (writeCodeMatch) {
+      const actionXML = writeCodeMatch[0];
+      const timestamp = Date.now();
+      return [{
+        id: `${timestamp}_write_code`,
+        title: '📝 Writing file...',
+        description: 'Write generated file',
+        tool: 'write_code',
+        status: 'pending',
+        preGeneratedAction: actionXML,
+        requirement: actionXML
+      }];
+    }
+
     // PRIORITY: Check for Python code blocks FIRST (preferred format)
     const pythonCodeMatch = specialistResponse.match(/```python\n([\s\S]+?)\n```/);
     if (pythonCodeMatch) {

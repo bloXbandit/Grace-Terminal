@@ -2634,6 +2634,7 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     const requiresToolExecution = [
       'data_generation',      // Creating files, documents, etc.
       'code_generation',      // Website/code generation - needs planning/execution
+      'website_generation',   // Website generation - needs planning/execution
       'system_design',        // Creating diagrams, architecture files
       'web_research'          // Fetching and saving research data
     ];
@@ -2643,9 +2644,11 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     // CRITICAL FIX: If task needs tools, skip specialist in auto_reply
     // Go directly to planning/execution to avoid hallucinated responses
     if (needsTools) {
-      console.log(`[AutoReply] Task type ${taskType} requires tools - skipping auto_reply specialist`);
-      console.log(`[AutoReply] Continuing directly to planning and execution`);
-      return null; // Let AgenticAgent handle planning and execution
+      if (taskType !== 'website_generation') {
+        console.log(`[AutoReply] Task type ${taskType} requires tools - skipping auto_reply specialist`);
+        console.log(`[AutoReply] Continuing directly to planning and execution`);
+        return null; // Let AgenticAgent handle planning and execution
+      }
     }
     
     try {
@@ -2671,7 +2674,7 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
         } else {
           // CRITICAL: For code_generation, return needsExecution so planning can extract Python code
           // Planning module already has logic to extract ```python blocks from specialistResponse
-          if (taskType === 'code_generation') {
+          if (taskType === 'code_generation' || taskType === 'website_generation') {
             console.log('[AutoReply] Code generation specialist succeeded - passing to planning for execution');
             return {
               needsExecution: true,

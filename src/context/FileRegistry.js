@@ -40,6 +40,29 @@ class FileRegistry {
     console.log(`[FileRegistry] Initialized for ${dir_name}`);
   }
 
+  _normalizeRecord(file) {
+    if (!file) return null;
+
+    const plain = typeof file.get === 'function' ? file.get({ plain: true }) : file;
+    const id = plain.id;
+    const name = plain.name || plain.file_name;
+    const url = plain.url || plain.file_path || plain.filepath;
+    const ext = name ? path.extname(name) : '';
+
+    return {
+      ...plain,
+      id,
+      name,
+      file_name: name,
+      url,
+      filepath: url,
+      file_path: url,
+      file_type: ext,
+      created_at: plain.create_at || plain.created_at,
+      updated_at: plain.update_at || plain.updated_at
+    };
+  }
+
   /**
    * Get all files (syncs DB ↔ filesystem)
    * This is the main method - always returns synced, up-to-date file list
@@ -86,14 +109,10 @@ class FileRegistry {
       });
       
       console.log(`[FileRegistry] Synced ${syncedFiles.length} files`);
-      
-      return syncedFiles.map(f => ({
-        id: f.id,
-        file_name: f.name,
-        file_path: f.url,
-        file_type: path.extname(f.name),
-        created_at: f.create_at
-      }));
+
+      return syncedFiles
+        .map((f) => this._normalizeRecord(f))
+        .filter(Boolean);
       
     } catch (error) {
       console.error('[FileRegistry] getAll failed:', error);
@@ -129,7 +148,9 @@ class FileRegistry {
         if (Object.keys(updates).length > 0) {
           await existing.update(updates);
         }
-        return existing.get({ plain: true });
+
+        const refreshed = await File.findOne({ where: { id: existing.id } });
+        return this._normalizeRecord(refreshed || existing);
       }
 
       // Register in database
@@ -144,7 +165,8 @@ class FileRegistry {
 
       console.log('[FileRegistry] Registered new file:', fileName);
 
-      return fileRecord.get({ plain: true });
+      const refreshed = await File.findOne({ where: { id: fileRecord.id } });
+      return this._normalizeRecord(refreshed || fileRecord);
       
     } catch (error) {
       console.error('[FileRegistry] Register failed:', error);
@@ -204,13 +226,7 @@ class FileRegistry {
       });
       
       if (file) {
-        return {
-          id: file.id,
-          file_name: file.name,
-          file_path: file.url,
-          file_type: path.extname(file.name),
-          created_at: file.create_at
-        };
+        return this._normalizeRecord(file);
       }
 
       // Not in DB - check filesystem and register if found

@@ -172,6 +172,22 @@ class LLM {
         }
       };
 
+      const safeRequestPreview = () => {
+        try {
+          // Avoid dumping full prompts; keep a small preview for debugging 400s
+          if (!config || !('data' in config)) return undefined;
+          const raw = typeof config.data === 'string' ? config.data : JSON.stringify(config.data);
+          return raw ? raw.substring(0, 800) : undefined;
+        } catch (e) {
+          return undefined;
+        }
+      };
+
+      const responseData = err.response?.data;
+      const responseDataPreview = (responseData && typeof responseData === 'object')
+        ? safeStringify(responseData)
+        : (typeof responseData === 'string' ? responseData.substring(0, 800) : responseData);
+
       console.error('❌ [LLM Error]', {
         model: this.model,
         url: config.url,
@@ -179,7 +195,8 @@ class LLM {
         statusText: err.response?.statusText,
         errorCode: err.code,
         errorMessage: err.message,
-        responseData: err.response?.data
+        requestDataPreview: safeRequestPreview(),
+        responseData: responseDataPreview
       });
       
       // Return structured error object for retry logic

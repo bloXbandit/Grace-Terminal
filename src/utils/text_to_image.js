@@ -10,8 +10,8 @@ const createLLMInstance = require("@src/completion/llm.one.js");
 class TextToImageService {
     constructor() {
         this.apiKey = process.env.GEMINI_API_KEY;
-        this.model = 'gemini-2.5-flash-image-preview';
-        this.apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent';
+        this.model = 'gemini-2.5-flash-image';
+        this.apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
         this.initialized = false;
     }
 

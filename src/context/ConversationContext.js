@@ -154,6 +154,15 @@ class ConversationContext {
       // Add script files first (they're more recent)
       scriptFiles.forEach(f => {
         const fileName = f.filename || f.name;
+        if (!fileName || typeof fileName !== 'string') {
+          console.warn('[ConversationContext] Skipping script file with invalid name:', {
+            id: f.id,
+            filename: f.filename,
+            name: f.name,
+            filepath: f.filepath
+          });
+          return;
+        }
         if (!seenNames.has(fileName)) {
           allFiles.push({
             file_name: fileName,
@@ -169,6 +178,14 @@ class ConversationContext {
       // Add manual files (avoiding duplicates)
       manualFiles.forEach(f => {
         const fileName = f.name;
+        if (!fileName || typeof fileName !== 'string') {
+          console.warn('[ConversationContext] Skipping manual file with invalid name:', {
+            id: f.id,
+            name: f.name,
+            url: f.url
+          });
+          return;
+        }
         if (!seenNames.has(fileName)) {
           allFiles.push({
             file_name: fileName,

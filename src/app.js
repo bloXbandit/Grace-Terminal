@@ -49,7 +49,7 @@ const koaBodyMultipartMiddleware = koaBody({
 })
 
 app.use(async (ctx, next) => {
-  if (ctx.method === 'POST' && ctx.path === '/api/voice/transcribe') {
+  if (ctx.method === 'POST' && (ctx.path === '/api/voice/transcribe' || ctx.path === '/api/file/upload')) {
     const tParseStart = Date.now()
     return koaBodyMultipartMiddleware(ctx, async () => {
       ctx.state.voiceMultipartParseMs = Date.now() - tParseStart

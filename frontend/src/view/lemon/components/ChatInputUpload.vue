@@ -100,20 +100,25 @@ const beforeUpload = async (file) => {
         formData.append('files', file);
 
         const result = await files.uploadFile(formData);
-        
-        if (!result || result.length === 0) {
+
+        const normalized = Array.isArray(result)
+          ? result
+          : (Array.isArray(result?.data) ? result.data : []);
+
+        if (!normalized || normalized.length === 0) {
           throw new Error('Upload failed - no files returned');
         }
-        
-        let upload = result[0];
+
+        let upload = normalized[0];
         console.log('upload', upload);
         // 上传成功，替换列表中对应的临时文件
         const newFileList = props.fileList
             .filter((f) => f.uid !== file.uid) // 先移除临时文件
             .concat({
-                name: upload.name,
+                name: upload.name || upload.file_name,
                 size: file.size,
-                url:upload.url,
+                url: upload.url || upload.filepath || upload.file_path,
+                filepath: upload.filepath || upload.file_path || upload.url,
                 id: upload.id,
                 workspace_dir: upload.workspace_dir,
                 uploading: false,

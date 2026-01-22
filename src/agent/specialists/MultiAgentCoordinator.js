@@ -1221,18 +1221,45 @@ If this is a delivery task and the file already exists with this name, DO NOT co
    * Extract keywords from website generation prompt for unique filename
    */
   extractWebsiteFilename(prompt) {
-    // Extract main subject after "website for" or similar patterns
-    const match = prompt.match(/website\s+(?:for|about)\s+(?:a|an|the)?\s*([^,\.]+)/i);
-    if (match) {
-      let keywords = match[1].trim();
-      // Sanitize: lowercase, underscores, alphanumeric only
-      keywords = keywords.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, '_')
-        .substring(0, 50); // limit length
-      return `${keywords}.html`;
-    }
-    return 'website.html'; // fallback
+    const raw = (prompt || '').toString();
+
+    const extractCandidate = () => {
+      // Prefer explicit naming: called "No Radar" / named "X" / called X
+      const calledQuoted = raw.match(/\b(?:called|named)\s+"([^"]{2,80})"/i);
+      if (calledQuoted?.[1]) return calledQuoted[1];
+      const calledPlain = raw.match(/\b(?:called|named)\s+([^,\.\n]{2,80})/i);
+      if (calledPlain?.[1]) return calledPlain[1];
+
+      // Common patterns: landing page / website / webpage for/about ...
+      const landingFor = raw.match(/\b(?:landing\s*page|website|web\s*site|web\s*page|homepage|home\s*page)\s+(?:for|about)\s+(?:a|an|the)?\s*([^,\.\n]{2,80})/i);
+      if (landingFor?.[1]) return landingFor[1];
+
+      // As a last resort, use first ~8 words as a slug source
+      const words = raw
+        .replace(/[^a-zA-Z0-9\s]/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 8)
+        .join(' ');
+      return words;
+    };
+
+    const slugify = (s) => {
+      const cleaned = (s || '')
+        .toString()
+        .toLowerCase()
+        .replace(/\b(?:a|an|the|company|business|brand|vpn|landing|page|website|site|webpage|web|make|create|build)\b/g, ' ')
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 48);
+      return cleaned;
+    };
+
+    const candidate = extractCandidate();
+    const slug = slugify(candidate);
+    return `${slug || 'website'}.html`;
   }
 
   /**
@@ -1299,9 +1326,9 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       systemPrompt = `You are an elite, highly-opinionated Senior Frontend Architect. Generate a premium, high-conversion, modern single-page UI.
 
 ABSOLUTE OUTPUT RULES (FAIL IF BROKEN):
-- Start your response with exactly: <write_code file_path="${websiteFilename}">
-- End your response with exactly: </write_code>
-- Output must be a complete HTML document starting with <!DOCTYPE html>
+- Start your response with exactly: <write_code>\n<file_path>${websiteFilename}</file_path>\n<content><![CDATA[
+- End your response with exactly: ]]></content>\n</write_code>
+- Inside CDATA, output must be a complete HTML document starting with <!DOCTYPE html>
 - No markdown, no backticks, no explanations, no extra text before/after the XML tag.
 - Include exactly one <style> and exactly one <script>.
 
