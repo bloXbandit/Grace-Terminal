@@ -42,9 +42,9 @@ class BrowserAgent:
 
     def _get_llm(self,model,api_key,base_url,conversation_id):
         print(f"INFO   [system] Init LLM model:{model}; api_key:**************** ; base_url:{base_url}")
-        llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url,
-                         extra_body=self._extra_body(conversation_id)
-                         )
+        needs_extra = base_url and ('dashscope' in base_url or 'aliyun' in base_url)
+        _kwargs = {'extra_body': self._extra_body(conversation_id)} if needs_extra else {}
+        llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url, **_kwargs)
         return llm
     @staticmethod
     def _extra_body(conversation_id:Optional[str] = None):

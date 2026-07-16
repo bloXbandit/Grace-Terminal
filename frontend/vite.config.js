@@ -42,6 +42,12 @@ export default defineConfig(({ mode }) => {
       '~@': path.resolve(__dirname, 'src'),
     },
   },
+  // FIX: stale optimize-deps cache caused 504 "Outdated Optimize Dep" on lazy-loaded
+  // routes — Settings/My Assistant/Digital Twin buttons silently failed to navigate.
+  // Force a fresh prebundle on each dev-server start (adds ~1-2s to boot, kills the bug).
+  optimizeDeps: {
+    force: true,
+  },
   server: {
     port: 5005,  // HARDCODED: Frontend always on 5005
     host: '0.0.0.0',
