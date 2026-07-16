@@ -10,7 +10,16 @@
         <h2>Basic Information</h2>
         
         <div class="form-group">
-          <label for="name">Preferred Name *</label>
+          <label for="name">
+            Preferred Name *
+            <button
+              v-if="profile.name"
+              type="button"
+              class="btn-clear"
+              @click="clearField('name')"
+            >Clear</button>
+            <span v-if="savedFields.name" class="saved-badge">✓ Saved</span>
+          </label>
           <input
             id="name"
             v-model="profile.name"
@@ -23,7 +32,16 @@
         </div>
 
         <div class="form-group">
-          <label for="profession">Profession *</label>
+          <label for="profession">
+            Profession *
+            <button
+              v-if="profile.profession"
+              type="button"
+              class="btn-clear"
+              @click="clearField('profession')"
+            >Clear</button>
+            <span v-if="savedFields.profession" class="saved-badge">✓ Saved</span>
+          </label>
           <input
             id="profession"
             v-model="profile.profession"
@@ -36,7 +54,16 @@
         </div>
 
         <div class="form-group">
-          <label for="expertise_level">Expertise Level *</label>
+          <label for="expertise_level">
+            Expertise Level *
+            <button
+              v-if="profile.expertise_level"
+              type="button"
+              class="btn-clear"
+              @click="clearField('expertise_level')"
+            >Clear</button>
+            <span v-if="savedFields.expertise_level" class="saved-badge">✓ Saved</span>
+          </label>
           <select
             id="expertise_level"
             v-model="profile.expertise_level"
@@ -57,7 +84,16 @@
         <h2>Optional Information</h2>
         
         <div class="form-group">
-          <label for="interests">Interests</label>
+          <label for="interests">
+            Interests
+            <button
+              v-if="profile.interests"
+              type="button"
+              class="btn-clear"
+              @click="clearField('interests')"
+            >Clear</button>
+            <span v-if="savedFields.interests" class="saved-badge">✓ Saved</span>
+          </label>
           <textarea
             id="interests"
             v-model="profile.interests"
@@ -70,7 +106,16 @@
         </div>
 
         <div class="form-group">
-          <label for="goals">Current Goals</label>
+          <label for="goals">
+            Current Goals
+            <button
+              v-if="profile.goals"
+              type="button"
+              class="btn-clear"
+              @click="clearField('goals')"
+            >Clear</button>
+            <span v-if="savedFields.goals" class="saved-badge">✓ Saved</span>
+          </label>
           <textarea
             id="goals"
             v-model="profile.goals"
@@ -83,7 +128,16 @@
         </div>
 
         <div class="form-group">
-          <label for="location">Location</label>
+          <label for="location">
+            Location
+            <button
+              v-if="profile.location"
+              type="button"
+              class="btn-clear"
+              @click="clearField('location')"
+            >Clear</button>
+            <span v-if="savedFields.location" class="saved-badge">✓ Saved</span>
+          </label>
           <input
             id="location"
             v-model="profile.location"
@@ -130,7 +184,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import http from '@/utils/http';
 
 const profile = ref({
@@ -144,6 +198,15 @@ const profile = ref({
 
 const originalValues = ref({});
 const learnedProfile = ref([]);
+const savedFields = ref({});
+
+// Show a transient "Saved" badge for a field
+const flashSaved = (key) => {
+  savedFields.value[key] = true;
+  setTimeout(() => {
+    savedFields.value[key] = false;
+  }, 2000);
+};
 
 // Listen for real-time profile updates from chat extraction
 const setupProfileListener = () => {
@@ -207,6 +270,7 @@ const saveField = async (key) => {
       console.log(`[Profile] Saved ${key}: ${value.trim()}`);
 
       originalValues.value[key] = value.trim()
+      flashSaved(key);
       
       // Only refresh learned profile section (not form fields)
       const learnedResponse = await http.get('/api/users/profile');
@@ -221,6 +285,36 @@ const saveField = async (key) => {
     }
   } catch (error) {
     console.error('Failed to save field:', error);
+  }
+};
+
+// Clear/delete a field value (removes from backend + form)
+const clearField = async (key) => {
+  const hadValue = profile.value[key] && profile.value[key].trim() !== '';
+  try {
+    const response = await http.del(`/api/users/profile/${key}`);
+    if (response.data && response.data.success) {
+      profile.value[key] = '';
+      originalValues.value[key] = '';
+      console.log(`[Profile] Cleared ${key}`);
+
+      // Refresh learned profile section
+      const learnedResponse = await http.get('/api/users/profile');
+      if (learnedResponse.data && learnedResponse.data.success) {
+        learnedProfile.value = learnedResponse.data.profile.filter(
+          item => item.source && item.source.startsWith('conversation')
+        );
+      }
+    } else {
+      console.error('Failed to clear field:', response.data?.error);
+    }
+  } catch (error) {
+    // If nothing was persisted yet, still clear the local form value
+    if (hadValue) {
+      profile.value[key] = '';
+      originalValues.value[key] = '';
+    }
+    console.error('Failed to clear field:', error);
   }
 };
 
@@ -253,9 +347,31 @@ const formatSource = (source) => {
   return source;
 };
 
+// Flush all dirty fields before component is destroyed (prevents data loss on SPA navigation)
+const flushDirtyFields = async () => {
+  const pending = [];
+  for (const key of Object.keys(profile.value)) {
+    const value = profile.value[key];
+    if (value && value.trim() !== '') {
+      const original = originalValues.value[key];
+      if (original !== value.trim()) {
+        pending.push(saveField(key));
+      }
+    }
+  }
+  if (pending.length > 0) {
+    await Promise.all(pending);
+    console.log(`[Profile] Flushed ${pending.length} dirty field(s) before unmount`);
+  }
+};
+
 onMounted(() => {
   loadProfile();
   setupProfileListener();
+});
+
+onBeforeUnmount(() => {
+  flushDirtyFields();
 });
 </script>
 
@@ -309,11 +425,38 @@ onMounted(() => {
 }
 
 .form-group label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 500;
   margin-bottom: 8px;
   color: #444;
   font-size: 14px;
+}
+
+.btn-clear {
+  border: none;
+  background: transparent;
+  color: #d9534f;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.btn-clear:hover {
+  background: #fdecea;
+}
+
+.saved-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e7d32;
+  background: #e8f5e9;
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
 .form-group input,

@@ -33,28 +33,48 @@ const SelfModifyTool = {
     const { conversation_id } = context;
 
     try {
-      // Check if dev mode is enabled
-      if (conversation_id) {
-        const isDevMode = await devMode.isDevMode(conversation_id);
-        if (!isDevMode) {
-          return {
-            success: false,
-            error: "dev_mode_required",
-            message: `⚠️ **Developer Mode Required**
+      // FAIL-CLOSED GATE: self-modification requires (1) a known conversation,
+      // (2) that conversation in Dev Mode, and (3) the conversation owned by the
+      // admin. Previously a missing conversation_id skipped the check entirely.
+      const { isAdminUser, auditLog } = require('@src/utils/adminGuard');
+      if (!conversation_id) {
+        auditLog('self_modify_denied', { reason: 'no_conversation_context', action, file_path });
+        return {
+          success: false,
+          error: "dev_mode_required",
+          message: "⚠️ Self-modification requires an active Dev Mode conversation — no conversation context was provided."
+        };
+      }
+      const isDevMode = await devMode.isDevMode(conversation_id);
+      if (!isDevMode) {
+        return {
+          success: false,
+          error: "dev_mode_required",
+          message: `⚠️ **Developer Mode Required**
 
 The \`self_modify\` tool can only be used in Developer Mode.
 
 This prevents accidental code modifications during normal conversations.
 
-**To enable Developer Mode:**
-- Type \`/dev\` or
-- Say "enter developer mode"
+**To enable Developer Mode (admin only):**
+- Type \`/dev\` or toggle it in Settings
 
 Once in dev mode, I can modify my own code safely.`
-          };
-        }
+        };
+      }
+      // Admin-ownership check (defense in depth — enable is already admin-gated)
+      const Conversation = require('@src/models/Conversation');
+      const convo = await Conversation.findOne({ where: { conversation_id } });
+      if (!convo || !isAdminUser(convo.user_id)) {
+        auditLog('self_modify_denied', { reason: 'non_admin_owner', user_id: convo && convo.user_id, action, file_path });
+        return {
+          success: false,
+          error: "admin_required",
+          message: "🔒 Self-modification is restricted to the admin account."
+        };
       }
 
+      auditLog('self_modify_attempt', { action, file_path, reason: (reason || '').slice(0, 200), conversation_id });
       console.log(`🤖 [Grace] Self-modification requested: ${action}`);
 
       switch (action) {

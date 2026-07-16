@@ -14,14 +14,19 @@ const resolveWorkspaceDir = async (user_id) => {
 const restrictFilepath = async (filepath, user_id) => {
   const workspace_dir = await resolveWorkspaceDir(user_id);
 
-  const resolvedPath = path.resolve(filepath);
+  let fp = String(filepath);
+  const resolvedPath = path.resolve(fp);
   const resolvedWorkspace = path.resolve(workspace_dir);
   if (resolvedPath.startsWith(resolvedWorkspace)) {
-    filepath = resolvedPath;
-  } else {
-    filepath = path.resolve(workspace_dir, filepath);
+    return resolvedPath;
   }
-  return filepath;
+  // workspace_dir now already includes user_<id> (getDirpath root fix) —
+  // strip a duplicate leading user segment from relative paths to avoid
+  // /workspace/user_1/user_1/... doubling.
+  if (user_id) {
+    fp = fp.replace(new RegExp(`^/?user_${user_id}/`), '');
+  }
+  return path.resolve(resolvedWorkspace, fp);
 }
 
 module.exports = {

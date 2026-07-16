@@ -1,6 +1,11 @@
 const { exec, spawn } = require('child_process');
 const { restrictFilepath } = require('./runtime.util');
 
+// SAFETY: Kill runaway commands (infinite loops, hung processes) instead of
+// wedging the action pipeline forever. Configurable via env.
+const EXEC_TIMEOUT_MS = parseInt(process.env.SANDBOX_EXEC_TIMEOUT_MS || '120000', 10);
+const MAX_OUTPUT_BYTES = 2 * 1024 * 1024; // cap stdout/stderr at 2MB
+
 const runCommand = (command, args, cwd) => {
   return new Promise((resolve, reject) => {
     if (Array.isArray(args)) {
@@ -23,8 +28,23 @@ const runCommand = (command, args, cwd) => {
         stderr: ''
       });
     } else {
-      exec(fullCommand, { cwd, shell: '/bin/bash' }, (error, stdout, stderr) => {
+      exec(fullCommand, {
+        cwd,
+        shell: '/bin/bash',
+        timeout: EXEC_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+        maxBuffer: MAX_OUTPUT_BYTES
+      }, (error, stdout, stderr) => {
         if (error) {
+          // Distinguish timeout kills so the agent (and user) get a clear message
+          if (error.killed || error.signal === 'SIGKILL') {
+            reject({
+              error: `Command timed out after ${Math.round(EXEC_TIMEOUT_MS / 1000)}s and was killed. ` +
+                     `Long-running servers should use nohup; check for infinite loops otherwise.`,
+              stderr: (stderr || '').slice(-4000)
+            });
+            return;
+          }
           reject({ error: error.message, stderr });
           return;
         }
@@ -52,10 +72,12 @@ const terminal_run = async (action, uuid) => {
     };
   } catch (e) {
     console.error('Error executing command:', e);
-    return { 
+    // NOTE: runCommand rejects with { error, stderr } — read e.error first, or the
+    // agent receives an empty failure reason and can't react to timeouts/crashes.
+    return {
       uuid,
-      status: 'failure', 
-      error: e.stderr || e.message, 
+      status: 'failure',
+      error: e.error || e.stderr || e.message || 'Command failed with no output',
       content: '',
       stderr: e.stderr || '',
       meta: {

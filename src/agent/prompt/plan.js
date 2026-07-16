@@ -34,7 +34,15 @@ const resolvePlanningPrompt = async (goal, options) => {
   // 尝试不使用experience
   // const experiencePrompt = await resolveExperiencePrompt(goal, conversation_id)
   const experiencePrompt = ''
-  const best_practice_knowledge = await resolvePlanningKnowledge({ agent_id });
+  // LEARN AS SHE GOES: fold relevant past lessons into best_practice_knowledge so
+  // learning shapes the PLAN, not just execution. Cheap (DB + keyword scoring).
+  let best_practice_knowledge = await resolvePlanningKnowledge({ agent_id });
+  try {
+    const { retrieveLessons } = require('@src/agent/learning/lessonMemory');
+    const lessons = await retrieveLessons(goal, null);
+    if (lessons) best_practice_knowledge = `${best_practice_knowledge || ''}${lessons}`;
+  } catch (e) { /* learning optional */ }
+
   const prompt = await resolveTemplate(promptTemplate, {
     goal,
     files: uploadFileDescription,

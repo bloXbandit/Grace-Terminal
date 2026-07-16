@@ -1,7 +1,20 @@
 const router = require('koa-router')();
 const DevMode = require('@src/agent/modes/DevMode');
+const { isAdminUser, auditLog } = require('@src/utils/adminGuard');
 
 const devMode = new DevMode();
+
+/** ADMIN-ONLY: Dev Mode grants Grace self-modification — owner access only. */
+const requireAdmin = (ctx) => {
+  const uid = ctx.state && ctx.state.user && ctx.state.user.id;
+  if (!isAdminUser(uid)) {
+    auditLog('dev_mode_denied', { user_id: uid, path: ctx.path });
+    ctx.status = 403;
+    ctx.body = { success: false, message: 'Developer Mode is restricted to the admin account.' };
+    return false;
+  }
+  return true;
+};
 
 /**
  * GET /status
@@ -41,8 +54,10 @@ router.get('/status', async (ctx) => {
  */
 router.post('/enable', async (ctx) => {
   try {
+    if (!requireAdmin(ctx)) return;
     const { conversation_id } = ctx.request.body;
-    
+    auditLog('dev_mode_enable', { user_id: ctx.state.user.id, conversation_id });
+
     if (!conversation_id) {
       ctx.body = {
         success: false,
@@ -73,8 +88,10 @@ router.post('/enable', async (ctx) => {
  */
 router.post('/disable', async (ctx) => {
   try {
+    if (!requireAdmin(ctx)) return;
     const { conversation_id } = ctx.request.body;
-    
+    auditLog('dev_mode_disable', { user_id: ctx.state.user.id, conversation_id });
+
     if (!conversation_id) {
       ctx.body = {
         success: false,

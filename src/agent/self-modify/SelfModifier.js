@@ -16,7 +16,10 @@ class SelfModifier {
     this.allowedPaths = options.allowedPaths || [
       '/app/src/agent',
       '/app/src/utils',
-      '/app/src/tools'
+      '/app/src/tools',
+      '/app/src/template',    // prompts/templates — prime self-upgrade surface
+      '/app/src/runtime',     // action execution
+      '/app/src/completion'   // LLM adapters
     ];
     this.restrictedPaths = [
       '/app/src/models',
@@ -99,9 +102,26 @@ class SelfModifier {
   async validateCode(code, fileType) {
     try {
       if (fileType === '.js') {
-        // Try to parse as JavaScript
-        new Function(code);
-        return { valid: true };
+        // Real module-level syntax check via node --check on a temp file
+        // (new Function() misses top-level module syntax problems)
+        try {
+          const os = require('os');
+          const { execFileSync } = require('child_process');
+          const tmp = path.join(os.tmpdir(), `selfmod_check_${Date.now()}.js`);
+          require('fs').writeFileSync(tmp, code);
+          try {
+            execFileSync('node', ['--check', tmp], { stdio: 'pipe' });
+            return { valid: true };
+          } catch (checkErr) {
+            return { valid: false, error: String(checkErr.stderr || checkErr.message).slice(0, 400) };
+          } finally {
+            try { require('fs').unlinkSync(tmp); } catch {}
+          }
+        } catch (spawnErr) {
+          // node binary unavailable? fall back to parser check
+          new Function(code);
+          return { valid: true };
+        }
       }
       
       if (fileType === '.json') {
@@ -160,6 +180,16 @@ class SelfModifier {
       // Apply modification
       await fs.writeFile(filePath, newContent, 'utf8');
       console.log(`✅ [SelfModify] File modified successfully`);
+
+      // TEMPLATE CACHE INVALIDATION: templates are served from Caches/template —
+      // without this, a self-edited prompt silently never takes effect.
+      if (filePath.includes('/src/template/')) {
+        try {
+          const cachedCopy = path.join('/app/Caches/template', path.basename(filePath));
+          await fs.unlink(cachedCopy).catch(() => {});
+          console.log(`🧹 [SelfModify] Invalidated template cache: ${path.basename(filePath)}`);
+        } catch { /* best-effort */ }
+      }
 
       // Log modification
       await this.logModification({

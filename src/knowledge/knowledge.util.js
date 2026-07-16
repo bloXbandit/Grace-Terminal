@@ -38,6 +38,13 @@ const resolveUsedKnowledge = async (agent_id) => {
 }
 
 const resolveUsedKnowledgeForCategory = async (agent_id, categories) => {
+  // CRITICAL: conversations without a custom agent have agent_id undefined.
+  // Sequelize throws on `where: { agent_id: undefined }`, which crashed PLANNING
+  // for every non-agent task (silently — plan() swallowed it → empty plan →
+  // hallucinated "success" summaries with zero files created).
+  if (agent_id === undefined || agent_id === null) {
+    return [];
+  }
   let konwlages = await Knowledge.findAll({
     where: {
       agent_id,

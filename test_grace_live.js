@@ -31,7 +31,21 @@ const log = {
   error: (msg) => console.log(`${colors.red}✗${colors.reset} ${msg}`),
   warn: (msg) => console.log(`${colors.yellow}⚠${colors.reset} ${msg}`),
   section: (msg) => console.log(`\n${colors.cyan}${colors.bright}━━━ ${msg} ━━━${colors.reset}\n`),
-  data: (label, data) => console.log(`${colors.magenta}${label}:${colors.reset}`, JSON.stringify(data, null, 2))
+  data: (label, data) => {
+    // Circular-safe: axios stream errors carry Socket objects that crash JSON.stringify
+    const seen = new WeakSet();
+    const safe = JSON.stringify(data, (k, v) => {
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v)) return '[circular]';
+        seen.add(v);
+        if (v.constructor && ['Socket', 'ClientRequest', 'IncomingMessage', 'Agent'].includes(v.constructor.name)) {
+          return `[${v.constructor.name}]`;
+        }
+      }
+      return v;
+    }, 2);
+    console.log(`${colors.magenta}${label}:${colors.reset}`, safe);
+  }
 };
 
 // Test cases - organized by mode
@@ -381,6 +395,7 @@ const TEST_CASES = {
       name: 'Multi-Agent Challenge - Full Stack Dashboard',
       goal: 'Create a complete dashboard application with: 1) A Python Flask backend API that generates random sales data (product name, quantity, price, date) and serves it at /api/sales endpoint. 2) An HTML/CSS/JavaScript frontend with a beautiful modern UI showing the sales data in a table with totals and a simple bar chart visualization. 3) Make it fully functional - the frontend should fetch from the backend and display real data. Use inline CSS and JavaScript, no external libraries except Flask.',
       mode: 'task',
+      timeoutMs: 360000, // complex multi-file build needs more than the default 60s
       expectedActions: ['plan', 'write_code', 'finish_summery'],
       breakPoints: ['intent_detection', 'specialist_routing', 'planning', 'execution', 'summary'],
       verifyExecution: {
@@ -890,7 +905,8 @@ class GraceTester {
         {
           headers: headers,
           responseType: 'stream',
-          timeout: 60000 // 60 second timeout
+          // Per-test timeout: complex multi-file builds legitimately exceed 60s
+          timeout: testCase.timeoutMs || 60000
         }
       );
 
@@ -1260,8 +1276,11 @@ class GraceTester {
       if (config.type === 'file') {
         // Check if file was created in Docker container
         // NOTE: In grace-app container, workspace is mounted at /app/workspace (see docker-compose).
-        // Older configs use /workspace, so translate for container checks.
-        const dockerLocation = (config.location === '/workspace') ? '/app/workspace' : config.location;
+        // Translate host paths (/workspace, or an absolute host repo path ending in /workspace)
+        // to the container mount — host paths don't exist inside the container.
+        const dockerLocation = (config.location === '/workspace' || /workspace\/?$/.test(config.location || ''))
+          ? '/app/workspace'
+          : config.location;
         const findCmd = `find ${dockerLocation} -type f -name "*" -mmin -2 2>/dev/null`;
         const { stdout } = await this.execDockerCommand(findCmd);
         const files = stdout.trim().split('\n').filter(f => f);

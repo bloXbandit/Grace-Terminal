@@ -46,6 +46,9 @@ const _fetchDefaultModel = async (type = 'assistant') => {
     if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
       api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
     }
+    if ((!api_key || api_key === '') && platform.dataValues.name === 'CrofAI') {
+      api_key = require('@src/agent/specialists/providerHealth').getCrofAIKey();
+    }
     const base_url = platform.dataValues.api_url
     let api_url = platform.dataValues.api_url;
     if (type === 'assistant') {
@@ -121,6 +124,9 @@ const getDefaultModel = async (conversation_id) => {
     if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
       api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
     }
+    if ((!api_key || api_key === '') && platform.dataValues.name === 'CrofAI') {
+      api_key = require('@src/agent/specialists/providerHealth').getCrofAIKey();
+    }
     const base_url = platform.dataValues.api_url
     let api_url = platform.dataValues.api_url;
     api_url = platform.dataValues.name === 'Gemini' ? base_url : platform.dataValues.api_url + '/chat/completions';
@@ -163,6 +169,9 @@ const getCustomModel = async (model_id) => {
   let api_key = platform.dataValues.api_key;
   if ((!api_key || api_key === '') && platform.dataValues.name === 'Gemini') {
     api_key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+  }
+  if ((!api_key || api_key === '') && platform.dataValues.name === 'CrofAI') {
+    api_key = require('@src/agent/specialists/providerHealth').getCrofAIKey();
   }
   const base_url = platform.dataValues.api_url
   let api_url = platform.dataValues.api_url;

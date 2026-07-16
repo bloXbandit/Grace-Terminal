@@ -36,7 +36,7 @@ const extractProfileFromMessage = async (user_id, user_message, conversation_id)
 
 If no information to extract, return: []`;
 
-    const response = await call(prompt, conversation_id);
+    const response = await call(prompt, conversation_id, 'assistant', { skip_system_prompt: true, temperature: 0 });
     
     // Parse JSON response
     let extracted = [];

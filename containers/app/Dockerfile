@@ -15,7 +15,8 @@ RUN apt-get update && \
     libasound2-plugins libatomic1 \
     python3 python3-pip python3-venv \
     tesseract-ocr tesseract-ocr-eng \
-    poppler-utils && \
+    poppler-utils \
+    chromium fonts-liberation && \
     # Remove packages with CVEs and no updates yet, if present
     (apt-get remove -y libaom3 || true) && \
     (apt-get remove -y libjxl0.7 || true) && \

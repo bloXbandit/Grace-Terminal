@@ -7,7 +7,8 @@ const path = require('path');
 
 /** @type {Object.<string, Tool>} */
 const tools = {};
-const ignored = new Set(['browser_use']);
+// p6xer_tool retired: user handles Primavera P6 in dedicated apps
+const ignored = new Set(['browser_use', 'p6xer_tool']);
 
 const files = fs.readdirSync(__dirname);
 const filterFn = file => {

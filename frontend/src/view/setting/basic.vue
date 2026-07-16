@@ -50,10 +50,30 @@ import http from '@/utils/http'
 const devModeEnabled = ref(false)
 const devModeLoading = ref(false)
 
+// Dev mode applies per-conversation — use the live chat store's current conversation
+import { useChatStore } from '@/store/modules/chat'
+const chatStore = useChatStore()
+
+// Resolve the conversation the toggle applies to: live store → localStorage →
+// most recent conversation from the backend (so the toggle ALWAYS has a target).
+const getTargetConversationId = async () => {
+  if (chatStore && chatStore.conversationId) return chatStore.conversationId
+  const stored = localStorage.getItem('current_conversation_id')
+  if (stored) return stored
+  try {
+    const res = await http.get('/api/conversation?mode_type=task')
+    const list = (res && (res.data || res.list || res)) || []
+    if (Array.isArray(list) && list.length > 0 && list[0].conversation_id) {
+      return list[0].conversation_id
+    }
+  } catch (e) { console.warn('dev-mode: could not fetch conversations', e) }
+  return null
+}
+
 // Load dev mode status
 const loadDevModeStatus = async () => {
   try {
-    const conversationId = localStorage.getItem('current_conversation_id')
+    const conversationId = await getTargetConversationId()
     if (!conversationId) return
     
     const response = await http.get(`/api/dev-mode/status?conversation_id=${conversationId}`)
@@ -69,7 +89,7 @@ const loadDevModeStatus = async () => {
 const toggleDevMode = async () => {
   devModeLoading.value = true
   try {
-    const conversationId = localStorage.getItem('current_conversation_id')
+    const conversationId = await getTargetConversationId()
     
     if (!conversationId) {
       message.warning('Please start a conversation first')

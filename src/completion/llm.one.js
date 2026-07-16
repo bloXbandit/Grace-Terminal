@@ -68,7 +68,13 @@ const createLLMInstance = async (config, onTokenStream, options = {}) => {
 
   if (channel === CHANNEL.PROVIDER) {
     const LLM = serviceHash[service.toLowerCase()];
-    console.log('options:', options);
+    // SECURITY: never log full options — model_info contains the raw api_key
+    console.log('options:', {
+      ...options,
+      model_info: options.model_info
+        ? { ...options.model_info, api_key: options.model_info.api_key ? `${String(options.model_info.api_key).slice(0, 8)}…[redacted]` : '' }
+        : undefined
+    });
     const llm_config = await resolvePlatformServiceConfig(options.model_info)
     if (!LLM) {
       return resolveLLMStandard(llm_config, model, onTokenStream);

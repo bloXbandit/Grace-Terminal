@@ -48,8 +48,20 @@ router.post("/profile", async (ctx) => {
       return;
     }
     
-    await upsertProfile(user_id, key, value, confidence, source);
-    
+    const result = await upsertProfile(user_id, key, value, confidence, source);
+
+    // HONESTY FIX: upsertProfile swallows errors and returns null — this route used
+    // to report success anyway, so the UI showed "saved" while the DB stored nothing
+    // (masked the broken-schema bug for weeks).
+    if (!result) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: 'Profile save failed — value was NOT stored. Check server logs.'
+      };
+      return;
+    }
+
     ctx.body = {
       success: true,
       message: 'Profile updated successfully'

@@ -82,20 +82,51 @@ class ModeCommandHandler {
 
     console.log(`🎮 [ModeCommand] Handling: ${command.command} for conversation: ${conversationId}`);
 
-    switch (command.command) {
-      case 'enable_dev':
-        return await devMode.enable(conversationId);
+    // ADMIN GATE: dev-mode activation is owner-only. Resolve the conversation's
+    // owner and verify against ADMIN_USER_ID before any enable path.
+    const requireAdminForDev = async () => {
+      try {
+        const Conversation = require('@src/models/Conversation');
+        const { isAdminUser, auditLog } = require('@src/utils/adminGuard');
+        const convo = await Conversation.findOne({ where: { conversation_id: conversationId } });
+        const owner = convo && convo.user_id;
+        if (!isAdminUser(owner)) {
+          auditLog('dev_mode_denied', { via: 'chat_command', user_id: owner, conversation_id: conversationId });
+          return {
+            success: false,
+            message: '🔒 Developer Mode is restricted to the admin account.',
+            mode: 'normal'
+          };
+        }
+        auditLog('dev_mode_enable', { via: 'chat_command', user_id: owner, conversation_id: conversationId });
+        return null; // admin OK
+      } catch (e) {
+        console.error('[ModeCommand] admin check failed:', e.message);
+        return { success: false, message: '🔒 Could not verify admin access — Dev Mode not enabled.', mode: 'normal' };
+      }
+    };
 
-      case 'force_dev':
-        // FORCE activation - bypasses all checks and GUARANTEES activation
+    switch (command.command) {
+      case 'enable_dev': {
+        const denied = await requireAdminForDev();
+        if (denied) return denied;
+        return await devMode.enable(conversationId);
+      }
+
+      case 'force_dev': {
+        // Force activation — still ADMIN-ONLY, and safety rails (path allowlist,
+        // backups, audit) always apply; "force" only skips the confirmation flow.
+        const denied = await requireAdminForDev();
+        if (denied) return denied;
         console.log(`🚨 [ModeCommand] FORCE DEV MODE ACTIVATED for conversation: ${conversationId}`);
         const forceResult = await devMode.forceEnable(conversationId);
         return {
           success: true,
-          message: "🚨 **FORCE DEV MODE ACTIVATED** 🚨\n\n✅ Self-modification capabilities are now **FULLY ENABLED**\n✅ All safety restrictions **BYPASSED**\n✅ Grace can now modify her own code, prompts, and capabilities\n\n**Available commands:**\n- Modify code: \"Grace, fix your routing logic\"\n- Update prompts: \"Grace, improve your creativity\"\n- Add capabilities: \"Grace, add a new tool for X\"\n\n**Status:** 🔥 **MAXIMUM POWER MODE** 🔥",
+          message: "🔧 **Developer Mode Activated (forced)**\n\n✅ Self-modification enabled for this conversation\n🛡️ Safety rails remain active: path allowlist, automatic backups, syntax validation, audit log\n\n**Examples:**\n- \"Analyze your routing logic and improve it\"\n- \"Fix the bug in your summary prompt\"\n- \"Add a new tool for X\"\n\nDeactivate anytime with /normal or the Settings toggle.",
           mode: 'dev',
           forced: true
         };
+      }
 
       case 'disable_dev':
         return await devMode.disable(conversationId);

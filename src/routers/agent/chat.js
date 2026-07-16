@@ -121,8 +121,8 @@ router.post("/chat", async (ctx, next) => {
     user_id
   });
   
-  // Check if this is a specialist-worthy task
-  const taskType = coordinator.detectTaskType(question);
+  // Check if this is a specialist-worthy task (LLM classifier, regex fallback)
+  const taskType = await coordinator.classifyTaskType(question);
   
   // CRITICAL: Chat mode cannot execute code, so exclude tasks that require execution
   const executionRequiredTasks = [

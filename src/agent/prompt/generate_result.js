@@ -1,5 +1,5 @@
 
-const resolveResultPrompt = async (goal, tasks, generatedFiles = [], staticUrl = null, userId = null) => {
+const resolveResultPrompt = async (goal, tasks, generatedFiles = [], staticUrl = null, userId = null, verification = null) => {
 
   let newTasks = tasks.map((task) => {
     return {
@@ -76,7 +76,16 @@ Phase 2: Delivery was also completed. The document was saved to the specified lo
 
 Goal: ${goal}
 Tasks: ${JSON.stringify(newTasks)}${filesInfo}
-
+${(() => {
+  // ARTIFACT GROUNDING: the verified file list is ground truth; task chatter is not.
+  if (!verification) return '';
+  try {
+    const { buildGroundingBlock } = require('@src/agent/artifactVerification');
+    return buildGroundingBlock(verification);
+  } catch (e) {
+    return '';
+  }
+})()}
 Provide a BRIEF summary in English only.`
 
   return prompt;

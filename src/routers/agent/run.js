@@ -389,6 +389,13 @@ router.post("/run", async (ctx, next) => {
     console.error('Profile context error (non-critical):', err);
   }
 
+  // CHANNEL AWARENESS: tell Grace which surface this message arrived on (same user,
+  // different door). Lets her tailor tone/delivery and answer "are you on telegram?".
+  const requestSource = (body && body.source) || 'web';
+  if (requestSource === 'telegram') {
+    profileContext += `\n\n**CHANNEL:** This message arrived via Telegram — it's the SAME user (the owner), just reaching you from their phone. You ARE reachable on Telegram. Keep replies a bit more concise for mobile; any files you generate are delivered to their Telegram chat automatically. If asked, you can confirm you're talking to them on Telegram right now.`;
+  }
+
   if (isVoiceTask) {
     console.log('[VoicePerf] profile_context_ms=', Date.now() - tReqStart, 'len=', (profileContext || '').length);
   }
@@ -547,8 +554,12 @@ router.post("/run", async (ctx, next) => {
         const recallContext = `The user asked: "${question}"\n\nRelevant saved memories:\n${memoryLines}\n\nProvide a brief, direct answer to their question using these memories. Do not list or enumerate the memories - just answer the question naturally and concisely.`;
         
         // Use chat completion to generate natural response
-        const response = await chat_completion(recallContext, { temperature: 0.7, messages: [] }, conversation_id, onTokenStream);
-        
+        let response = await chat_completion(recallContext, { temperature: 0.7, messages: [] }, conversation_id, onTokenStream);
+        // Strip reasoning-model <think> blocks before persisting
+        if (typeof response === 'string') {
+          response = response.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s+/, '');
+        }
+
         // Save assistant message
         const assistant_msg = Message.format({
           role: 'assistant',
@@ -687,20 +698,25 @@ router.post("/run", async (ctx, next) => {
   const modeNotification = `__lemon_mode__${JSON.stringify({ mode: intent })}\n\n`;
   onTokenStream(modeNotification);
 
-  // PERF: Only run synchronous profile extraction for agent-mode tasks.
-  // Casual chat should not pay the 0-2s latency cost.
-  if (!isVoiceTask && intent === 'agent') {
+  // TIMER: explicit generation-timer signal for agent tasks.
+  // Emitted here (post-intent, pre-execution) so it fires for EVERY agent route
+  // regardless of which specialist/model handles it — the frontend previously
+  // keyword-sniffed message content, which missed Gemini/Claude routes.
+  if (intent === 'agent' && !isVoiceTask) {
     try {
-      await Promise.race([
-        extractProfileFromMessage(ctx.state.user.id, question, conversation_id),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Profile extraction timeout')), 2000)
-        )
-      ]);
-      console.log('[Task] Profile extraction completed successfully');
-    } catch (err) {
-      console.error('[Task] Profile extraction failed (continuing anyway):', err.message);
+      onTokenStream(`__lemon_timer__${JSON.stringify({ action: 'start', duration: 120000, label: 'Generating...' })}\n\n`);
+    } catch (e) {
+      // best-effort
     }
+  }
+
+  // PERF: Profile extraction is fire-and-forget. Its output is NOT consumed by the
+  // current request (profileContext was already fetched via getProfileContext above) —
+  // it only enriches FUTURE requests. Awaiting it here cost up to 2s per agent task.
+  if (!isVoiceTask && intent === 'agent') {
+    extractProfileFromMessage(ctx.state.user.id, question, conversation_id)
+      .then(() => console.log('[Task] Profile extraction completed (background)'))
+      .catch((err) => console.error('[Task] Profile extraction failed (background):', err.message));
   }
 
   // 提取公共参数
@@ -723,7 +739,8 @@ router.post("/run", async (ctx, next) => {
     console.log('[Agent Mode] Using agent mode for task execution');
 
     // Agent mode: Process feedback asynchronously (do NOT block task execution)
-    if (ENABLE_KNOWLEDGE === "ON") {
+    // Skip when there is no custom agent — Sequelize throws on undefined agent_id
+    if (ENABLE_KNOWLEDGE === "ON" && agent_id !== undefined && agent_id !== null) {
       setTimeout(() => {
         Promise.resolve()
           .then(async () => {
@@ -1071,6 +1088,11 @@ async function processNextQueuedTask(conversation_id) {
 // 检查任务是否正常完成并更新 agent recommend 字段
 async function updateAgentRecommend(conversation_id, agent_id) {
   try {
+    // Conversations without a custom agent have no agent_id — Sequelize throws on
+    // `where: { id: undefined }`, spamming error stacks on every non-agent run.
+    if (agent_id === undefined || agent_id === null) {
+      return;
+    }
     const agent = await Agent.findOne({ where: { id: agent_id } });
     if (!agent) {
       console.log(`Agent ${agent_id} not found`);
@@ -1586,6 +1608,33 @@ Ask only one question at a time if you need clarification
     }
   };
 
+  // WEB SEARCH AUGMENTATION: chat mode can't run tool loops, so when the question
+  // needs current information (classifier verdict or explicit ask), search first
+  // and ground the reply in the results. Fails soft — no search, normal answer.
+  let searchAugmentedQuestion = question;
+  if (!isVoiceTask) {
+    try {
+      const { maybeAugmentWithSearch } = require('@src/agent/searchAugment');
+      const { getCachedClassification } = require('@src/agent/intent-classifier');
+      const classification = getCachedClassification(conversation_id, question);
+      const searchContext = await maybeAugmentWithSearch(question, {
+        conversation_id,
+        classifierSaysSearch: classification ? classification.needs_web_search === true : null,
+        onStatus: (s) => {
+          try {
+            onTokenStream(JSON.stringify({ role: 'assistant', status: 'running', content: s, meta: { action_type: 'progress' } }));
+          } catch { /* best-effort */ }
+        }
+      });
+      if (searchContext) {
+        searchAugmentedQuestion = `${searchContext}User question: ${question}`;
+        console.log('[Chat] Reply grounded in web search results');
+      }
+    } catch (e) {
+      console.warn('[Chat] search augmentation skipped:', e.message);
+    }
+  }
+
   // 调用大模型
   const options = {
     temperature: 0.7,
@@ -1598,7 +1647,11 @@ Ask only one question at a time if you need clarification
     options.max_tokens = 150
   }
 
-  chat_completion(question, options, conversation_id, onTokenStream).then(async (content) => {
+  chat_completion(searchAugmentedQuestion, options, conversation_id, onTokenStream).then(async (content) => {
+    // Strip reasoning-model <think> blocks so they don't persist and reappear on reload
+    if (typeof content === 'string') {
+      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s+/, '');
+    }
     const assistant_msg = Message.format({
       role: 'assistant',
       status: 'success',

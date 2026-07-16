@@ -99,4 +99,15 @@ app.on('error', (err, ctx) => {
   console.error('server error', err, ctx)
 });
 
+// Telegram bridge (no-op unless TELEGRAM_BOT_TOKEN is set in .env)
+// Delayed so the HTTP server is accepting requests before the bridge forwards to it.
+setTimeout(() => {
+  try {
+    const { startTelegramBridge } = require('./services/telegramBridge');
+    startTelegramBridge();
+  } catch (e) {
+    console.error('[Telegram] bridge failed to start:', e.message);
+  }
+}, 5000);
+
 module.exports = app

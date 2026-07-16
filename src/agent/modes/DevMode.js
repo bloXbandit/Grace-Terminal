@@ -141,7 +141,7 @@ What would you like me to improve?`
         success: true,
         mode: this.MODE_DEV,
         forced: true,
-        message: "🚨 FORCE DEV MODE ACTIVATED - All restrictions bypassed!"
+        message: "🔧 Developer Mode activated. Safety rails remain: path allowlist, backups, syntax validation, audit log."
       };
     } catch (error) {
       console.error('❌ [DevMode] Force enable failed:', error);

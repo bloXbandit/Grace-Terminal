@@ -64,8 +64,8 @@ const chatCompletion = async (options = {}) => {
     },
   };
 
-  console.log('config', JSON.stringify(config, null, 2))
-  // console.log('OPENAI', config.headers.Authorization)
+  // SECURITY: redact Authorization header before logging
+  console.log('config', JSON.stringify({ ...config, headers: { ...config.headers, Authorization: 'Bearer [redacted]' } }, null, 2))
   if (streaming) {
     config.responseType = "stream"
   }

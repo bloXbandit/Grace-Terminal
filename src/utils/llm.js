@@ -27,14 +27,6 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
   const MAX_RETRIES = 3;
   const RETRY_DELAYS = [2000, 5000, 10000]; // Exponential backoff: 2s, 5s, 10s
   
-  // SECURITY: Detect P6/XER requests in direct LLM calls (more specific pattern)
-  // Only trigger for actual P6/XER project management requests, not training courses
-  if (typeof prompt === 'string' && 
-      /\b(xer|primavera|p6\s+(project|schedule|planning|enterprise|construction)|dcma)\b/i.test(prompt)) {
-    console.warn('[LLM Security] P6/XER request detected - should use p6xer_tool');
-    // Log for audit but don't block (MASTER_SYSTEM_PROMPT will still enforce)
-  }
-  
   let model_info = await getDefaultModel(conversation_id)
   
   // CRITICAL: Fallback to hardcoded model if none configured
@@ -118,9 +110,17 @@ const call = async (prompt, conversation_id, model_type = DEFAULT_MODEL_TYPE, op
 
   // Response rewriter removed - fixing at source (system prompt level)
 
-  const inputPrompt = messages.map(item => item.content).join('\n') + '\n' + prompt;
-  const input_tokens = calcToken(inputPrompt)
-  const output_tokens = calcToken(content)
+  // Prefer provider-reported usage (exact) over tiktoken estimates.
+  // llm.lastUsage is captured from the stream's usage frame in llm.base.js.
+  let input_tokens, output_tokens;
+  if (llm.lastUsage && typeof llm.lastUsage.prompt_tokens === 'number') {
+    input_tokens = llm.lastUsage.prompt_tokens;
+    output_tokens = llm.lastUsage.completion_tokens || 0;
+  } else {
+    const inputPrompt = messages.map(item => item.content).join('\n') + '\n' + prompt;
+    input_tokens = calcToken(inputPrompt);
+    output_tokens = calcToken(content);
+  }
   if (conversation_id) {
     const conversation = await Conversation.findOne({ where: { conversation_id: conversation_id } })
     if (conversation) {

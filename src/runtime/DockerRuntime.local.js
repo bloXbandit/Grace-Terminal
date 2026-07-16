@@ -243,7 +243,15 @@ class DockerRuntime {
     const tool = tools[type];
     const suppressMetaRevisionChatter = context && context.taskType === 'metadata_revision';
     if (tool && tool.getActionDescription && !suppressMetaRevisionChatter) {
-      const description = await tool.getActionDescription(params);
+      let description = await tool.getActionDescription(params);
+      // UI POLISH: hide raw commands/paths from running messages — file delivery
+      // comes from meta/filepath, the text is display-only
+      if (type === 'terminal_run') {
+        description = '⚡ Running...';
+      } else if (type === 'write_code') {
+        const base = params && params.path ? require('path').basename(params.path) : '';
+        description = base ? `📝 Writing ${base}...` : '📝 Writing file...';
+      }
       const value = {
         uuid: uuid,
         content: description,
@@ -359,7 +367,17 @@ class DockerRuntime {
         break;
       case 'read_file':
         if (action.params.path) {
-          action.params.path = path.join(dir_name, action.params.path)
+          // BUG FIX: read_file dropped the user_<id> segment that write_code adds,
+          // so reading a file the agent just wrote failed with ENOENT — breaking
+          // ALL compound/iterative work ("add X to the file we made"). Also normalize
+          // the path the LLM supplies (it often guesses "/workspace/x" or "workspace/x").
+          let rf = String(action.params.path).trim();
+          rf = rf.replace(/^\/+/, '');                              // strip leading slashes
+          rf = rf.replace(/^workspace\//i, '');                     // strip stray "workspace/"
+          rf = rf.replace(new RegExp(`^user_${this.user_id}/`), '');// avoid double user seg
+          rf = rf.replace(new RegExp(`^${dir_name}/`), '');         // avoid double conv seg
+          rf = rf.replace(/^Conversation_[0-9a-f]{6}\//i, '');      // stray other-conv prefix
+          action.params.path = path.join(`user_${this.user_id}`, dir_name, rf);
         }
         result = await this.read_file(action, uuid);
         break;
@@ -434,7 +452,23 @@ class DockerRuntime {
       meta_file_path = result.meta.filepath || ''
       meta_content = result.meta.content || ''
     }
-    const msg = Message.format({ status: result.status, memorized: result.memorized || '', content: result.content || '', action_type: type, task_id: task_id, uuid: uuid || '', url: meta_url, json: meta_json, filepath: meta_file_path, meta_content: meta_content });
+    // UI POLISH: friendly result text — technical paths/commands stay in logs and
+    // memory (result.content untouched); only the displayed message is simplified.
+    let displayContent = result.content || '';
+    if (result.status === 'success') {
+      if (type === 'write_code' && /^File .+ written successfully\.?\s*$/.test(displayContent.trim())) {
+        displayContent = '✅ File completed successfully';
+      } else if (type === 'terminal_run') {
+        // Keep the meaningful confirmation (e.g. "✅ Created X.docx"), drop command echo
+        const createdMatch = displayContent.match(/✅ Created:?\s*[^\n]+/);
+        if (createdMatch) {
+          displayContent = createdMatch[0];
+        } else if (/^python3? |^node |^bash |^sh /.test(displayContent.trim())) {
+          displayContent = '✅ Completed successfully';
+        }
+      }
+    }
+    const msg = Message.format({ status: result.status, memorized: result.memorized || '', content: displayContent, action_type: type, task_id: task_id, uuid: uuid || '', url: meta_url, json: meta_json, filepath: meta_file_path, meta_content: meta_content });
     await this.callback(msg, context);
     await Message.saveToDB(msg, context.conversation_id);
     return result;

@@ -46,6 +46,8 @@ class AgenticAgent {
     this.context = context;
     this.onTokenStream = context.onTokenStream;
     this.is_stop = false;
+    // CANCELLATION: let inner loops (code-act think/act) poll for user stop
+    context.isStopped = () => this.is_stop;
     this.mcp_server_ids = context.mcp_server_ids || [];
     context.task_manager = this.taskManager;
     // 规划模式
@@ -164,7 +166,18 @@ class AgenticAgent {
 
   async _getConversationDirPath() {
     const dir_name = 'Conversation_' + this.context.conversation_id.slice(0, 6);
-    const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.context.user_id);
+    let WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.context.user_id);
+    // BUG GUARD: getDirpath drops the user_<id> segment when LEMON_AI_PATH is set
+    // (always true in the container), but files actually live under user_<id>/.
+    // This made artifact checks and file scans silently look in an empty directory.
+    const userSeg = `user_${this.context.user_id}`;
+    if (this.context.user_id && !WORKSPACE_DIR.includes(userSeg)) {
+      const fs = require('fs');
+      const withUser = path.join(WORKSPACE_DIR, userSeg);
+      if (fs.existsSync(withUser)) {
+        WORKSPACE_DIR = withUser;
+      }
+    }
     return path.join(WORKSPACE_DIR, dir_name);
   }
 
@@ -396,9 +409,17 @@ class AgenticAgent {
   // 生成最终输出
   async _generateFinalOutput() {
     const tasks = this.taskManager.getTasks();
+    // HONESTY: [].every() === true, so an empty plan used to report 'success' and the
+    // summary LLM would claim work was done when nothing executed and no files exist.
+    const status = tasks.length === 0
+      ? 'failed'
+      : (tasks.every(t => t.status === 'completed') ? 'success' : 'partial_failure');
+    if (tasks.length === 0) {
+      console.error('[AgenticAgent] ⚠️ No tasks were planned/executed — reporting failure, not success');
+    }
     const finalResult = {
       goal: this.goal,
-      status: tasks.every(t => t.status === 'completed') ? 'success' : 'partial_failure',
+      status,
       tasks: tasks,
       logs: this.logs
     };
@@ -524,11 +545,127 @@ class AgenticAgent {
       }
     }));
 
+    // ARTIFACT-GROUNDED COMPLETION: verify what actually exists on disk against
+    // what tasks claimed, what the goal implied, AND what the intent classifier
+    // expected. Feeds an honest status and a grounding block in the summary prompt.
+    const { verifyArtifacts } = require('./artifactVerification');
+    let extraExpected = [];
+    try {
+      const { getCachedClassification } = require('@src/agent/intent-classifier');
+      const classification = getCachedClassification(this.context.conversation_id, this.goal);
+      if (classification && Array.isArray(classification.expected_artifacts)) {
+        extraExpected = classification.expected_artifacts;
+      }
+    } catch { /* classifier optional */ }
+
+    let verification = verifyArtifacts({ tasks, goal: this.goal, verifiedFiles: filesWithVersions, extraExpected });
+
+    // COMPLETION-DRIVEN REPAIR: up to 3 passes converting "honest failure" into
+    // actual delivery. Each pass targets whatever is STILL missing; stops early
+    // when satisfied, when a pass makes no progress, or on user stop.
+    let repairPass = 0;
+    while (!verification.satisfied && !hasPreGeneratedAction && !this.is_stop && tasks.length > 0 && repairPass < 3) {
+      repairPass++;
+      const missing = [...verification.missingClaims, ...verification.missingGoalArtifacts];
+      console.log(`[AgenticAgent] 🔧 Repair pass ${repairPass}/3 — missing:`, missing.join(', '));
+      try {
+        await this._publishMessage({
+          action_type: 'progress', status: 'running',
+          content: repairPass === 1 ? '🔧 Finishing up remaining deliverables...' : `🔧 Completing remaining files (pass ${repairPass})...`
+        });
+
+        // DETERMINISTIC repair: generate each missing file's content directly and
+        // write it — no open-ended think/act loop. Max 3 files per pass.
+        const missingConcrete = [...new Set(missing.map(m => {
+          const t = (m || '').trim().toLowerCase();
+          if (/^[\w\-]+\.(html|css|js|json|py|md|txt)$/.test(t)) return t;   // concrete filename
+          if (t.includes('html frontend') || t === 'file of type .html') return 'index.html';
+          if (t === 'file of type .css') return 'styles.css';
+          if (t === 'file of type .js') return 'script.js';
+          return null;
+        }).filter(Boolean))].slice(0, 3);
+
+        if (missingConcrete.length === 0) {
+          console.log('[AgenticAgent] Repair: nothing concretely actionable — stopping');
+          break;
+        }
+
+        const beforeCount = verification.verifiedNames.length;
+        const call = require('@src/utils/llm');
+        for (const filename of missingConcrete) {
+          if (this.is_stop) break;
+          const genPrompt = `Generate the COMPLETE contents of the file "${filename}" for this goal:\n${this.goal}\n\nFiles that already exist and must be integrated with: ${verification.verifiedNames.join(', ') || 'none'}${verification.verifiedNames.some(n => n.endsWith('.py')) ? ' (a Flask backend serving JSON — the frontend should fetch from its endpoints, e.g. /api/sales on http://localhost:5000)' : ''}.\n\nRules:\n- Respond with ONLY the raw file contents. No markdown fences, no explanations.\n- Make it complete, modern, and production-quality.\n- ${filename.endsWith('.html') ? 'If no separate .css/.js files are being created, inline styles and scripts in this HTML.' : 'Keep it self-contained.'}`;
+
+          let content = await call(genPrompt, this.context.conversation_id, 'assistant', {
+            temperature: 0.4, max_tokens: 8000, skip_system_prompt: true
+          });
+          if (typeof content !== 'string' || !content.trim()) continue;
+          // strip accidental fences
+          content = content.replace(/^```[\w]*\n/, '').replace(/\n```\s*$/, '');
+
+          const writeResult = await this.runtime.execute_action(
+            { type: 'write_code', params: { path: filename, content } },
+            this.context,
+            `repair_${repairPass}`
+          );
+          console.log(`[AgenticAgent] Repair wrote ${filename}:`, writeResult && writeResult.status);
+        }
+
+        // Fresh scan + re-verify after the pass
+        const freshList = await getAllFilesRecursively(dirPath);
+        const freshFiles = await getFilesMetadata(freshList, this.sessionStartTime);
+        const known = new Set(filesWithVersions.map(f => f.filepath));
+        for (const f of freshFiles) {
+          if (!known.has(f.filepath)) filesWithVersions.push(f);
+        }
+        verification = verifyArtifacts({ tasks, goal: this.goal, verifiedFiles: filesWithVersions, extraExpected });
+        if (verification.satisfied) {
+          console.log(`[AgenticAgent] ✅ Repair delivered all artifacts (pass ${repairPass})`);
+          break;
+        }
+        if (verification.verifiedNames.length <= beforeCount) {
+          console.warn('[AgenticAgent] Repair pass made no progress — stopping to avoid a loop');
+          break;
+        }
+      } catch (repairError) {
+        console.error('[AgenticAgent] Repair pass failed (non-fatal):', repairError.message);
+        break;
+      }
+    }
+
+    // CONDITIONAL SELF-HEAL GATE: only for web deliverables (html present), only
+    // in the full agentic flow. Opens the page in headless Chrome, reads the
+    // console, and fixes real JS code errors. Never blocks delivery on failure.
+    if (!hasPreGeneratedAction && !this.is_stop) {
+      try {
+        const htmlFiles = filesWithVersions.filter(f => (f.filename || '').toLowerCase().endsWith('.html'));
+        if (htmlFiles.length > 0) {
+          await this._webVerifyAndHeal(htmlFiles);
+        }
+      } catch (gateErr) {
+        console.error('[AgenticAgent] Web verify gate failed (non-fatal):', gateErr.message);
+      }
+    }
+
+    if (!verification.satisfied) {
+      console.warn('[AgenticAgent] ⚠️ Artifact verification FAILED — missing:',
+        [...verification.missingClaims, ...verification.missingGoalArtifacts].join(', ') || '(none)');
+      if (finalResult.status === 'success') {
+        finalResult.status = 'partial_failure';
+      }
+      finalResult.missingArtifacts = [...verification.missingClaims, ...verification.missingGoalArtifacts];
+    } else if (finalResult.status === 'partial_failure' && tasks.length > 0) {
+      // repair delivered everything — reflect that honestly too
+      finalResult.status = 'success';
+      finalResult.missingArtifacts = [];
+    }
+    finalResult.verifiedFiles = verification.verifiedNames;
+
     // Skip summary if code-act already sent finish_summery (ultra-fast-path or fast-path with preGeneratedAction)
     // This uses the same condition as versioning to maintain consistency
     if (!hasPreGeneratedAction) {
       // Only generate summary for full agentic flow (no pre-generated actions)
-      const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id);
+      const summaryContent = await summary(this.goal, this.context.conversation_id, tasks, filesWithVersions, this.context.staticUrl, this.context.user_id, verification);
       const uuid = uuidv4();
       await this._publishMessage({ uuid, action_type: 'finish_summery', status: 'success', content: summaryContent, json: filesWithVersions });
       finalResult.summary = summaryContent;
@@ -542,7 +679,27 @@ class AgenticAgent {
       this.conversationContext.invalidate();
       console.log('[AgenticAgent] Context invalidated after execution');
     }
-    
+
+    // LEARN AS SHE GOES: distill this task into a lesson — fire-and-forget so it
+    // NEVER delays the user's result. Also self-clean the workspace of temp files.
+    setImmediate(() => {
+      try {
+        const { distillAndStore } = require('@src/agent/learning/lessonMemory');
+        distillAndStore({
+          goal: this.goal,
+          taskType: this.context.taskType || (tasks.length ? 'agent_task' : 'general'),
+          status: finalResult.status,
+          tasks,
+          verifiedFiles: verification.verifiedNames,
+          conversation_id: this.context.conversation_id
+        }).catch(() => {});
+      } catch { /* learning is optional */ }
+      try {
+        const { cleanupWorkspace } = require('@src/agent/learning/janitor');
+        cleanupWorkspace(dirPath).catch(() => {});
+      } catch { /* cleanup is optional */ }
+    });
+
     return finalResult;
   }
 
@@ -863,6 +1020,11 @@ class AgenticAgent {
       return true;
     } catch (error) {
       global.logging(this.context, 'AgenticAgent.plan', 'error', error);
+      // CRITICAL: do NOT swallow planning failures — that produced empty plans and
+      // hallucinated success summaries. Propagate so run() marks the conversation
+      // failed and the user gets an honest error instead of a fake "all done!".
+      console.error('[AgenticAgent] Planning failed:', error.message);
+      throw error;
     }
   }
 
@@ -919,6 +1081,12 @@ class AgenticAgent {
     const loggerKey = 'AgenticAgent.run_loop';
     const manager = this.taskManager;
     while (true) {
+      // CANCELLATION: honor user stop between tasks — previously the loop kept
+      // executing every remaining pending task after the user hit stop.
+      if (this.is_stop) {
+        global.logging(this.context, loggerKey, '====== stopped by user, exiting task loop ======');
+        return;
+      }
       const task = await manager.resolvePendingTask();
       if (!task) {
         global.logging(this.context, loggerKey, '====== no task ======');
@@ -936,15 +1104,24 @@ class AgenticAgent {
       try {
         const result = await completeCodeAct(task, this.context);
         global.logging(this.context, loggerKey, result);
+        // CANCELLATION: task was stopped mid-execution — exit quietly without
+        // marking the conversation failed (user asked for this, it's not an error)
+        if (result.status === 'stopped' || this.is_stop) {
+          global.logging(this.context, loggerKey, '====== task stopped by user ======');
+          return;
+        }
         if (result.status === 'failure') {
           await this.handle_task_status(task, 'failed', {
             content: result.comments,
             memorized: result.memorized || '',
             comments: result.comments,
           });
-          await Conversation.update({ status: 'failed' }, { where: { conversation_id: this.context.conversation_id } });
-          await this.stop();
-          return;
+          // RESILIENCE: a single failed task no longer aborts the whole run.
+          // Continue to remaining tasks — _generateFinalOutput then runs artifact
+          // verification, the repair pass, and an honest grounded summary.
+          // (Previously this stopped everything, so verification/repair never ran.)
+          console.warn(`[AgenticAgent] Task ${task.id} failed — continuing with remaining tasks`);
+          continue;
         }
         if (result.status === 'revise_plan') {
           await this.handle_task_status(task, 'revise_plan', {
@@ -954,6 +1131,37 @@ class AgenticAgent {
           });
           continue;
         }
+
+        // ARTIFACT GATE: a task that claimed file writes cannot be 'completed'
+        // unless those files actually exist on disk. Marks the task failed and
+        // continues — the final summary then reports the miss honestly.
+        try {
+          const { extractClaimedArtifacts } = require('./artifactVerification');
+          const claimed = extractClaimedArtifacts([{
+            ...task,
+            result: typeof result.content === 'string' ? result.content : '',
+            memorized: typeof result.memorized === 'string' ? result.memorized : ''
+          }]);
+          if (claimed.length > 0) {
+            const dirPath = await this._getConversationDirPath();
+            const existing = new Set(
+              (await getAllFilesRecursively(dirPath)).map(f => path.basename(f).toLowerCase())
+            );
+            const missing = claimed.filter(n => !existing.has(n));
+            if (missing.length > 0) {
+              console.warn(`[AgenticAgent] ⚠️ Artifact gate: task ${task.id} claimed files that do not exist: ${missing.join(', ')}`);
+              await this.handle_task_status(task, 'failed', {
+                content: `Expected file(s) were not created: ${missing.join(', ')}`,
+                comments: 'artifact verification failed'
+              });
+              continue;
+            }
+          }
+        } catch (gateError) {
+          // Verification must never break execution — log and proceed
+          console.error('[AgenticAgent] Artifact gate error (non-fatal):', gateError.message);
+        }
+
         await this.handle_task_status(task, 'completed', {
           content: result.content,
           memorized: result.memorized || ''
@@ -975,6 +1183,71 @@ class AgenticAgent {
   async stop() {
     this.is_stop = true;
     await this._publishMessage({ action_type: 'stop', status: 'success' });
+  }
+
+  /**
+   * CONDITIONAL SELF-HEAL: open generated HTML in headless Chrome (DevTools MCP),
+   * read the console, and fix real JS CODE errors (SyntaxError/ReferenceError/
+   * TypeError). Network/CORS/favicon noise under file:// is deliberately ignored —
+   * those are false positives outside a served context. One fix round per file,
+   * max 2 files, always fail-soft.
+   */
+  async _webVerifyAndHeal(htmlFiles) {
+    const DevTools = require('@src/tools/DevTools');
+    const fsP = require('fs').promises;
+    const CODE_ERROR_RE = /(SyntaxError|ReferenceError|TypeError|is not defined|Unexpected token|Uncaught)/;
+    const NOISE_RE = /(Failed to load resource|net::|CORS|favicon|ERR_FILE_NOT_FOUND|Access-Control)/;
+
+    const readCodeErrors = async () => {
+      const con = await DevTools.execute({ operation: 'console' });
+      const lines = ((con && con.content) || '').match(/\[error\][^\n]*/g) || [];
+      return lines.filter(l => CODE_ERROR_RE.test(l) && !NOISE_RE.test(l));
+    };
+
+    for (const f of htmlFiles.slice(0, 2)) {
+      if (this.is_stop) return;
+      const abs = f.filepath;
+      const nav = await DevTools.execute({ operation: 'navigate', url: 'file://' + abs });
+      if (!nav || nav.status !== 'success') {
+        console.warn('[WebVerify] could not open', f.filename, '— skipping gate');
+        return;
+      }
+      await new Promise(r => setTimeout(r, 1500));
+      const errors = await readCodeErrors();
+      if (errors.length === 0) {
+        console.log('[WebVerify] ✅', f.filename, '— console clean');
+        continue;
+      }
+
+      console.warn('[WebVerify] 🩹', f.filename, 'JS errors:', errors.join(' | ').slice(0, 300));
+      await this._publishMessage({
+        action_type: 'progress', status: 'running',
+        content: '🔬 Verifying the page in a real browser and fixing issues...'
+      });
+
+      try {
+        const current = await fsP.readFile(abs, 'utf8');
+        const call = require('@src/utils/llm');
+        let fixed = await call(
+          `Fix the JavaScript errors in this HTML file. Browser console reported:\n${errors.join('\n')}\n\nReturn ONLY the complete corrected file contents — no markdown fences, no commentary.\n\n${current.slice(0, 24000)}`,
+          this.context.conversation_id, 'assistant',
+          { temperature: 0.2, max_tokens: 12000, skip_system_prompt: true }
+        );
+        if (typeof fixed === 'string' && fixed.trim().length > 200) {
+          fixed = fixed.replace(/^```[\w]*\n/, '').replace(/\n```\s*$/, '');
+          await fsP.writeFile(abs, fixed);
+          // re-check once
+          await DevTools.execute({ operation: 'navigate', url: 'file://' + abs });
+          await new Promise(r => setTimeout(r, 1200));
+          const residual = await readCodeErrors();
+          console.log(residual.length === 0
+            ? `[WebVerify] ✅ healed ${f.filename}`
+            : `[WebVerify] ⚠️ residual errors remain in ${f.filename}: ${residual.join(' | ').slice(0, 200)}`);
+        }
+      } catch (healErr) {
+        console.error('[WebVerify] heal attempt failed (non-fatal):', healErr.message);
+      }
+    }
   }
 
   /**

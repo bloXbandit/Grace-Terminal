@@ -36,9 +36,34 @@ const resolveThinkingPrompt = async (requirement = '', context = {}) => {
   // Add workspace path for file operations
   const { getDirpath } = require('@src/utils/electron');
   const path = require('path');
+  const fsSync = require('fs');
   const dir_name = 'Conversation_' + context.conversation_id.slice(0, 6);
-  const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', context.user_id);
+  let WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', context.user_id);
+  // BUG GUARD: getDirpath drops user_<id> when LEMON_AI_PATH is set (always, in-container).
+  // Without this, the agent is told the WRONG workspace path and can't find its own files.
+  const userSeg = `user_${context.user_id}`;
+  if (context.user_id && !WORKSPACE_DIR.includes(userSeg)) {
+    const withUser = path.join(WORKSPACE_DIR, userSeg);
+    if (fsSync.existsSync(withUser)) WORKSPACE_DIR = withUser;
+  }
   const workspace_path = path.join(WORKSPACE_DIR, dir_name);
+
+  // COMPOUND/ITERATIVE WORK: list files already in this conversation so the agent
+  // KNOWS what it built before and can read/modify them (instead of concluding
+  // "the file doesn't exist" and starting over).
+  let workspace_files_listing = '';
+  try {
+    if (fsSync.existsSync(workspace_path)) {
+      const entries = fsSync.readdirSync(workspace_path)
+        .filter(f => !/^(temp_script_|create_doc_|create_excel_|create_pdf_|nohup\.out|__pycache__|\.)/.test(f))
+        .filter(f => { try { return fsSync.statSync(path.join(workspace_path, f)).isFile(); } catch { return false; } });
+      if (entries.length > 0) {
+        workspace_files_listing = `\n\n**FILES ALREADY IN YOUR WORKSPACE (from earlier in this conversation):**\n`
+          + entries.map(f => `- ${f}`).join('\n')
+          + `\nTo modify one: (1) <read_file><path>FILENAME</path></read_file> (just the filename), (2) then write_code with the SAME filename containing the COMPLETE UPDATED FILE — every existing function/section PLUS your change. write_code REPLACES the whole file: writing only the new part DESTROYS existing work. Do NOT recreate from scratch or claim the file doesn't exist.`;
+      }
+    }
+  } catch (e) { /* best-effort */ }
 
   // Check if specialist routing is enabled (Task/Auto modes only)
   const specialistGuidance = context.enableSpecialistRouting ? `
@@ -112,6 +137,14 @@ Use specialists strategically to deliver the highest quality solutions!
     ? `\n\n## Previous Task Results (Use this data!):\n${previousTaskResult || taskPreviousResult}\n`
     : '';
 
+  // LEARN AS SHE GOES: inject the few most-relevant lessons from past work.
+  // Pure DB + keyword scoring (no LLM call) — a few ms, ~5 prompt lines.
+  let lessons_block = '';
+  try {
+    const { retrieveLessons } = require('@src/agent/learning/lessonMemory');
+    lessons_block = await retrieveLessons(goal || requirement || '', context.taskType || null);
+  } catch (e) { /* learning optional */ }
+
   const thinking_options = {
     system, // 系统信息
     app_ports, // 端口信息
@@ -125,7 +158,9 @@ Use specialists strategically to deliver the highest quality solutions!
     tools: tools + '\n' + mcpToolsPrompt, // 工具列表
     user_profile: profileContext, // User profile context
     specialist_guidance: specialistGuidance, // Specialist routing guidance
-    workspace_path: workspace_path // Workspace directory for file operations
+    workspace_path: workspace_path, // Workspace directory for file operations
+    workspace_files: workspace_files_listing, // Files already built this conversation
+    lessons: lessons_block // Relevant lessons from past executions
   }
 
   // 动态评估提示词

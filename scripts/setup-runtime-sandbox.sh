@@ -44,6 +44,13 @@ PYTHON_MODULES=(
     "pdf2image"
     "pdfminer.six"
     "cryptography"
+    # Coding-assignment tooling
+    "pytest"
+    "pytest-timeout"
+    "ruff"
+    "flask"
+    "fastapi"
+    "uvicorn"
 )
 
 # Check if container exists
@@ -72,11 +79,16 @@ if [ ! -d "./workspace" ]; then
 fi
 
 echo -e "\n${BLUE}Starting runtime sandbox container...${NC}"
+# Resource limits: prevent runaway coding assignments (fork bombs, memory hogs)
+# from taking down the host. Tune via env: SANDBOX_MEMORY / SANDBOX_CPUS.
 docker run -d \
     --name $SANDBOX_NAME \
     --network $NETWORK_NAME \
     -p ${SANDBOX_PORT}:${SANDBOX_PORT} \
     -v "$PWD/workspace:/workspace" \
+    --memory "${SANDBOX_MEMORY:-4g}" \
+    --cpus "${SANDBOX_CPUS:-2}" \
+    --pids-limit 512 \
     $SANDBOX_IMAGE
 
 echo -e "${GREEN}✓${NC} Container started"
@@ -109,6 +121,20 @@ else
     echo -e "${RED}✗${NC} Failed to install Python modules"
     echo "Trying again with verbose output..."
     docker exec $SANDBOX_NAME pip3 install --break-system-packages $MODULES_STRING
+fi
+
+# System toolchain for coding assignments (C/C++/make). No-op if already present.
+echo -e "\n${BLUE}Ensuring build toolchain (gcc/g++/make)...${NC}"
+docker exec $SANDBOX_NAME sh -c 'command -v gcc >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq build-essential)' > /dev/null 2>&1 \
+    && echo -e "${GREEN}✓${NC} Build toolchain ready" \
+    || echo -e "${YELLOW}⚠${NC} Could not install build-essential (C/C++ assignments unavailable)"
+
+# Sync patched runtime files (exec timeout + error surfacing) into the sandbox action server
+if [ -f "./src/runtime/terminal_run.js" ]; then
+    docker cp ./src/runtime/terminal_run.js ${SANDBOX_NAME}:/chataa/code/chataa/terminal_run.js
+    docker restart $SANDBOX_NAME > /dev/null
+    sleep 5
+    echo -e "${GREEN}✓${NC} Synced terminal_run.js (timeout guard) into sandbox"
 fi
 
 # Verify critical modules

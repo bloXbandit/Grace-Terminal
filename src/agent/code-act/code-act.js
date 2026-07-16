@@ -274,7 +274,14 @@ const completeCodeAct = async (task = {}, context = {}) => {
   while (loopIterations < MAX_LOOP_ITERATIONS) {
     loopIterations++;
     console.log(`[CodeAct] Loop iteration ${loopIterations}/${MAX_LOOP_ITERATIONS}`);
-    
+
+    // CANCELLATION: honor user stop between think/act iterations so a cancelled
+    // task doesn't keep making LLM calls and executing sandbox actions
+    if (context.isStopped && context.isStopped()) {
+      console.log('[CodeAct] Stopped by user, aborting task');
+      return { status: 'stopped', content: 'Task cancelled by user', comments: 'cancelled by user' };
+    }
+
     try {
       // CRITICAL: Check if task has pre-generated action (from specialist)
       let action = null;

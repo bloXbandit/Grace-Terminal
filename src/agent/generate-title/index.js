@@ -39,7 +39,7 @@ const generate_title_local = async (question, conversation_id) => {
     const prompt = await resolveGenerateTitlePrompt(question);
     console.log('Generated prompt:', prompt.substring(0, 200));
     
-    const content = await call(prompt, conversation_id);
+    const content = await call(prompt, conversation_id, 'assistant', { skip_system_prompt: true, temperature: 0.3, max_tokens: 60 });
     console.log('LLM returned title:', content);
     console.log('=== END DEBUG ===');
     

@@ -39,7 +39,8 @@ class OpenAILLM extends BaseLLM {
       timeout: 300000 // 5 minutes
     };
 
-    console.log('config', JSON.stringify(config, null, 2))
+    // SECURITY: redact Authorization header before logging
+    console.log('config', JSON.stringify({ ...config, headers: { ...config.headers, Authorization: 'Bearer [redacted]' } }, null, 2))
     
     if (stream) {
       config.responseType = "stream"

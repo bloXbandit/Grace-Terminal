@@ -59,7 +59,30 @@ class MultiAgentCoordinator {
   }
 
   /**
-   * Detect task type from user's request
+   * PREFERRED: LLM-based task classification with legacy-regex fallback.
+   * Stores the full classification (incl. expected_artifacts) on
+   * this.lastClassification for downstream artifact grounding.
+   * Never slower than CLASSIFIER_TIMEOUT_MS — falls back to detectTaskType.
+   */
+  async classifyTaskType(userMessage, context = {}) {
+    try {
+      const { classifyIntent } = require('@src/agent/intent-classifier');
+      const classification = await classifyIntent(userMessage, { ...context, conversation_id: this.conversation_id });
+      if (classification) {
+        this.lastClassification = classification;
+        console.log(`[Coordinator] LLM classifier → ${classification.task_type}`);
+        return classification.task_type;
+      }
+    } catch (e) {
+      console.warn('[Coordinator] classifier error, using regex fallback:', e.message);
+    }
+    this.lastClassification = null;
+    return this.detectTaskType(userMessage, context);
+  }
+
+  /**
+   * LEGACY fallback: regex keyword scoring. Kept as the safety net when the
+   * classifier is unavailable (no OpenAI key, timeout, parse failure).
    * @param {string} userMessage - The user's message
    * @param {object} context - Optional context (hasFiles, lastAction, isFollowUp, recentMessages)
    */
@@ -706,6 +729,13 @@ class MultiAgentCoordinator {
    */
   async callSpecialist(modelPath, systemPrompt, userMessage, options = {}) {
     try {
+      // AVAILABILITY: transparently substitute an equivalent model when the configured
+      // provider is down (dead key, outage). Original routing snaps back automatically
+      // once the provider is healthy again — config stays the source of intent.
+      const { resolveAvailableModel } = require('./providerHealth');
+      const resolved = await resolveAvailableModel(modelPath);
+      modelPath = resolved.modelPath;
+
       // Parse model path (e.g., "openai/gpt-5-pro" or "openrouter/anthropic/claude-3-opus")
       const parts = modelPath.split('/');
       const provider = parts[0];
@@ -724,16 +754,22 @@ class MultiAgentCoordinator {
       const model_info = {
         model_name: modelName,
         platform_name: provider,
-        api_key: process.env[`${provider.toUpperCase()}_API_KEY`] || process.env.OPENAI_API_KEY || '',
-        api_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 
+        api_key: provider === 'crofai'
+          ? require('./providerHealth').getCrofAIKey()
+          : (process.env[`${provider.toUpperCase()}_API_KEY`] || process.env.OPENAI_API_KEY || ''),
+        api_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' :
                  provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
                  provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' :
                  provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' :
+                 provider === 'moonshot' ? 'https://api.moonshot.ai/v1/chat/completions' :
+                 provider === 'crofai' ? 'https://crof.ai/v1/chat/completions' :
                  'https://api.openai.com/v1/chat/completions',
         base_url: provider === 'openrouter' ? 'https://openrouter.ai/api/v1' :
                   provider === 'openai' ? 'https://api.openai.com/v1' :
                   provider === 'anthropic' ? 'https://api.anthropic.com/v1' :
                   provider === 'gemini' ? 'https://generativelanguage.googleapis.com' :
+                  provider === 'moonshot' ? 'https://api.moonshot.ai/v1' :
+                  provider === 'crofai' ? 'https://crof.ai/v1' :
                   'https://api.openai.com/v1',
         is_subscribe: false
       };
@@ -742,8 +778,10 @@ class MultiAgentCoordinator {
       const llm = await createLLMInstance(model, onTokenStream, { model_info });
       
       // CRITICAL: For website_generation, systemPrompt is already minimal (set in execute())
-      // Detect by checking if it's the minimal prompt we set
-      const isWebsiteGeneration = systemPrompt.includes('ABSOLUTE OUTPUT RULES') && systemPrompt.includes('<write_code file_path="index.html">');
+      // Detect via explicit taskType (passed in options) with prompt-marker fallback.
+      // NOTE: previous check matched the literal 'file_path="index.html"' which broke when
+      // filenames became dynamic — that silently re-enabled 10K+ tokens of prompt bloat.
+      const isWebsiteGeneration = options.taskType === 'website_generation' || systemPrompt.includes('ABSOLUTE OUTPUT RULES (FAIL IF BROKEN)');
       
       let fullSystemPrompt;
       if (isWebsiteGeneration) {
@@ -764,11 +802,23 @@ class MultiAgentCoordinator {
           const { getDirpath } = require('@src/utils/electron');
           const path = require('path');
           const dir_name = 'Conversation_' + this.conversation_id.slice(0, 6);
-          const WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.user_id);
+          let WORKSPACE_DIR = getDirpath(process.env.WORKSPACE_DIR || 'workspace', this.user_id);
+          // BUG GUARD: getDirpath drops user_<id> when LEMON_AI_PATH is set — files
+          // live under user_<id>/, so this context scan silently found nothing.
+          const userSeg = `user_${this.user_id}`;
+          if (this.user_id && !WORKSPACE_DIR.includes(userSeg)) {
+            const fsSync = require('fs');
+            const withUser = path.join(WORKSPACE_DIR, userSeg);
+            if (fsSync.existsSync(withUser)) {
+              WORKSPACE_DIR = withUser;
+            }
+          }
           const conversationDir = path.join(WORKSPACE_DIR, dir_name);
           
           const files = await getAllFilesRecursively(conversationDir);
-          const TRACKED_EXTENSIONS = ['.docx', '.docm', '.dotx', '.dotm', '.pdf', '.xlsx', '.xlsm', '.csv', '.pptx', '.txt', '.md', '.html', '.css', '.js', '.json', '.xml', '.svg'];
+          const TRACKED_EXTENSIONS = ['.docx', '.docm', '.dotx', '.dotm', '.pdf', '.xlsx', '.xlsm', '.csv', '.pptx', '.txt', '.md', '.html', '.css', '.js', '.json', '.xml', '.svg',
+            // code files — required so the agent knows they exist for compound/iterative edits
+            '.py', '.ts', '.jsx', '.tsx', '.java', '.c', '.cpp', '.h', '.go', '.rs', '.rb', '.php', '.sh', '.sql', '.yaml', '.yml', '.vue'];
           const docFiles = files.filter(f => TRACKED_EXTENSIONS.some(ext => f.toLowerCase().endsWith(ext)));
           const formattedDocFiles = docFiles.map(f => `- ${path.basename(f)}`).join('\n');
 
@@ -1284,8 +1334,8 @@ If this is a delivery task and the file already exists with this name, DO NOT co
       routingContext = await this.buildRoutingContext(userMessage, options);
     }
     
-    // Detect task type with context
-    const taskType = this.detectTaskType(userMessage, routingContext);
+    // Detect task type with context (LLM classifier, regex fallback)
+    const taskType = await this.classifyTaskType(userMessage, routingContext);
     console.log(`[Coordinator] Detected task type: ${taskType}`);
     
     // ROUTE TO CODE REVIEW ORCHESTRATOR if needed
@@ -1341,8 +1391,11 @@ CONSTRAINTS:
 - Allowed: one Google Font link (Inter or Manrope).
 - Keep JS lightweight and functional.
 
-STYLE DIRECTION:
-- Premium dark theme: near-black / deep red surfaces with metallic gold accents.
+STYLE DIRECTION (ADAPTIVE — match the subject):
+- Choose a palette and mood that FITS the subject matter: a bakery reads warm and inviting,
+  a security startup reads dark and technical, a yoga studio reads calm and airy.
+- If the user specifies colors/theme/vibe, follow it EXACTLY — their word beats any default.
+- Default when nothing fits: clean modern light theme with one strong accent color.
 - Add subtle background interest: gradient mesh / soft blobs / faint noise overlay (pure CSS/SVG).
 
 DESIGN SYSTEM (NON-NEGOTIABLE):
@@ -1404,9 +1457,10 @@ Now generate the website that satisfies the user request below:`;
       // Pass routing context to specialist (includes previousImplementation)
       const specialistOptions = {
         ...options,
-        routingContext
+        routingContext,
+        taskType
       };
-      
+
       // Try primary specialist
       const result = await this.callSpecialist(
         routing.primary,
@@ -1445,7 +1499,8 @@ Now generate the website that satisfies the user request below:`;
         // Pass routing context to fallback specialist too
         const specialistOptions = {
           ...options,
-          routingContext
+          routingContext,
+          taskType
         };
         
         // Try fallback specialist (use same overridden systemPrompt)

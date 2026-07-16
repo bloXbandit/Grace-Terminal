@@ -59,6 +59,7 @@ export const useChatStore = defineStore('chat', {
         console.log(' 默认选择第一个 selectFirst');
         //默认选择第一个
         this.conversationId = this.list[0].conversation_id;
+        localStorage.setItem('current_conversation_id', this.conversationId); // for settings (dev-mode toggle)
         this.clearMessages();
         this.chat = this.list[0];
         this.initConversation(this.conversationId);
@@ -106,7 +107,11 @@ export const useChatStore = defineStore('chat', {
     },
     async initConversation(conversationId) {
       console.log('[initConversation] Starting load for:', conversationId);
-      
+      // Persist for settings pages (dev-mode toggle reads this when the store is fresh)
+      if (conversationId) {
+        localStorage.setItem('current_conversation_id', conversationId);
+      }
+
       // CRITICAL: Capture conversation ID at start to detect stale loads
       const loadId = conversationId;
       
@@ -322,6 +327,7 @@ export const useChatStore = defineStore('chat', {
       const result = await chat.create(message, mode_type, this.agent.id, this.model_id);
       this.chat = result;
       this.conversationId = result.conversation_id;
+      localStorage.setItem('current_conversation_id', this.conversationId); // for settings (dev-mode toggle)
       if (mode_type == 'task') {
         this.init();
       } else {

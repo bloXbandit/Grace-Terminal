@@ -114,6 +114,28 @@ class LLM {
         body[key] = options[key]; // User options override defaults
       }
     }
+
+    // COMPAT: OpenAI reasoning-family models (gpt-5*, o1/o3/o4*) called DIRECTLY on
+    // api.openai.com reject legacy sampling params with 400:
+    //   - max_tokens must be max_completion_tokens
+    //   - temperature/top_p only support their defaults
+    // OpenRouter translates these itself, so only direct OpenAI calls need the remap.
+    const isDirectOpenAI = (this.CHAT_COMPLETION_URL || '').indexOf('api.openai.com') !== -1;
+    const isReasoningFamily = /^(gpt-5|o[0-9])/i.test(model || '');
+    if (isDirectOpenAI && isReasoningFamily) {
+      if (body.max_tokens !== undefined) {
+        body.max_completion_tokens = body.max_tokens;
+        delete body.max_tokens;
+      }
+      delete body.temperature;
+      delete body.top_p;
+      // Callers may request low/minimal reasoning for latency-critical calls
+      // (e.g. ultra fast-path schema generation). Only applied here so the
+      // param never leaks to providers that would reject it.
+      if (options.reasoning_effort) {
+        body.reasoning_effort = options.reasoning_effort;
+      }
+    }
     // Log request for debugging 400 errors
     console.log('🔍 [LLM Request]', {
       url: this.CHAT_COMPLETION_URL,
@@ -121,7 +143,9 @@ class LLM {
       messageCount: body.messages?.length,
       stream: body.stream,
       temperature: body.temperature,
-      max_tokens: body.max_tokens
+      max_tokens: body.max_tokens,
+      max_completion_tokens: body.max_completion_tokens,
+      reasoning_effort: body.reasoning_effort
     });
     
     const config = {
@@ -224,11 +248,13 @@ class LLM {
     const taskType = context.taskType || '';
     const contextualPrompt = getContextualSystemPrompt(goal, taskType);
     
-    // Only add system message if not already present
-    if (messages.length === 0 || messages[0].role !== 'system') {
+    // Only add system message if not already present.
+    // Latency-critical structured calls (ultra fast-path schema generation) can opt out —
+    // the ~2K-token identity/capabilities prompt is pure overhead for "return JSON" calls.
+    if (!options.skip_system_prompt && (messages.length === 0 || messages[0].role !== 'system')) {
       messages.unshift({ "role": "system", "content": contextualPrompt });
     }
-    
+
     if (prompt) {
       const massageUser = { "role": "user", "content": prompt };
       messages.push(massageUser);
@@ -242,6 +268,59 @@ class LLM {
   }
 
   // 处理流式请求
+  /**
+   * Suppress <think>…</think> spans from the OUTGOING token stream so reasoning
+   * models (DeepSeek/GLM/Qwen via CrofAI etc.) don't leak their thinking into chat.
+   * fullContent keeps the tags — internal consumers (planning, code-act) parse them.
+   * Handles tags split across stream chunks via a small carry buffer.
+   */
+  _createThinkStreamFilter(emit) {
+    const OPEN_TAG = '<think>';
+    const CLOSE_TAG = '</think>';
+    let inThink = false;
+    let carry = '';
+    const push = (chunk) => {
+      carry += chunk;
+      let out = '';
+      while (carry.length > 0) {
+        if (!inThink) {
+          const idx = carry.indexOf(OPEN_TAG);
+          if (idx !== -1) {
+            out += carry.slice(0, idx);
+            carry = carry.slice(idx + OPEN_TAG.length);
+            inThink = true;
+            continue;
+          }
+          // hold back a possible partial '<think>' prefix at the buffer end
+          let hold = 0;
+          for (let k = Math.min(OPEN_TAG.length - 1, carry.length); k > 0; k--) {
+            if (carry.endsWith(OPEN_TAG.slice(0, k))) { hold = k; break; }
+          }
+          out += carry.slice(0, carry.length - hold);
+          carry = carry.slice(carry.length - hold);
+          break;
+        } else {
+          const idx = carry.indexOf(CLOSE_TAG);
+          if (idx !== -1) {
+            // drop the thought, and eat whitespace immediately after it
+            carry = carry.slice(idx + CLOSE_TAG.length).replace(/^\s+/, '');
+            inThink = false;
+            continue;
+          }
+          // still inside the thought: discard content, keep only a potential partial closing tag
+          carry = carry.slice(-(CLOSE_TAG.length - 1));
+          break;
+        }
+      }
+      if (out) emit(out);
+    };
+    const flush = () => {
+      if (!inThink && carry) emit(carry);
+      carry = '';
+    };
+    return { push, flush };
+  }
+
   async handleSSE(response) {
     // Check for structured error object from request()
     if (response.isError) {
@@ -269,6 +348,9 @@ class LLM {
       throw error;
     }
     
+    // Strip <think>…</think> for anything emitted to the UI stream
+    const stripThink = (s) => (s || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s+/, '');
+
     // Handle non-streaming JSON response (when responseType: "json")
     if (response.data && typeof response.data === 'object' && !response.data.on) {
       console.log('[LLM handleSSE] Non-streaming JSON response detected');
@@ -277,7 +359,7 @@ class LLM {
       if (choice.message && choice.message.content) {
         const content = choice.message.content;
         console.log('[LLM handleSSE] Extracted content:', content.substring(0, 100));
-        this.onTokenStream(content);
+        this.onTokenStream(stripThink(content));
         return content;
       }
       console.error('[LLM handleSSE] No content in non-streaming response');
@@ -287,6 +369,7 @@ class LLM {
     // 处理流式返回
     let fullContent = "";
     let reasoning = false;
+    const thinkFilter = this._createThinkStreamFilter((ch) => this.onTokenStream(ch));
     const fn = new Promise((resolve, reject) => {
       let content = "";
       let isNonStreaming = false;
@@ -318,7 +401,7 @@ class LLM {
             if (choice.message && choice.message.content) {
               fullContent = choice.message.content;
               console.log('[LLM Stream] Non-streaming content extracted:', fullContent.substring(0, 100));
-              this.onTokenStream(fullContent);
+              this.onTokenStream(stripThink(fullContent));
             }
           } catch (e) {
             // Not complete JSON yet, wait for more chunks
@@ -347,12 +430,14 @@ class LLM {
             if (ch) {
               // process.stdout.write(ch);
               fullContent += ch;
-              this.onTokenStream(ch);
+              // UI stream gets think-filtered tokens; fullContent keeps the tags
+              thinkFilter.push(ch);
             }
           } else { }
         }
       });
       response.data.on("end", () => {
+        thinkFilter.flush();
         resolve(fullContent);
       });
       response.data.on("error", (err) => {
@@ -399,10 +484,10 @@ class LLM {
       return { type: "done" };
     }
 
-    // token 消耗消息
+    // Capture provider-reported usage — exact tokens beat tiktoken estimates.
+    // Consumers read llm.lastUsage after completion (see utils/llm.js).
     if (value.usage) {
-      // console.log('\nToken.Usage', value.usage);
-      // return { type: "done" };
+      this.lastUsage = value.usage;
     }
 
     const choices = value.choices || [];

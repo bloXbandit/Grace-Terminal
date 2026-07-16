@@ -39,7 +39,7 @@ const auto_reply = async (goal, conversation_id, user_id = 1, messages = [], pro
   
   // CRITICAL: Check for Ultra doc pattern BEFORE skipping for voice
   // Voice requests for doc generation should still use Ultra fast-path
-  const simpleFileGenPatternForVoice = goal && goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  const simpleFileGenPatternForVoice = goal && goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|budget shee?t|budget spreadsheet|budget tracker|budget planner|expense tracker|expense shee?t|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
   
   if (isVoice && !simpleFileGenPatternForVoice && !isTwinVideoRequestEarly) {
     // Voice request but NOT a doc generation request - skip auto_reply for speed
@@ -1414,7 +1414,7 @@ Do NOT quote the full text; just describe it at a high level.`;
   // Action verbs: create, make, generate, write, build, produce, draft
   // File types: word doc/document, docx, excel, spreadsheet, pdf document/file, pdf, xlsx, document, doc
   // Trigger words (optional): titled, called, named, with, about, on, for, bout, regarding, concerning
-  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
+  const simpleFileGenPattern = goal.match(/(?:can you |could you |would you |please |lets |let's |lemme |i wanna |i want to |i want |i need |make me |give me |build me |get me |help me )?(?:(create|make|generate|write|build|produce|draft)(?:\s+\w+){0,3}\s+)?(a |an |the |me |some )?(?:new )?(word do+cument|word doc|excel file|spreadsheet|budget shee?t|budget spreadsheet|budget tracker|budget planner|expense tracker|expense shee?t|pdf do+cument|pdf file|docx|excel|xlsx|pdf)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?|(?:do+cument|doc)(?:\s+(?:titled|called|named|with|about|on|for|bout|regarding|concerning|re))?/i);
 
   // IMPORTANT: If the user explicitly asks to "do research" AND draft a doc, route to full agentic flow
   // Example: "do some research and draft a brief word document about AVICI token"
@@ -1627,7 +1627,8 @@ except Exception as e:
     const fileTypeGroup = simpleFileGenPattern[3] ? simpleFileGenPattern[3].toLowerCase() : '';
     const fileType = fileTypeGroup || matchedText;
     const isPDF = fileType.includes('pdf');
-    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType.includes('xlsx');
+    const isExcel = fileType.includes('excel') || fileType.includes('spreadsheet') || fileType.includes('xlsx')
+      || fileType.includes('budget') || fileType.includes('tracker') || fileType.includes('expense');
     // Word is evaluated LAST so explicit PDF/Excel requests win over generic "document/doc"
     const isWordDoc = !isPDF && !isExcel && (fileType.includes('word') || fileType.includes('docx') || fileType.includes('document') || fileType.endsWith('doc'));
     
@@ -1810,129 +1811,45 @@ Topics: ${topics.join(', ')}
 
 Write the document content now (JSON only):`;
 
-        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        // FORTIFIED: robust parse pipeline (fences → brace-slice → cleanup →
+        // truncation repair → regex salvage) + ONE retry with a stricter prompt.
+        // max_tokens raised 2000 → 4000: truncated JSON was a root cause of parse failures.
+        const { parseUltraDocSchema, jsonTextToPlainText } = require('./ultraSchema');
+
+        let rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 4000, reasoning_effort: 'minimal', skip_system_prompt: true });
         const llmEnd = Date.now();
         console.log('[AutoReply] ULTRA timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
 
-        // Robustly extract JSON payload from possible ```json fenced output
-        let cleaned = (rawResponse || '').trim();
-        const fencedMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-        if (fencedMatch && fencedMatch[1]) {
-          cleaned = fencedMatch[1].trim();
-        } else {
-          // No clear fenced block; strip any stray fences to avoid `Unexpected token '`'`
-          cleaned = cleaned.replace(/```/g, '').trim();
+        let parseResult = parseUltraDocSchema(rawResponse, { isListRequest, fallbackTitle: title });
+
+        if (!parseResult.schema) {
+          // Retry once with a stricter, minified-JSON instruction (only on parse failure,
+          // so the 3-5s happy path is unaffected)
+          console.log('[AutoReply] ⚠️ Ultra schema parse failed on first attempt; retrying with strict prompt');
+          const strictPrompt = `${prompt}\n\nIMPORTANT: Your previous response was not valid JSON. Respond with ONLY a single minified JSON object. No markdown fences, no commentary, no trailing commas. Double-quote all keys and strings.`;
+          const retryStart = Date.now();
+          rawResponse = await call(strictPrompt, conversation_id, 'assistant', { temperature: 0.2, max_tokens: 4000, reasoning_effort: 'minimal', skip_system_prompt: true });
+          console.log('[AutoReply] ULTRA retry timing: LLM_ms =', Date.now() - retryStart, 'chars =', rawResponse?.length || 0);
+          parseResult = parseUltraDocSchema(rawResponse, { isListRequest, fallbackTitle: title });
         }
 
-        let parsed = null;
-        try {
-          parsed = JSON.parse(cleaned);
-        } catch (err) {
-          console.log('[AutoReply] ⚠️ Ultra JSON.parse failed first pass:', err.message);
-          // Attempt to salvage JSON object between first '{' and last '}' from the ORIGINAL response
-          const source = rawResponse || cleaned;
-          const firstBrace = source.indexOf('{');
-          const lastBrace = source.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace > firstBrace) {
-            const candidate = source.slice(firstBrace, lastBrace + 1);
-            try {
-              parsed = JSON.parse(candidate);
-              console.log('[AutoReply] ✅ Ultra JSON salvage succeeded after trimming raw braces');
-            } catch (err2) {
-              console.log('[AutoReply] ⚠️ Ultra JSON salvage parse failed:', err2.message);
-            }
-          }
-        }
-
-        if (parsed) {
-          const sectionsRaw = Array.isArray(parsed.sections) ? parsed.sections : [];
-
-          // Very permissive section normalization: accept any reasonable heading/body-like fields
-          let validSections = [];
-          if (sectionsRaw.length > 0) {
-            validSections = sectionsRaw
-              .map((s, idx) => {
-                if (!s || typeof s !== 'object') return null;
-
-                // Heading fallbacks: heading → title → name → "Section N"
-                let heading = null;
-                if (typeof s.heading === 'string') heading = s.heading;
-                else if (typeof s.title === 'string') heading = s.title;
-                else if (typeof s.name === 'string') heading = s.name;
-                else heading = `Section ${idx + 1}`;
-
-                // LIST MODE: For list-intent docs, keep only headings and force empty bodies so we never dump JSON
-                if (isListRequest) {
-                  heading = heading.trim();
-                  if (!heading) return null;
-                  return { heading, body: '' };
-                }
-
-                // Body fallbacks: body/content/text/paragraphs/description, arrays joined
-                let body = null;
-                if (typeof s.body === 'string') body = s.body;
-                else if (Array.isArray(s.body)) body = s.body.join('\n\n');
-                else if (typeof s.content === 'string') body = s.content;
-                else if (Array.isArray(s.content)) body = s.content.join('\n\n');
-                else if (typeof s.text === 'string') body = s.text;
-                else if (Array.isArray(s.paragraphs)) body = s.paragraphs.join('\n\n');
-                else if (typeof s.description === 'string') body = s.description;
-
-                if (!body) return null;
-
-                heading = heading.trim();
-                body = body.trim();
-                if (!heading || !body) return null;
-                return { heading, body };
-              })
-              .filter(Boolean);
-          }
-
-          let finalTitle = typeof parsed.title === 'string' && parsed.title.trim()
-            ? parsed.title.trim()
-            : title; // fall back to normalized title from goal
-
-          if (validSections.length > 0) {
-            schema = {
-              title: finalTitle,
-              sections: validSections
-            };
-            console.log('[AutoReply] ✅ LLM UltraDocumentSchema accepted. sections_kept =', validSections.length, 'sections_total =', sectionsRaw.length);
-          } else {
-            // No usable structured sections, but we still have parsed JSON: wrap entire payload as one section
-            const fallbackBody = (() => {
-              if (typeof parsed.body === 'string' && parsed.body.trim()) return parsed.body.trim();
-              if (cleaned) return cleaned; // cleaned JSON/text
-              if (rawResponse) return rawResponse;
-              try {
-                return JSON.stringify(parsed, null, 2);
-              } catch { return String(parsed); }
-            })();
-
-            schema = {
-              title: finalTitle,
-              sections: [
-                {
-                  heading: finalTitle || 'Document',
-                  body: fallbackBody || ''
-                }
-              ]
-            };
-            console.log('[AutoReply] ⚠️ Ultra schema had no structured sections; using single-section fallback from raw content');
-          }
+        if (parseResult.schema) {
+          schema = parseResult.schema;
+          console.log(`[AutoReply] ✅ LLM UltraDocumentSchema accepted via '${parseResult.method}'. sections =`, schema.sections.length);
         } else {
-          // JSON completely failed to parse – still build a single-section schema from raw text
-          const fallbackBody = cleaned || rawResponse || '';
+          // Both attempts unparseable. NEVER dump raw JSON into the document —
+          // convert to readable plain text as an absolute last resort.
+          const plainBody = jsonTextToPlainText(rawResponse) || `Content generation for: ${goal}`;
           schema = {
             title,
             sections: [
               {
                 heading: title,
-                body: fallbackBody
+                body: plainBody
               }
             ]
           };
-          console.log('[AutoReply] ⚠️ Ultra LLM response could not be parsed as JSON; using raw text as single DOCX section');
+          console.log('[AutoReply] ⚠️ Ultra LLM response unparseable after retry; using plain-text conversion as single DOCX section');
         }
       } catch (err) {
         console.log('[AutoReply] ⚠️ LLM call or JSON parse failed:', err.message);
@@ -1990,47 +1907,31 @@ Topics: ${topics.join(', ')}
 ${isAllItemsRequest ? `IMPORTANT: The user is asking for ALL items (e.g., "all presidents", "all 50 states"). Include EVERY item requested, even if that is 50+ rows. Do not truncate the list.` : `Generate realistic sample data with 10-20 rows showing examples.`}
 Use appropriate column headers. JSON only:`;
 
-        const rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: 2000 });
+        // FORTIFIED: robust parse pipeline + one retry. max_tokens scales with request
+        // scope — "all 50 states" style requests were guaranteed truncation at 2000.
+        const { parseUltraExcelSchema } = require('./ultraSchema');
+        const excelMaxTokens = isAllItemsRequest ? 6000 : 3000;
+
+        let rawResponse = await call(prompt, conversation_id, 'assistant', { temperature: 0.5, max_tokens: excelMaxTokens, reasoning_effort: 'minimal', skip_system_prompt: true });
         const llmEnd = Date.now();
         console.log('[AutoReply] ULTRA Excel timing: LLM_ms =', llmEnd - llmStart, 'chars =', rawResponse?.length || 0);
 
-        // Robustly extract JSON (same as DOCX)
-        let cleaned = (rawResponse || '').trim();
-        const fencedMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-        if (fencedMatch && fencedMatch[1]) {
-          cleaned = fencedMatch[1].trim();
-        } else {
-          cleaned = cleaned.replace(/```/g, '').trim();
+        let parseResult = parseUltraExcelSchema(rawResponse, { fallbackTitle: title });
+
+        if (!parseResult.schema) {
+          console.log('[AutoReply] ⚠️ Ultra Excel schema parse failed on first attempt; retrying with strict prompt');
+          const strictPrompt = `${prompt}\n\nIMPORTANT: Your previous response was not valid JSON. Respond with ONLY a single minified JSON object. No markdown fences, no commentary, no trailing commas.`;
+          const retryStart = Date.now();
+          rawResponse = await call(strictPrompt, conversation_id, 'assistant', { temperature: 0.2, max_tokens: excelMaxTokens, reasoning_effort: 'minimal', skip_system_prompt: true });
+          console.log('[AutoReply] ULTRA Excel retry timing: LLM_ms =', Date.now() - retryStart, 'chars =', rawResponse?.length || 0);
+          parseResult = parseUltraExcelSchema(rawResponse, { fallbackTitle: title });
         }
 
-        let parsed = null;
-        try {
-          parsed = JSON.parse(cleaned);
-        } catch (err) {
-          console.log('[AutoReply] ⚠️ Ultra Excel JSON.parse failed first pass:', err.message);
-          const source = rawResponse || cleaned;
-          const firstBrace = source.indexOf('{');
-          const lastBrace = source.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace > firstBrace) {
-            const candidate = source.slice(firstBrace, lastBrace + 1);
-            try {
-              parsed = JSON.parse(candidate);
-              console.log('[AutoReply] ✅ Ultra Excel JSON salvage succeeded');
-            } catch (err2) {
-              console.log('[AutoReply] ⚠️ Ultra Excel JSON salvage failed:', err2.message);
-            }
-          }
-        }
-
-        if (parsed && parsed.headers && Array.isArray(parsed.rows)) {
-          schema = {
-            title: parsed.title || title,
-            headers: parsed.headers,
-            rows: parsed.rows
-          };
-          console.log('[AutoReply] ✅ Ultra Excel schema generated:', schema.headers.length, 'columns,', schema.rows.length, 'rows');
+        if (parseResult.schema) {
+          schema = parseResult.schema;
+          console.log(`[AutoReply] ✅ Ultra Excel schema generated via '${parseResult.method}':`, schema.headers.length, 'columns,', schema.rows.length, 'rows');
         } else {
-          console.log('[AutoReply] ⚠️ Ultra Excel LLM response invalid, using fallback');
+          console.log('[AutoReply] ⚠️ Ultra Excel LLM response invalid after retry, using fallback');
         }
       } catch (err) {
         console.log('[AutoReply] ⚠️ Ultra Excel LLM call failed:', err.message);
@@ -2616,7 +2517,7 @@ print('✅ Added text ${atTop ? 'at top' : 'at bottom'}')]]></content>
     user_id
   });
   
-  const taskType = coordinator.detectTaskType(goal);
+  const taskType = await coordinator.classifyTaskType(goal);
   console.log(`[AutoReply] Detected task type: ${taskType}`);
   
   if (taskType !== 'general_chat') {

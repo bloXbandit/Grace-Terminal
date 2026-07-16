@@ -113,8 +113,18 @@ const availableTaskTypes = ref([
 
 // Available models (matching backend routing.config.js)
 const availableModels = ref([
-  // OpenAI Models
-  { key: 'openrouter/openai/gpt-5-pro', name: 'GPT-5 Pro (OpenAI)' },
+  // ⚡ LIVE PROVIDERS (working keys — recommended)
+  { key: 'openai/gpt-5.2', name: '⚡ GPT-5.2 (OpenAI direct — strong)' },
+  { key: 'openai/gpt-4.1-mini', name: '⚡ GPT-4.1 Mini (OpenAI direct — fast)' },
+  { key: 'crofai/deepseek-v4-pro', name: '⚡ DeepSeek V4 Pro (CrofAI — cheap+strong)' },
+  { key: 'crofai/deepseek-v4-flash', name: '⚡ DeepSeek V4 Flash (CrofAI — cheap+fast)' },
+  { key: 'crofai/kimi-k2.7-code', name: '⚡ Kimi K2.7 Code (CrofAI — coding)' },
+  { key: 'crofai/glm-5.2', name: '⚡ GLM 5.2 (CrofAI — creative)' },
+  { key: 'crofai/qwen3.5-9b', name: '⚡ Qwen 3.5 9B (CrofAI — ultra cheap)' },
+  { key: 'moonshot/kimi-k2-turbo-preview', name: '⚡ Kimi K2 Turbo (Moonshot)' },
+
+  // OpenRouter models (require a valid OpenRouter key; auto-substituted when unavailable)
+  { key: 'openrouter/openai/gpt-5-pro', name: 'GPT-5 Pro (OpenRouter)' },
   { key: 'openrouter/openai/gpt-4o', name: 'GPT-4o (OpenAI)' },
   { key: 'openrouter/openai/gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
   { key: 'openrouter/openai/o1-preview', name: 'GPT-o1 Preview (OpenAI)' },

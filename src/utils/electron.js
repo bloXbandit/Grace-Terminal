@@ -20,17 +20,22 @@ const getFilepath = (dir = 'database', filename) => {
 
 
 //处理文件夹路径
+// ROOT-CAUSE FIX: the user_<id> segment used to be appended BEFORE the
+// resourcesPath/LEMON_AI_PATH overrides, which silently dropped it in Docker
+// (LEMON_AI_PATH is always set there). That broke every user-scoped consumer:
+// artifact checks, file-context scans, read_file, thinking workspace path.
+// The user segment is now appended LAST so overrides cannot discard it.
 const getDirpath = (dir, user_id) => {
   let filepath = resolve(__dirname, '../../', dir);
-  if (user_id) {
-    filepath = resolve(filepath, `user_${user_id}`)
-  }
   if (resourcesPath && resourcesPath.indexOf('node_modules') === -1) {
     filepath = resolve(resourcesPath, dir);
   }
 
   if (LEMON_AI_PATH) {
     filepath = resolve(LEMON_AI_PATH, dir);
+  }
+  if (user_id) {
+    filepath = resolve(filepath, `user_${user_id}`)
   }
   return filepath;
 }

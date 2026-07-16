@@ -7,6 +7,8 @@ import emitter from '@/utils/emitter';
 
 import { storeToRefs } from 'pinia';
 import { useUserStore } from '@/store/modules/user.js'
+import { useGenerationTimer } from '@/composables/useGenerationTimer';
+const { startTimer, stopTimer } = useGenerationTimer();
 const userStore = useUserStore();
 const { user, membership, points } = storeToRefs(userStore);
 import { v4 as uuid } from 'uuid';
@@ -122,6 +124,22 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         const currentConversationId = chatStore.conversationId
         // Process token stream
 
+        // Explicit backend-driven generation timer (replaces keyword sniffing,
+        // which missed routes whose messages never said "website"/"html")
+        if (ch.startsWith('__lemon_timer__')) {
+            try {
+                const timerData = JSON.parse(ch.substring('__lemon_timer__'.length));
+                if (timerData.action === 'start') {
+                    startTimer(timerData.duration || 120000, timerData.label || 'Generating...');
+                } else if (timerData.action === 'stop') {
+                    stopTimer();
+                }
+            } catch (e) {
+                // Failed to parse timer data
+            }
+            return;
+        }
+
         if (ch.startsWith('__lemon_mode__')) {
             try {
                 const modeStr = ch.substring('__lemon_mode__'.length);
@@ -224,6 +242,8 @@ async function sendMessage(question, conversationId, files, mcp_server_ids = [],
         // Handle error
         return '';
     }).finally(() => {
+        // Guaranteed timer stop when the stream ends (success, error, or abort)
+        stopTimer();
         const conversation = chatStore.list.find((c) => c.conversation_id == conversationId);
         if (conversation) {
             conversation.status = 'done';

@@ -19,7 +19,7 @@ BLUE=$(shell tput -Txterm setaf 6)
 RESET=$(shell tput -Txterm sgr0)
 
 # Declare phony targets to avoid conflicts with files of the same name
-.PHONY: build start-backend start-frontend run rebuild-frontend
+.PHONY: build start-backend start-frontend run rebuild-frontend check-frontend fix-frontend-stale
 
 # Default goal: Start both frontend and backend
 .DEFAULT_GOAL := run
@@ -123,6 +123,30 @@ restart:
 	@echo "$(BLUE)Restarting container (no rebuild)...$(RESET)"
 	docker compose restart
 	@echo "$(GREEN)Container restarted!$(RESET)"
+
+# Detect stale frontend build (build output older than frontend sources).
+# Root cause of the recurring 401/blank-screen/missing-features issues.
+check-frontend:
+	@if [ ! -f public/index.html ]; then \
+		echo "$(RED)STALE: public/index.html missing - run 'make rebuild-frontend'$(RESET)"; exit 1; \
+	fi
+	@STALE=$$(find frontend/src -type f \( -name '*.vue' -o -name '*.js' -o -name '*.css' \) -newer public/index.html 2>/dev/null | head -3); \
+	if [ -n "$$STALE" ]; then \
+		echo "$(RED)STALE frontend build - sources newer than public/index.html:$(RESET)"; \
+		echo "$$STALE" | sed 's/^/    /'; \
+		echo "$(YELLOW)  Fix: make rebuild-frontend  (or make fix-frontend-stale for in-container)$(RESET)"; \
+		exit 1; \
+	else \
+		echo "$(GREEN)Frontend build is fresh$(RESET)"; \
+	fi
+
+# Fix stale frontend inside the running container (the documented manual procedure, automated)
+fix-frontend-stale:
+	@echo "$(YELLOW)Clearing stale build inside grace-app...$(RESET)"
+	docker exec grace-app rm -rf /app/public/assets /app/public/index.html
+	docker exec -w /app/frontend grace-app npm run build
+	docker restart grace-app
+	@echo "$(GREEN)Frontend rebuilt in container and restarted$(RESET)"
 
 # Setup runtime sandbox (standalone)
 setup-sandbox:
